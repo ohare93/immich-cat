@@ -1,9 +1,11 @@
 module Main exposing (main)
+
 import Array exposing (Array)
 import Browser exposing (element)
 import Browser.Events exposing (onKeyDown)
 import Date
 import Dict exposing (Dict)
+import Helpers exposing (send)
 import Html exposing (Html, button, div, img, text)
 import Html.Attributes exposing (class, src)
 import Html.Events exposing (onClick)
@@ -31,7 +33,6 @@ type alias Model =
     , imagePrepend : String
     , assetSelectMode : AssetSource
     , userMode : UserMode
-    , bucketMode : BucketMode
     , test : Int
     -- Immich fields
     , images : Array ImageWithMetadata
@@ -49,13 +50,14 @@ type AssetSource
     | Album ImmichAlbum
 
 type UserMode
-    = Normal
+    = MainMenu
     | SearchAssetInput String
     | SelectAlbumInput String (List ImmichAlbum)
-    | EditAsset AssetSource Int (List AssetChange)
+    | EditAsset InputMode AssetSource Int (List AssetChange)
 
-type BucketMode
-    = BucketNormal
+type InputMode
+    = NormalMode
+    | InsertMode
 
 type AssetChange
     = AddToAlbum ImmichAlbum
@@ -63,13 +65,29 @@ type AssetChange
     | Delete
     | Favourite
 
-defaultAssetKeys : Dict String AssetChange
-defaultAssetKeys =
-    Dict.fromList
-        [ ( "d", Delete )
-        , ( "f", Favourite )
-        ]
+type TextInputUpdate
+    = TextInputAddition String
+    | TextInputBackspace
 
+type UserActionGeneral
+    = ChangeUserMode UserMode
+    | ReloadData
+    | UnknownAction
+
+type UserActionSearchMode
+    = TextInputUpdate TextInputUpdate
+    | UserActionGeneralSearch UserActionGeneral
+
+type UserActionAlbumSelectMode
+    = TextSelectInputUpdate TextInputUpdate
+    | SelectAlbumIfMatching
+    | UserActionGeneralAlbumSelect UserActionGeneral
+
+type UserActionEditMode
+    = ChangeInputMode InputMode
+    | AddToAssetChangeList AssetChange
+    | ChangeImageIndex Int
+    | UserActionGeneralEdit UserActionGeneral
 
 init : Flags -> ( Model, Cmd Msg )
 init flags =
@@ -103,9 +121,8 @@ init flags =
     ( { count = 7
       , key = ""
       , imagePrepend = flags.imagePrepend
-      , userMode = Normal
+      , userMode = MainMenu
       , assetSelectMode = NoAssets
-      , bucketMode = BucketNormal
       , test = flags.test
       -- Immich fields
       , images = testImages
@@ -160,22 +177,6 @@ viewImage imagePrepend index images =
             div [] [ text "No Image" ]
 
 
-view : Model -> Html Msg
-view model =
-    case model.userMode of
-        Normal ->
-            div [] [ text "Select Asset Source" ]
-        SearchAssetInput searchString ->
-            div []
-                [ text "Input Search String"
-                , div [] [ text searchString ]
-                ]
-        SelectAlbumInput searchString matchingAlbums ->
-            viewSelectAlbum searchString matchingAlbums
-        EditAsset _ index pendingChanges ->
-            viewEditAsset model.test model.imagePrepend model.count model.key model.images index pendingChanges
-
-
 viewEditAsset : Int -> String -> Int -> String -> Array ImageWithMetadata -> Int -> List AssetChange -> Html Msg
 viewEditAsset test imagePrepend count key images index pendingChanges =
     div [ class "text-center" ]
@@ -206,6 +207,21 @@ viewSelectAlbum searchString matchingAlbums =
             ]
         ]
 
+view : Model -> Html Msg
+view model =
+    case model.userMode of
+        MainMenu ->
+            div [] [ text "Select Asset Source" ]
+        SearchAssetInput searchString ->
+            div []
+                [ text "Input Search String"
+                , div [] [ text searchString ]
+                ]
+        SelectAlbumInput searchString matchingAlbums ->
+            viewSelectAlbum searchString matchingAlbums
+        EditAsset _ _ index pendingChanges ->
+            viewEditAsset model.test model.imagePrepend model.count model.key model.images index pendingChanges
+
 
 
 -- UPDATE --
@@ -233,111 +249,154 @@ update msg model =
         Increment ->
             ( { model | count = model.count + 1 }, Cmd.none )
         KeyPress key ->
-            case model.userMode of
-                Normal ->
-                    handleKeyInNormal key model
-                SearchAssetInput searchString ->
-                    handleKeyInSearchAsset key model searchString
-                SelectAlbumInput searchString matchingAlbums ->
-                    handleKeyInSelectAlbum key model searchString matchingAlbums
-                EditAsset assetSource index pendingChanges ->
-                    handleKeyInEditAsset key model assetSource index pendingChanges
+            handleUserInput model key
 
-handleKeyInNormal : String -> Model -> ( Model, Cmd Msg )
-handleKeyInNormal key model =
-    if key == "u" then
-        ( { model | userMode = EditAsset Uncategorised 0 [] }, Cmd.none )
-
-    else if key == "a" then
-        ( { model | userMode = SelectAlbumInput "" (getMatchingAlbumsOrdered "" model.albums) }, Cmd.none )
-
-    else if key == "s" || key == "/" then
-        ( { model | userMode = SearchAssetInput "" }, Cmd.none )
-
-    else
-        ( model, Cmd.none )
-
-handleKeyInSearchAsset : String -> Model -> String -> ( Model, Cmd Msg )
-handleKeyInSearchAsset key model searchString =
-    if isSupportedSearchLetter key then
-        let
-            newSearchString =
-                searchString ++ key
-        in
-        ( { model | userMode = SearchAssetInput newSearchString }, Cmd.none )
-    else
-        case key of
-            "Escape" ->
-                ( { model | userMode = Normal }, Cmd.none )
-
-            "Backspace" ->
-                let
-                    newSearchString =
-                        String.slice 0 (String.length searchString - 1) searchString
-                in
-                ( { model | userMode = SearchAssetInput newSearchString }, Cmd.none )
-
-            "Enter" ->
-                ( { model | userMode = EditAsset (Search searchString) 0 [] }, Cmd.none )
-            _ ->
-                ( model, Cmd.none )
-
-handleKeyInSelectAlbum : String -> Model -> String -> List ImmichAlbum -> ( Model, Cmd Msg )
-handleKeyInSelectAlbum key model searchString matchingAlbums =
-    if isSupportedSearchLetter key then
-        let
-            newSearchString =
-                searchString ++ key
-        in
-        ( { model | userMode = SelectAlbumInput newSearchString (getMatchingAlbumsOrdered newSearchString model.albums) }, Cmd.none )
-    else
-        case key of
-            "Escape" ->
-                ( { model | userMode = Normal }, Cmd.none )
-
-            "Backspace" ->
-                let
-                    newSearchString =
-                        String.slice 0 (String.length searchString - 1) searchString
-                in
-                ( { model | userMode = SelectAlbumInput newSearchString (getMatchingAlbumsOrdered newSearchString model.albums) }, Cmd.none )
-
-            "Enter" ->
-                case matchingAlbums of
-                    [] ->
-                        ( model, Cmd.none )
-                    [ album ] ->
-                        ( { model | userMode = EditAsset (Album album) 0 [] }, Cmd.none )
-                    _ ->
-                        ( model, Cmd.none )
-            _ ->
-                ( model, Cmd.none )
-
-handleKeyInEditAsset : String -> Model -> AssetSource -> Int -> List AssetChange -> ( Model, Cmd Msg )
-handleKeyInEditAsset key model assetSource index pendingChanges =
-    case key of
-        "ArrowLeft" ->
+handleUserInput : Model -> String -> ( Model, Cmd Msg )
+handleUserInput model key =
+    case model.userMode of
+        MainMenu ->
             let
-                newIndex =
-                    loopImageIndexOverArray index -1 (Array.length model.images)
+                generalAction =
+                    case key of
+                        "u" ->
+                            ChangeUserMode (EditAsset NormalMode Uncategorised 0 [])
+                        "a" ->
+                            ChangeUserMode (SelectAlbumInput "" (getMatchingAlbumsOrdered "" model.albums))
+                        "s" ->
+                            ChangeUserMode (SearchAssetInput "")
+                        _ ->
+                            UnknownAction
             in
-            ( { model | userMode = EditAsset assetSource newIndex pendingChanges }, Cmd.none )
-
-        "ArrowRight" ->
+            handleGeneralActions model generalAction
+        SearchAssetInput searchString ->
             let
-                newIndex =
-                    loopImageIndexOverArray index 1 (Array.length model.images)
+                isTextAddition =
+                    isSupportedSearchLetter key
+                userAction =
+                    case ( isTextAddition, key ) of
+                        ( True, _ ) ->
+                            TextInputUpdate (TextInputAddition key)
+                        ( False, "Backspace" ) ->
+                            TextInputUpdate TextInputBackspace
+                        ( False, "Escape" ) ->
+                            UserActionGeneralSearch (ChangeUserMode MainMenu)
+                        ( False, "Enter" ) ->
+                            UserActionGeneralSearch (ChangeUserMode (EditAsset NormalMode (Search searchString) 0 []))
+                        _ ->
+                            UserActionGeneralSearch UnknownAction
             in
-            ( { model | userMode = EditAsset assetSource newIndex pendingChanges }, Cmd.none )
+            case userAction of
+                TextInputUpdate (TextInputAddition newKey) ->
+                    let
+                        newSearchString =
+                            searchString ++ newKey
+                    in
+                    ( { model | userMode = SearchAssetInput newSearchString }, Cmd.none )
+                TextInputUpdate TextInputBackspace ->
+                    let
+                        newSearchString =
+                            String.slice 0 (String.length searchString - 1) searchString
+                    in
+                    ( { model | userMode = SearchAssetInput newSearchString }, Cmd.none )
+                UserActionGeneralSearch action ->
+                    handleGeneralActions model action
+        SelectAlbumInput searchString matchingAlbums ->
+            let
+                isTextAddition =
+                    isSupportedSearchLetter key
+                userAction =
+                    case ( isTextAddition, key ) of
+                        ( True, _ ) ->
+                            TextSelectInputUpdate (TextInputAddition key)
+                        ( False, "Backspace" ) ->
+                            TextSelectInputUpdate TextInputBackspace
+                        ( False, "Escape" ) ->
+                            UserActionGeneralAlbumSelect (ChangeUserMode MainMenu)
+                        ( False, "Enter" ) ->
+                            SelectAlbumIfMatching
+                        _ ->
+                            UserActionGeneralAlbumSelect UnknownAction
+            in
+            case userAction of
+                TextSelectInputUpdate (TextInputAddition newKey) ->
+                    let
+                        newSearchString =
+                            searchString ++ newKey
+                    in
+                    ( { model | userMode = SelectAlbumInput newSearchString (getMatchingAlbumsOrdered newSearchString model.albums) }, Cmd.none )
+                TextSelectInputUpdate TextInputBackspace ->
+                    let
+                        newSearchString =
+                            String.slice 0 (String.length searchString - 1) searchString
+                    in
+                    ( { model | userMode = SelectAlbumInput newSearchString (getMatchingAlbumsOrdered newSearchString model.albums) }, Cmd.none )
+                SelectAlbumIfMatching ->
+                    case matchingAlbums of
+                        [] ->
+                            ( model, Cmd.none )
+                        [ album ] ->
+                            ( { model | userMode = EditAsset NormalMode (Album album) 0 [] }, Cmd.none )
+                        _ ->
+                            ( model, Cmd.none )
+                UserActionGeneralAlbumSelect action ->
+                    handleGeneralActions model action
+        EditAsset inputMode assetSource index pendingChanges ->
+            let
+                userAction =
+                    if inputMode == InsertMode then
+                        case key of
+                            "Escape" ->
+                                ChangeInputMode NormalMode
+                            -- TODO: Handle input here
+                            _ ->
+                                UserActionGeneralEdit UnknownAction
+                    else
+                        case key of
+                            "ArrowLeft" ->
+                                ChangeImageIndex -1
+                            "ArrowRight" ->
+                                ChangeImageIndex 1
+                            "Escape" ->
+                                UserActionGeneralEdit (ChangeUserMode MainMenu)
+                            "i" ->
+                                ChangeInputMode InsertMode
+                            "d" ->
+                                AddToAssetChangeList Delete
+                            "f" ->
+                                AddToAssetChangeList Favourite
+                            _ ->
+                                UserActionGeneralEdit UnknownAction
 
-        "Escape" ->
-            ( { model | userMode = Normal }, Cmd.none )
+                -- , ( "r", ReloadData )
+                -- , ( "i", ChangeInputMode InsertMode )
+                -- , ( "Escape", ChangeUserMode MainMenu )
+            in
+            case userAction of
+                AddToAssetChangeList change ->
+                    ( { model | userMode = EditAsset inputMode assetSource index (change :: pendingChanges) }, Cmd.none )
+                ChangeInputMode newInputMode ->
+                    ( { model | userMode = EditAsset newInputMode assetSource index pendingChanges }, Cmd.none )
+                ChangeImageIndex indexChange ->
+                    let
+                        newIndex =
+                            loopImageIndexOverArray index indexChange (Array.length model.images)
+                    in
+                    ( { model | userMode = EditAsset inputMode assetSource newIndex pendingChanges }, Cmd.none )
 
-        " " ->
-            ( { model | key = "" }, Cmd.none )
+                UserActionGeneralEdit generalAction ->
+                    handleGeneralActions model generalAction
 
-        _ ->
-            ( { model | key = key }, Cmd.none )
+handleGeneralActions : Model -> UserActionGeneral -> ( Model, Cmd Msg )
+handleGeneralActions model action =
+    case action of
+        ChangeUserMode newMode ->
+            ( { model | userMode = newMode }, Cmd.none )
+
+        ReloadData ->
+            ( { model | imagesLoadState = ImmichLoading, albumsLoadState = ImmichLoading }, Cmd.none )
+
+        UnknownAction ->
+            ( model, Cmd.none )
 
 
 getMatchingAlbumsOrdered : String -> Array ImmichAlbum -> List ImmichAlbum
