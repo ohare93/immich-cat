@@ -117,6 +117,7 @@ init flags =
                 [ ImmichAlbum "a" "J" 200 Array.empty "000001" (Date.fromOrdinalDate 2025 1)
                 , ImmichAlbum "b" "ToBeSorted" 3000 Array.empty "000002" (Date.fromOrdinalDate 2025 1)
                 , ImmichAlbum "c" "The World" 50 Array.empty "000003" (Date.fromOrdinalDate 2025 1)
+                , ImmichAlbum "c" "The Other One" 75 Array.empty "000034" (Date.fromOrdinalDate 2025 1)
                 , ImmichAlbum "d" "Comics" 50 Array.empty "000004" (Date.fromOrdinalDate 2025 1)
                 ]
     in
@@ -444,17 +445,39 @@ handleGeneralActions model action =
 getMatchingAlbumsOrdered : String -> Array ImmichAlbum -> List ImmichAlbum
 getMatchingAlbumsOrdered searchString albums =
     let
-        regex =
-            Regex.fromStringWith { caseInsensitive = True, multiline = False } (".*" ++ searchString ++ ".*") |> Maybe.withDefault Regex.never
-
-        matchingAlbums =
-            if searchString == "" then
-                Array.toList albums
-            else
-                Array.toList albums
-                    |> List.filter (\album -> Regex.contains regex album.albumName)
+        albumsList =
+            Array.toList albums
+        albumsWithScores =
+            List.map (\a -> { album = a, score = shittyFuzzyAlgorithmTest searchString a.albumName }) albumsList
     in
-    List.sortBy (\album -> album.assetCount) matchingAlbums
+    if searchString == "" then
+        albumsList
+    else
+        albumsWithScores
+            |> List.filter (\a -> a.score > 0)
+            |> List.sortBy (\a -> ( a.score, a.album.assetCount ))
+            |> List.reverse
+            |> List.map .album
+
+regexFromString : String -> Regex
+regexFromString searchString =
+    Regex.fromStringWith { caseInsensitive = True, multiline = False } searchString |> Maybe.withDefault Regex.never
+
+shittyFuzzyAlgorithmTest : String -> String -> Int
+shittyFuzzyAlgorithmTest searchString textToBeSearched =
+    let
+        patternFzfFuzzy =
+            List.foldr (++) ".*" <| List.map (\a -> String.fromChar a ++ ".*") <| String.toList searchString
+        regexes =
+            [ { score = 10, regex = regexFromString ("$" ++ searchString ++ ".*") }
+            , { score = 7, regex = regexFromString ("[^a-z]" ++ searchString ++ ".*") }
+            , { score = 5, regex = regexFromString patternFzfFuzzy }
+            ]
+    in
+    if searchString == "" then
+        0
+    else
+        List.filter (\a -> Regex.contains a.regex textToBeSearched) regexes |> List.map .score |> List.foldr (+) 0
 
 
 -- SUBSCRIPTIONS --
