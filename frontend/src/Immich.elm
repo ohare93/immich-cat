@@ -13,6 +13,17 @@ type ImmichLoadState
     | ImmichLoadSuccess
     | ImmichLoadError Http.Error
 
+type alias ImmichApiPaths =
+    { getAsset : ImmichAssetId -> String
+    , apiKey : String
+    }
+
+getImmichApiPaths : String -> String -> ImmichApiPaths
+getImmichApiPaths immichUrl immichApiKey =
+    { getAsset = \id -> immichUrl ++ "/assets/" ++ id ++ "/original"
+    , apiKey = immichApiKey
+    }
+
 
 type alias ImmichAssetId =
     String

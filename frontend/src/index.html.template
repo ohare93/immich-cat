@@ -1,23 +1,132 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <meta charset="UTF-8">
-  <title>Main</title>
-  <script src="../dist/main.js"></script>
-</head>
+  <head>
+    <meta charset="UTF-8">
+    <title>Main</title>
+    <script src="../dist/main.js"></script>
+    <style>
+      .center {
+            text-align: center;
+	    width: auto;
+            max-height: 100vh;
+	    max-width: 100%;
+	    white-space: nowrap;
+        }
 
-<body>
-  <div id="myapp"></div>
-  <script>
-  var app = Elm.Main.init({
-    node: document.getElementById('myapp'),
-    flags: {
-	test: Date.now(),
-        imagePrepend: "${BACKEND_URL}",
-	immichApiKey: "${IMMICH_API_KEY}",
-	immichApiUrl: "${IMMICH_URL}",
-    }
-  });
-  </script>
-</body>
+        .center img {
+	    max-width: 100%; /* Restrict the image width to the width of its container */
+	    max-height: 100%; /* Restrict the image height to maintain aspect ratio */
+	    display: block; /* Ensure the image behaves as a block element */
+	    margin: 0 auto; /* Center the image horizontally within the container */
+        }
+    </style>
+  </head>
+  <body>
+    <div id="myapp"></div>
+    <script type="text/javascript">
+      function fetchWithAuthentication(url, authToken) {
+	const headers = new Headers();
+	headers.set('x-api-key', authToken);
+	return fetch(url, { headers });
+      }
+
+      async function getProtectedAssetUrl(imageUrl, authToken) {
+	// Fetch the image.
+	const response = await fetchWithAuthentication(
+	  imageUrl, authToken
+	);
+	
+	// Create an object URL from the data.
+	const blob = await response.blob();
+	const objectUrl = URL.createObjectURL(blob);
+
+	console.log("Blob made: " + objectUrl)
+
+	// Update the source of the image.
+	//const imageElement = getElementById(imageId);
+	//imageElement.src = objectUrl;
+
+	return objectUrl;
+      }
+
+      customElements.define('image-from-api',
+	class extends HTMLElement {
+	    constructor() { 
+	      super(); 
+	      //this.attachShadow({mode: 'open'});
+	    }
+	    async connectedCallback() {
+	      this.assetUrl = this.getAttribute('asset-url');
+	      this.apiKey = this.getAttribute('api-key');
+
+	      this.assetBlob = await getProtectedAssetUrl(this.assetUrl, this.apiKey);
+	      console.log("Connected. " + this.assetUrl);
+	      this.render(); 
+	    }
+	    async attributeChangedCallback() {
+	      console.log("Attribute changed. " + this.assetUrl);
+	      const newAssetUrl = this.getAttribute('asset-url');
+	      if (this.assetUrl !== newAssetUrl) {
+		this.assetUrl = newAssetUrl;
+		this.assetBlob = await getProtectedAssetUrl(this.assetUrl, this.apiKey);
+		this.render();
+	      }
+	    }
+	    static get observedAttributes() { return ['asset-url', 'api-key']; }
+
+	    render()
+	    {
+		this.innerHTML = `
+		    <img src="${this.assetBlob}" alt="Asset" />
+		`;
+	    }
+	}
+      );
+
+      customElements.define('video-from-api',
+	class extends HTMLElement {
+	    constructor() { 
+	      super(); 
+	      //this.attachShadow({mode: 'open'});
+	    }
+	    async connectedCallback() {
+	      this.assetUrl = this.getAttribute('asset-url');
+	      this.apiKey = this.getAttribute('api-key');
+
+	      this.assetBlob = await getProtectedAssetUrl(this.assetUrl, this.apiKey);
+	      console.log("Connected. " + this.assetUrl);
+	      this.render(); 
+	    }
+	    async attributeChangedCallback() {
+	      console.log("Attribute changed. " + this.assetUrl);
+	      const newAssetUrl = this.getAttribute('asset-url');
+	      if (this.assetUrl !== newAssetUrl) {
+		this.assetUrl = newAssetUrl;
+		this.assetBlob = await getProtectedAssetUrl(this.assetUrl, this.apiKey);
+		this.render();
+	      }
+	      this.render();
+	    }
+	    static get observedAttributes() { return ['asset-url', 'api-key']; }
+
+	    render()
+	    {
+	      this.innerHTML = `
+		<video src="${this.assetBlob}" controls="controls" autoplay=true loop=true />
+	      `;
+	    }
+	}
+      );
+
+      var app = Elm.Main.init({
+	node: document.getElementById('myapp'),
+	flags: {
+	    test: Date.now(),
+	    imagePrepend: "${BACKEND_URL}",
+	    immichApiKey: "${IMMICH_API_KEY}",
+	    immichApiUrl: "${IMMICH_URL}",
+	}
+      });
+    </script>
+  </body>
 </html>

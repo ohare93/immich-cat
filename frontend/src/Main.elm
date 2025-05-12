@@ -9,10 +9,10 @@ import Element exposing (Element, alignBottom, alignRight, alignTop, centerX, ce
 import Element.Background as Background
 import Element.Font as Font
 import Element.Input exposing (button)
-import Helpers exposing (regexFromString)
-import Html exposing (Html)
+import Helpers exposing (regexFromString, send)
+import Html exposing (Html, node)
 import Html.Attributes
-import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichAsset, ImmichAssetId, ImmichLoadState(..), getAllAlbums)
+import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..), getAllAlbums, getImmichApiPaths)
 import Json.Decode as Decode
 import Regex
 
@@ -29,7 +29,6 @@ type alias Flags =
     , immichApiUrl : String
     }
 
-
 type alias Model =
     { key : String
     , imagePrepend : String
@@ -37,6 +36,7 @@ type alias Model =
     , userMode : UserMode
     , test : Int
     , imageIndex : ImageIndex
+    , debugging : Bool
     -- Immich fields
     , images : List ImmichAsset
     , imagesLoadState : ImmichLoadState
@@ -44,6 +44,7 @@ type alias Model =
     , albumsLoadState : ImmichLoadState
     , apiUrl : String
     , apiKey : String
+    , immichApiPaths : ImmichApiPaths
     }
 
 type AssetSource
@@ -139,39 +140,41 @@ flipPropertyChange propertyChange =
 
 init : Flags -> ( Model, Cmd Msg )
 init flags =
-    let
-        testImages =
-            [ ImmichAsset "0001" "images/imafight.jpg" "Imafight" "jpg" False False
-            , ImmichAsset "0002" "images/dcemployees.jpg" "dcemployees" "jpg" False False
-            , ImmichAsset "0003" "images/jordan.jpg" "Jordan" "jpg" False False
-            , ImmichAsset "0004" "images/router-password.mp4" "router password" "mp4" False False
-            ]
-
-        testAlbums =
-            [ ImmichAlbum "a" "J" 200 [] (Date.fromOrdinalDate 2025 1)
-            , ImmichAlbum "b" "ToBeSorted" 3000 [] (Date.fromOrdinalDate 2025 1)
-            , ImmichAlbum "c" "The World" 50 [] (Date.fromOrdinalDate 2025 1)
-            , ImmichAlbum "d" "The Other One" 75 [] (Date.fromOrdinalDate 2025 1)
-            , ImmichAlbum "e" "Comics" 50 [] (Date.fromOrdinalDate 2025 1)
-            ]
-    in
     ( { key = ""
       , imagePrepend = flags.imagePrepend
       , userMode = MainMenu
       , assetSelectMode = NoAssets
       , test = flags.test
       , imageIndex = 0
+      , debugging = True
       -- Immich fields
-      , images = testImages
+      , images = []
       , imagesLoadState = ImmichLoading
-      , albums = testAlbums
+      , albums = []
       , albumsLoadState = ImmichLoading
       , apiUrl = flags.immichApiUrl
       , apiKey = flags.immichApiKey
+      , immichApiPaths = getImmichApiPaths flags.immichApiUrl flags.immichApiKey
       }
       -- , Cmd.none
     , getAllAlbums flags.immichApiUrl flags.immichApiKey |> Cmd.map ImmichMsg
     )
+
+getDebugAssets : ( List ImmichAsset, List ImmichAlbum )
+getDebugAssets =
+    ( [ ImmichAsset "0001" "images/imafight.jpg" "Imafight" "image/jpg" False False
+      , ImmichAsset "0002" "images/dcemployees.jpg" "dcemployees" "image/jpg" False False
+      , ImmichAsset "0003" "images/jordan.jpg" "Jordan" "image/jpg" False False
+      , ImmichAsset "0004" "images/router-password.mp4" "router password" "video/mp4" False False
+      ]
+    , [ ImmichAlbum "a" "J" 200 [] (Date.fromOrdinalDate 2025 1)
+      , ImmichAlbum "b" "ToBeSorted" 3000 [] (Date.fromOrdinalDate 2025 1)
+      , ImmichAlbum "c" "The World" 50 [] (Date.fromOrdinalDate 2025 1)
+      , ImmichAlbum "d" "The Other One" 75 [] (Date.fromOrdinalDate 2025 1)
+      , ImmichAlbum "e" "Comics" 50 [] (Date.fromOrdinalDate 2025 1)
+      ]
+    )
+
 
 usefulColours : String -> Element.Color
 usefulColours name =
@@ -184,6 +187,8 @@ usefulColours name =
             Element.fromRgb { red = 0, green = 0, blue = 1, alpha = 1 }
         "grey" ->
             Element.fromRgb { red = 0.8, green = 0.8, blue = 0.8, alpha = 0.6 }
+        "darkgrey" ->
+            Element.fromRgb { red = 0.2, green = 0.2, blue = 0.2, alpha = 0.4 }
         "black" ->
             Element.fromRgb { red = 0, green = 0, blue = 0, alpha = 1 }
         _ ->
@@ -208,68 +213,86 @@ usefulColours name =
 --         ]
 
 
-viewAsset : String -> ImmichAsset -> Element msg
-viewAsset assetPrepend asset =
+viewAsset : ImmichApiPaths -> ImmichAsset -> Element msg
+viewAsset apiPaths asset =
     if asset.path == "" then
         el [] (text "No Asset")
 
+    else if assetIsImage asset then
+        viewImage asset apiPaths
+    else if assetIsVideo asset then
+        viewVideo asset apiPaths
+
     else
-        let
-            fullAssetPath =
-                assetPrepend ++ asset.path
-        in
-        if assetIsImage asset then
-            viewImage asset fullAssetPath
-
-        else if assetIsVideo asset then
-            viewVideo
-                [ Background.color (Element.rgb 0 0 0) ]
-                { poster = ""
-                , source = fullAssetPath
-                }
-
-        else
-            text (String.join " " [ "Error with", asset.title, "Unknown mimetype:", asset.mimeType ])
+        text (String.join " " [ "Error with", asset.title, "Unknown mimetype:", asset.mimeType ])
 
 assetIsImage : ImmichAsset -> Bool
 assetIsImage asset =
-    List.member asset.mimeType [ "image/jpg", "image/png", "image/gif" ]
+    List.member asset.mimeType [ "image/jpg", "image/jpeg", "image/png", "image/gif" ]
 
-viewImage : ImmichAsset -> String -> Element msg
-viewImage asset path =
+viewImage : ImmichAsset -> ImmichApiPaths -> Element msg
+viewImage asset apiPaths =
     column [ width fill, height fill ]
-        [ Element.image [ centerY, centerX ] { src = path, description = "" }
-        , el [ centerX ] (text asset.title)
+        [ -- Element.image [ centerY, centerX ] { src = path, description = "" }
+          el [ centerX ] <|
+            Element.html
+                (node "image-from-api"
+                    [ Html.Attributes.attribute "asset-url" (apiPaths.getAsset asset.id)
+                    , Html.Attributes.attribute "api-key" apiPaths.apiKey
+                    , Html.Attributes.class "center"
+                    ]
+                    []
+                )
+
+        --(text asset.title)
         ]
 
 assetIsVideo : ImmichAsset -> Bool
 assetIsVideo asset =
-    List.member asset.mimeType [ "video/mp4" ]
+    List.member asset.mimeType [ "video/mp4", "video/quicktime" ]
 
-viewVideo : List (Element.Attribute msg) -> { poster : String, source : String } -> Element msg
-viewVideo attrs { poster, source } =
-    el attrs <|
-        Element.html <|
-            Html.video
-                [ Html.Attributes.attribute "controls" "controls"
-                , Html.Attributes.preload "none"
-                -- , Html.Attributes.poster poster
-                , Html.Attributes.autoplay True
-                , Html.Attributes.loop True
-                ]
-                [ Html.source
-                    [ Html.Attributes.id "mp4"
-                    , Html.Attributes.src source
-                    , Html.Attributes.type_ "video/mp4"
+viewVideo : ImmichAsset -> ImmichApiPaths -> Element msg
+viewVideo asset apiPaths =
+    column [ width fill, height fill ]
+        [ -- Element.image [ centerY, centerX ] { src = path, description = "" }
+          el [ centerX ] <|
+            Element.html
+                (node "video-from-api"
+                    [ Html.Attributes.attribute "asset-url" (apiPaths.getAsset asset.id)
+                    , Html.Attributes.attribute "api-key" apiPaths.apiKey
+                    , Html.Attributes.class "center"
                     ]
                     []
-                ]
+                )
 
-viewEditAsset : String -> AssetWithActions -> Element Msg
-viewEditAsset assetPathPrepend currentAsset =
+        --(text asset.title)
+        ]
+
+
+-- viewVideo : List (Element.Attribute msg) -> { poster : String, source : String } -> Element msg
+-- viewVideo attrs { poster, source } =
+--     el attrs <|
+--         Element.html <|
+--             Html.video
+--                 [ Html.Attributes.attribute "controls" "controls"
+--                 , Html.Attributes.preload "none"
+--                 -- , Html.Attributes.poster poster
+--                 , Html.Attributes.autoplay True
+--                 , Html.Attributes.loop True
+--                 ]
+--                 [ Html.source
+--                     [ Html.Attributes.id "mp4"
+--                     , Html.Attributes.src source
+--                     , Html.Attributes.type_ "video/mp4"
+--                     ]
+--                     []
+--                 ]
+
+viewEditAsset : ImmichApiPaths -> AssetWithActions -> Element Msg
+viewEditAsset apiPaths currentAsset =
     column [ width fill, height fill ]
         [ el [ alignTop ] (text "Top Bar")
-        , viewAsset assetPathPrepend currentAsset.asset
+        , viewAsset apiPaths currentAsset.asset
         , column [ alignBottom ] []
         -- [ text (String.fromInt index ++ "  ")
         -- ]
@@ -278,7 +301,7 @@ viewEditAsset assetPathPrepend currentAsset =
 
 view : Model -> Html Msg
 view model =
-    Element.layout [ width fill, height fill ] <|
+    Element.layout [ width fill, height fill, Background.color <| usefulColours "darkgrey" ] <|
         viewWithInputBottomBar model.userMode <|
             viewMainWindow model
 
@@ -315,7 +338,7 @@ viewMainWindow model =
         LoadingAssets ->
             text "Loading Assets"
         EditAsset _ asset search ->
-            viewWithSidebar (viewSidebar asset search model.albums) (viewEditAsset model.imagePrepend asset)
+            viewWithSidebar (viewSidebar asset search model.albums) (viewEditAsset model.immichApiPaths asset)
 
 viewInputMode : UserMode -> Element msg
 viewInputMode userMode =
@@ -348,7 +371,7 @@ viewWithSidebar sidebarView viewToBeNextToSidebar =
 
 viewSidebar : AssetWithActions -> AlbumSearch -> List ImmichAlbum -> Element Msg
 viewSidebar asset search albums =
-    column [ height fill ]
+    column [ alignTop ]
         [ el [ alignTop, height <| fillPortion 1 ] <| text "Asset Changes"
         , row [ alignTop, height <| fillPortion 2 ]
             [ case asset.isFavourite of
@@ -385,7 +408,8 @@ viewSidebarAlbums search albums =
                     ]
             )
          <|
-            filterToOnlySearchedForAlbums search albums
+            List.take 40 <|
+                filterToOnlySearchedForAlbums search albums
         )
 
 viewSidebarAlbumsForCurrentAsset : AssetWithActions -> AlbumSearch -> List ImmichAlbum -> Element Msg
@@ -413,7 +437,8 @@ viewSidebarAlbumsForCurrentAsset asset search albums =
                     ]
             )
          <|
-            filterToOnlySearchedForAlbums search albums
+            List.take 40 <|
+                filterToOnlySearchedForAlbums search albums
         )
 
 filterToOnlySearchedForAlbums : AlbumSearch -> List ImmichAlbum -> List ImmichAlbum
@@ -455,7 +480,7 @@ update msg model =
             ( { model | albums = albums, albumsLoadState = ImmichLoadSuccess }, Cmd.none )
 
         ImmichMsg (Immich.AlbumsFetched (Err error)) ->
-            ( { model | albums = [], albumsLoadState = ImmichLoadError error }, Cmd.none )
+            ( { model | albumsLoadState = ImmichLoadError error }, Cmd.none )
 
         ImmichMsg (Immich.RandomImagesFetched (Ok assets)) ->
             let
@@ -475,7 +500,19 @@ update msg model =
             ( { model | userMode = newUserMode, images = assets, imagesLoadState = ImmichLoadSuccess }, Cmd.none )
 
         ImmichMsg (Immich.RandomImagesFetched (Err error)) ->
-            ( { model | images = [], imagesLoadState = ImmichLoadError error }, Cmd.none )
+            if model.debugging then
+                let
+                    ( debugAssets, debugAlbums ) =
+                        getDebugAssets
+                in
+                ( model
+                , Cmd.batch
+                    [ send <| ImmichMsg (Immich.RandomImagesFetched (Ok debugAssets))
+                    , send <| ImmichMsg (Immich.AlbumsFetched (Ok debugAlbums))
+                    ]
+                )
+            else
+                ( { model | imagesLoadState = ImmichLoadError error }, Cmd.none )
 
 handleUserInput : Model -> String -> ( Model, Cmd Msg )
 handleUserInput model key =
