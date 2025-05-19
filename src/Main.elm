@@ -12,7 +12,8 @@ import Element.Input exposing (button)
 import Helpers exposing (regexFromString, send)
 import Html exposing (Html, node)
 import Html.Attributes
-import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..), getAllAlbums, getImmichApiPaths)
+import Http
+import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..), errorToString, getAllAlbums, getImmichApiPaths)
 import Json.Decode as Decode
 import Regex
 
@@ -32,15 +33,16 @@ type alias Flags =
 type alias Model =
     { key : String
     , imagePrepend : String
-    , assetSelectMode : AssetSource
+    , currentAssetsSource : AssetSource
     , userMode : UserMode
     , test : Int
     , imageIndex : ImageIndex
     , debugging : Bool
     -- Immich fields
-    , images : List ImmichAsset
+    , currentAssets : List ImmichAssetId
+    , knownAssets : Dict ImmichAssetId ImmichAsset
     , imagesLoadState : ImmichLoadState
-    , albums : List ImmichAlbum
+    , knownAlbums : Dict ImmichAlbumId ImmichAlbum
     , albumsLoadState : ImmichLoadState
     , apiUrl : String
     , apiKey : String
@@ -53,12 +55,23 @@ type AssetSource
     | Search String
     | Album ImmichAlbum
 
+type alias SourceLoadState =
+    { fetchedAssetList : Maybe Bool
+    , fetchedAssetMembership : Maybe Bool
+    }
+
+type AssetSourceUpdate
+    = FetchedAssetList
+
+
+
+-- | FetchedAlbums
 
 type UserMode
     = MainMenu
     | SearchAssetInput SearchString
     | SelectAlbumInput AlbumSearch
-    | LoadingAssets
+    | LoadingAssets SourceLoadState
     | EditAsset InputMode AssetWithActions AlbumSearch
 
 type alias SearchString =
@@ -71,7 +84,7 @@ type alias AssetWithActions =
     { asset : ImmichAsset
     , isFavourite : PropertyChange
     , isArchived : PropertyChange
-    , albumMemership : Dict ImmichAssetId PropertyChange
+    , albumMembership : Dict ImmichAlbumId PropertyChange
     }
 
 type alias AlbumSearch =
@@ -94,6 +107,7 @@ type TextInputUpdate
 
 type UserActionGeneral
     = ChangeUserModeToEditAsset
+    | ChangeUserModeToLoading AssetSource
     | ChangeUserModeToMainMenu
     | ChangeUserModeToSearchAsset
     | ChangeUserModeToSelectAlbum
@@ -143,14 +157,15 @@ init flags =
     ( { key = ""
       , imagePrepend = flags.imagePrepend
       , userMode = MainMenu
-      , assetSelectMode = NoAssets
+      , currentAssetsSource = NoAssets
       , test = flags.test
       , imageIndex = 0
-      , debugging = True
+      , debugging = False
       -- Immich fields
-      , images = []
+      , currentAssets = []
+      , knownAssets = Dict.empty
       , imagesLoadState = ImmichLoading
-      , albums = []
+      , knownAlbums = Dict.empty
       , albumsLoadState = ImmichLoading
       , apiUrl = flags.immichApiUrl
       , apiKey = flags.immichApiKey
@@ -162,10 +177,10 @@ init flags =
 
 getDebugAssets : ( List ImmichAsset, List ImmichAlbum )
 getDebugAssets =
-    ( [ ImmichAsset "0001" "images/imafight.jpg" "Imafight" "image/jpg" False False
-      , ImmichAsset "0002" "images/dcemployees.jpg" "dcemployees" "image/jpg" False False
-      , ImmichAsset "0003" "images/jordan.jpg" "Jordan" "image/jpg" False False
-      , ImmichAsset "0004" "images/router-password.mp4" "router password" "video/mp4" False False
+    ( [ ImmichAsset "0001" "images/imafight.jpg" "Imafight" "image/jpg" False False []
+      , ImmichAsset "0002" "images/dcemployees.jpg" "dcemployees" "image/jpg" False False []
+      , ImmichAsset "0003" "images/jordan.jpg" "Jordan" "image/jpg" False False []
+      , ImmichAsset "0004" "images/router-password.mp4" "router password" "video/mp4" False False []
       ]
     , [ ImmichAlbum "a" "J" 200 [] (Date.fromOrdinalDate 2025 1)
       , ImmichAlbum "b" "ToBeSorted" 3000 [] (Date.fromOrdinalDate 2025 1)
@@ -237,7 +252,7 @@ viewImage asset apiPaths =
           el [ centerX ] <|
             Element.html
                 (node "image-from-api"
-                    [ Html.Attributes.attribute "asset-url" (apiPaths.getAsset asset.id)
+                    [ Html.Attributes.attribute "asset-url" (apiPaths.downloadAsset asset.id)
                     , Html.Attributes.attribute "api-key" apiPaths.apiKey
                     , Html.Attributes.class "center"
                     ]
@@ -258,7 +273,7 @@ viewVideo asset apiPaths =
           el [ centerX ] <|
             Element.html
                 (node "video-from-api"
-                    [ Html.Attributes.attribute "asset-url" (apiPaths.getAsset asset.id)
+                    [ Html.Attributes.attribute "asset-url" (apiPaths.downloadAsset asset.id)
                     , Html.Attributes.attribute "api-key" apiPaths.apiKey
                     , Html.Attributes.class "center"
                     ]
@@ -298,6 +313,20 @@ viewEditAsset apiPaths currentAsset =
         -- ]
         ]
 
+viewLoadingAssets : ImmichLoadState -> Element Msg
+viewLoadingAssets imagesLoadState =
+    case imagesLoadState of
+        ImmichLoading ->
+            text "Loading images"
+        ImmichLoadSuccess ->
+            text "Loaded. Should move states...."
+        ImmichLoadError error ->
+            let
+                errorMessage =
+                    Immich.errorToString error
+            in
+            text errorMessage
+
 
 view : Model -> Html Msg
 view model =
@@ -329,16 +358,16 @@ viewMainWindow model =
                 ]
         SelectAlbumInput search ->
             viewWithSidebar
-                (viewSidebarAlbums search model.albums)
+                (viewSidebarAlbums search model.knownAlbums)
                 (column []
                     [ text "Select Album"
                     , text search.searchString
                     ]
                 )
-        LoadingAssets ->
-            text "Loading Assets"
+        LoadingAssets _ ->
+            viewLoadingAssets model.imagesLoadState
         EditAsset _ asset search ->
-            viewWithSidebar (viewSidebar asset search model.albums) (viewEditAsset model.immichApiPaths asset)
+            viewWithSidebar (viewSidebar asset search model.knownAlbums) (viewEditAsset model.immichApiPaths asset)
 
 viewInputMode : UserMode -> Element msg
 viewInputMode userMode =
@@ -351,7 +380,7 @@ viewInputMode userMode =
                     InsertMode
                 SelectAlbumInput _ ->
                     InsertMode
-                LoadingAssets ->
+                LoadingAssets _ ->
                     NormalMode
                 EditAsset editInputMode _ _ ->
                     editInputMode
@@ -369,7 +398,7 @@ viewWithSidebar sidebarView viewToBeNextToSidebar =
         , el [ width <| fillPortion 1, height fill, alignRight ] <| sidebarView
         ]
 
-viewSidebar : AssetWithActions -> AlbumSearch -> List ImmichAlbum -> Element Msg
+viewSidebar : AssetWithActions -> AlbumSearch -> Dict ImmichAssetId ImmichAlbum -> Element Msg
 viewSidebar asset search albums =
     column [ alignTop ]
         [ el [ alignTop, height <| fillPortion 1 ] <| text "Asset Changes"
@@ -397,7 +426,7 @@ viewSidebar asset search albums =
         ]
 
 
-viewSidebarAlbums : AlbumSearch -> List ImmichAlbum -> Element Msg
+viewSidebarAlbums : AlbumSearch -> Dict ImmichAssetId ImmichAlbum -> Element Msg
 viewSidebarAlbums search albums =
     column [ height fill ]
         (List.map
@@ -409,17 +438,18 @@ viewSidebarAlbums search albums =
             )
          <|
             List.take 40 <|
-                filterToOnlySearchedForAlbums search albums
+                Dict.values <|
+                    filterToOnlySearchedForAlbums search albums
         )
 
-viewSidebarAlbumsForCurrentAsset : AssetWithActions -> AlbumSearch -> List ImmichAlbum -> Element Msg
+viewSidebarAlbumsForCurrentAsset : AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> Element Msg
 viewSidebarAlbumsForCurrentAsset asset search albums =
     column [ height fill ]
         (List.map
             (\album ->
                 let
                     assetInAlbum =
-                        Maybe.withDefault RemainFalse <| Dict.get album.id asset.albumMemership
+                        Maybe.withDefault RemainFalse <| Dict.get album.id asset.albumMembership
                     attrs =
                         case assetInAlbum of
                             RemainTrue ->
@@ -438,15 +468,25 @@ viewSidebarAlbumsForCurrentAsset asset search albums =
             )
          <|
             List.take 40 <|
-                filterToOnlySearchedForAlbums search albums
+                Dict.values <|
+                    filterToOnlySearchedForAlbums search albums
         )
 
-filterToOnlySearchedForAlbums : AlbumSearch -> List ImmichAlbum -> List ImmichAlbum
+filterToOnlySearchedForAlbums : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> Dict ImmichAlbumId ImmichAlbum
 filterToOnlySearchedForAlbums search albums =
     if search.searchString == "" then
         albums
     else
-        List.filter (\album -> 0 < (Maybe.withDefault 0 <| Dict.get album.id search.albumScores)) albums
+        Dict.filter (\id _ -> shouldFilterAlbum search.albumScores id) albums
+
+shouldFilterAlbum : Dict ImmichAlbumId Int -> ImmichAlbumId -> Bool
+shouldFilterAlbum albumScores albumId =
+    case Dict.get albumId albumScores of
+        Just score ->
+            0 < score
+
+        Nothing ->
+            False
 
 
 -- UPDATE --
@@ -473,67 +513,136 @@ update msg model =
             ( model, Immich.getAllAlbums model.apiUrl model.apiKey |> Cmd.map ImmichMsg )
         KeyPress key ->
             handleUserInput model key
-        ImmichMsg Immich.StartLoading ->
-            ( { model | albumsLoadState = ImmichLoading, imagesLoadState = ImmichLoading }, getAllAlbums model.apiUrl model.apiKey |> Cmd.map ImmichMsg )
-
-        ImmichMsg (Immich.AlbumsFetched (Ok albums)) ->
-            ( { model | albums = albums, albumsLoadState = ImmichLoadSuccess }, Cmd.none )
-
-        ImmichMsg (Immich.AlbumsFetched (Err error)) ->
-            ( { model | albumsLoadState = ImmichLoadError error }, Cmd.none )
-
-        ImmichMsg (Immich.RandomImagesFetched (Ok assets)) ->
+        ImmichMsg imsg ->
             let
-                firstAsset =
-                    List.head assets
-                newUserMode =
-                    if model.userMode == LoadingAssets then
-                        case firstAsset of
-                            Just asset ->
-                                EditAsset NormalMode (getAssetWithActions asset) <| getAlbumSearch "" model.albums
-                            Nothing ->
-                                model.userMode
-                        --TODO: Show error
-                    else
-                        model.userMode
-            in
-            ( { model | userMode = newUserMode, images = assets, imagesLoadState = ImmichLoadSuccess }, Cmd.none )
+                newModel =
+                    case imsg of
+                        Immich.SingleAlbumFetched (Ok album) ->
+                            model
+                                |> handleFetchAlbums [ album ]
+                                |> handleFetchAssets album.assets
+                                -- |> handleProgressLoadingState FetchedAlbums
+                                |> handleUpdateLoadingState FetchedAssetList
+                        Immich.AlbumsFetched (Ok albums) ->
+                            model
+                                |> handleFetchAlbums albums
 
-        ImmichMsg (Immich.RandomImagesFetched (Err error)) ->
-            if model.debugging then
-                let
-                    ( debugAssets, debugAlbums ) =
-                        getDebugAssets
-                in
-                ( model
-                , Cmd.batch
-                    [ send <| ImmichMsg (Immich.RandomImagesFetched (Ok debugAssets))
-                    , send <| ImmichMsg (Immich.AlbumsFetched (Ok debugAlbums))
-                    ]
-                )
+                        -- |> handleProgressLoadingState FetchedAlbums
+                        Immich.RandomImagesFetched (Ok assets) ->
+                            model
+                                |> handleFetchAssets assets
+                                |> handleUpdateLoadingState FetchedAssetList
+
+                        Immich.AllImagesFetched (Ok assets) ->
+                            model
+                                |> handleFetchAssets assets
+                                |> handleUpdateLoadingState FetchedAssetList
+
+                        Immich.AssetMembershipFetched (Ok assetWithMembership) ->
+                            model
+                                |> handleFetchAssetMembership assetWithMembership
+
+                        Immich.SingleAlbumFetched (Err error) ->
+                            model
+                        Immich.AlbumsFetched (Err error) ->
+                            { model | albumsLoadState = ImmichLoadError error }
+                        Immich.RandomImagesFetched (Err error) ->
+                            { model | imagesLoadState = ImmichLoadError error }
+                        Immich.AllImagesFetched (Err error) ->
+                            { model | imagesLoadState = ImmichLoadError error }
+                        Immich.AssetMembershipFetched (Err error) ->
+                            model
+            in
+            checkIfLoadingComplete newModel
+
+handleFetchAssetMembership : Immich.AssetWithMembership -> Model -> Model
+handleFetchAssetMembership assetWithMembership model =
+    case Dict.get assetWithMembership.assetId model.knownAssets of
+        Nothing ->
+            model
+
+        Just asset ->
+            let
+                newAsset =
+                    { asset | albumMembership = assetWithMembership.albumIds }
+            in
+            Tuple.first <| switchToEditIfAssetFound { model | knownAssets = Dict.insert assetWithMembership.assetId newAsset model.knownAssets } 0
+
+
+handleFetchAssets : List ImmichAsset -> Model -> Model
+handleFetchAssets assets model =
+    { model | knownAssets = Helpers.listOverrideDict assets (\a -> ( a.id, a )) model.knownAssets, currentAssets = List.map .id assets, imagesLoadState = ImmichLoadSuccess }
+
+handleFetchAlbums : List ImmichAlbum -> Model -> Model
+handleFetchAlbums albums model =
+    { model | knownAlbums = Helpers.listOverrideDict albums (\a -> ( a.id, a )) model.knownAlbums, albumsLoadState = ImmichLoadSuccess }
+
+handleUpdateLoadingState : AssetSourceUpdate -> Model -> Model
+handleUpdateLoadingState updateType model =
+    -- Use the event to update the Loading AssetLoadState
+    -- Check if all the flags are now good, if so call progressToEditMode
+    case model.userMode of
+        LoadingAssets loadState ->
+            let
+                updatedLoadState =
+                    case updateType of
+                        FetchedAssetList ->
+                            { loadState | fetchedAssetList = Just True }
+                -- FetchedAlbums ->
+                --     { loadState | fetchedAssetList = Just True }
+                updatedModel =
+                    { model | userMode = LoadingAssets updatedLoadState }
+            in
+            updatedModel
+        _ ->
+            model
+
+checkIfLoadingComplete : Model -> ( Model, Cmd Msg )
+checkIfLoadingComplete model =
+    case model.userMode of
+        LoadingAssets loadState ->
+            if isLoadStateCompleted loadState then
+                switchToEditIfAssetFound model 0
             else
-                ( { model | imagesLoadState = ImmichLoadError error }, Cmd.none )
+                ( model, Cmd.none )
+        _ ->
+            ( model, Cmd.none )
+
+isLoadStateCompleted : SourceLoadState -> Bool
+isLoadStateCompleted loadState =
+    isLoadCompletedForProp loadState.fetchedAssetMembership
+        && isLoadCompletedForProp loadState.fetchedAssetList
+
+isLoadCompletedForProp : Maybe Bool -> Bool
+isLoadCompletedForProp maybeBool =
+    maybeBool == Nothing || maybeBool == Just True
+
+createLoadStateForCurrentAssetSource : AssetSource -> Model -> Model
+createLoadStateForCurrentAssetSource assetSource model =
+    case assetSource of
+        NoAssets ->
+            model
+        Uncategorised ->
+            { model | currentAssetsSource = assetSource, userMode = LoadingAssets { fetchedAssetList = Just False, fetchedAssetMembership = Nothing } }
+        Album _ ->
+            { model | currentAssetsSource = assetSource, userMode = LoadingAssets { fetchedAssetList = Just False, fetchedAssetMembership = Nothing } }
+        Search _ ->
+            { model | currentAssetsSource = assetSource, userMode = LoadingAssets { fetchedAssetList = Just False, fetchedAssetMembership = Nothing } }
+
 
 handleUserInput : Model -> String -> ( Model, Cmd Msg )
 handleUserInput model key =
     case model.userMode of
         MainMenu ->
-            let
-                generalAction =
-                    case key of
-                        "u" ->
-                            ChangeUserModeToEditAsset
-                        "a" ->
-                            ChangeUserModeToSelectAlbum
-                        "s" ->
-                            ChangeUserModeToSearchAsset
-                        _ ->
-                            UnknownAction
-            in
-            if generalAction == ChangeUserModeToEditAsset then
-                ( { model | userMode = LoadingAssets }, Immich.fetchRandomImages model.apiUrl model.apiKey |> Cmd.map ImmichMsg )
-            else
-                handleGeneralActions model generalAction
+            case key of
+                "u" ->
+                    ( applyGeneralAction model (ChangeUserModeToLoading Uncategorised), Immich.fetchAllImages model.immichApiPaths |> Cmd.map ImmichMsg )
+                "a" ->
+                    ( applyGeneralAction model ChangeUserModeToSelectAlbum, Cmd.none )
+                "s" ->
+                    ( applyGeneralAction model ChangeUserModeToSearchAsset, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
         SearchAssetInput searchString ->
             let
                 userAction =
@@ -546,7 +655,7 @@ handleUserInput model key =
                             "Escape" ->
                                 UserActionGeneralSearch <| ChangeUserModeToMainMenu
                             "Enter" ->
-                                UserActionGeneralSearch <| ChangeUserModeToEditAsset
+                                UserActionGeneralSearch <| ChangeUserModeToLoading (Search searchString)
                             _ ->
                                 UserActionGeneralSearch UnknownAction
             in
@@ -564,7 +673,7 @@ handleUserInput model key =
                     in
                     ( { model | userMode = SearchAssetInput newSearchString }, Cmd.none )
                 UserActionGeneralSearch action ->
-                    handleGeneralActions model action
+                    ( applyGeneralAction model action, Cmd.none )
         SelectAlbumInput searchResults ->
             let
                 userAction =
@@ -587,30 +696,27 @@ handleUserInput model key =
                         newSearchString =
                             searchResults.searchString ++ newKey
                     in
-                    ( { model | userMode = SelectAlbumInput <| getAlbumSearch newSearchString model.albums }, Cmd.none )
+                    ( { model | userMode = SelectAlbumInput <| getAlbumSearch newSearchString model.knownAlbums }, Cmd.none )
                 TextSelectInputUpdate TextInputBackspace ->
                     let
                         newSearchString =
                             String.slice 0 (String.length searchResults.searchString - 1) searchResults.searchString
                     in
-                    ( { model | userMode = SelectAlbumInput <| getAlbumSearch newSearchString model.albums }, Cmd.none )
+                    ( { model | userMode = SelectAlbumInput <| getAlbumSearch newSearchString model.knownAlbums }, Cmd.none )
                 SelectAlbumIfMatching ->
                     let
-                        matches =
-                            filterToOnlySearchedForAlbums searchResults model.albums
+                        maybeMatch =
+                            getTopMatchToSearch searchResults model.knownAlbums
                     in
-                    case matches of
-                        [] ->
-                            ( model, Cmd.none )
-                        [ album ] ->
-                            -- TODO: Call fetch on album
-                            switchToEditIfAssetFound model 0
-                        _ ->
+                    case maybeMatch of
+                        Just album ->
+                            ( createLoadStateForCurrentAssetSource (Album album) model, Immich.getAlbum model.immichApiPaths album.id |> Cmd.map ImmichMsg )
+                        Nothing ->
                             ( model, Cmd.none )
                 UserActionGeneralAlbumSelect action ->
-                    handleGeneralActions model action
-        LoadingAssets ->
-            ( { model | userMode = LoadingAssets }, Cmd.none )
+                    ( applyGeneralAction model action, Cmd.none )
+        LoadingAssets _ ->
+            ( model, Cmd.none )
         EditAsset inputMode asset search ->
             let
                 userAction =
@@ -653,8 +759,6 @@ handleUserInput model key =
                             { asset | isFavourite = flipPropertyChange asset.isFavourite }
                     in
                     ( { model | userMode = EditAsset inputMode newAsset search }, Cmd.none )
-                -- RemoveFromAssetChangeList ->
-                --     ( { model | userMode = EditAsset inputMode assetSource index (List.drop 1 pendingChanges) searchResults }, Cmd.none )
                 AssetChange ToggleDelete ->
                     let
                         newAsset =
@@ -665,22 +769,20 @@ handleUserInput model key =
                     ( { model | userMode = EditAsset inputMode (toggleAssetAlbum asset album) search }, Cmd.none )
                 ApplyAlbumIfMatching ->
                     let
-                        matches =
-                            filterToOnlySearchedForAlbums search model.albums
+                        maybeMatch =
+                            getTopMatchToSearch search model.knownAlbums
                     in
-                    case matches of
-                        [] ->
-                            ( model, Cmd.none )
-                        [ album ] ->
-                            ( { model | userMode = EditAsset inputMode (toggleAssetAlbum asset album) (getAlbumSearch "" model.albums) }, Cmd.none )
-                        _ ->
+                    case maybeMatch of
+                        Just album ->
+                            ( { model | userMode = EditAsset inputMode (toggleAssetAlbum asset album) (getAlbumSearch "" model.knownAlbums) }, Cmd.none )
+                        Nothing ->
                             ( model, Cmd.none )
                 ChangeInputMode newInputMode ->
-                    ( { model | userMode = EditAsset newInputMode asset <| getAlbumSearch "" model.albums }, Cmd.none )
+                    ( { model | userMode = EditAsset newInputMode asset <| getAlbumSearch "" model.knownAlbums }, Cmd.none )
                 ChangeImageIndex indexChange ->
                     let
                         newIndex =
-                            loopImageIndexOverArray model.imageIndex indexChange (List.length model.images)
+                            loopImageIndexOverArray model.imageIndex indexChange (List.length model.currentAssets)
                     in
                     switchToEditIfAssetFound model newIndex
                 TextEditModeInputUpdate (TextInputAddition newKey) ->
@@ -688,53 +790,86 @@ handleUserInput model key =
                         newSearchString =
                             search.searchString ++ newKey
                     in
-                    ( { model | userMode = EditAsset inputMode asset <| getAlbumSearch newSearchString model.albums }, Cmd.none )
+                    ( { model | userMode = EditAsset inputMode asset <| getAlbumSearch newSearchString model.knownAlbums }, Cmd.none )
                 TextEditModeInputUpdate TextInputBackspace ->
                     let
                         newSearchString =
                             String.slice 0 (String.length search.searchString - 1) search.searchString
                     in
-                    ( { model | userMode = EditAsset inputMode asset <| getAlbumSearch newSearchString model.albums }, Cmd.none )
+                    ( { model | userMode = EditAsset inputMode asset <| getAlbumSearch newSearchString model.knownAlbums }, Cmd.none )
 
                 UserActionGeneralEdit generalAction ->
-                    handleGeneralActions model generalAction
+                    ( applyGeneralAction model generalAction, Cmd.none )
 
+getTopMatchToSearch : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> Maybe ImmichAlbum
+getTopMatchToSearch search albums =
+    let
+        matchesDict =
+            filterToOnlySearchedForAlbums search albums
+    in
+    if Dict.isEmpty matchesDict then
+        Nothing
+    else if Dict.size matchesDict == 1 then
+        case Dict.values matchesDict of
+            [ album ] ->
+                Just album
+            _ ->
+                Nothing
+
+    else
+        Nothing
 
 toggleAssetAlbum : AssetWithActions -> ImmichAlbum -> AssetWithActions
 toggleAssetAlbum asset album =
-    { asset | albumMemership = Dict.insert album.id (flipPropertyChange <| Maybe.withDefault RemainFalse <| Dict.get album.id asset.albumMemership) asset.albumMemership }
+    { asset | albumMembership = Dict.insert album.id (flipPropertyChange <| Maybe.withDefault RemainFalse <| Dict.get album.id asset.albumMembership) asset.albumMembership }
 
 
-handleGeneralActions : Model -> UserActionGeneral -> ( Model, Cmd Msg )
-handleGeneralActions model action =
+applyGeneralAction : Model -> UserActionGeneral -> Model
+applyGeneralAction model action =
     case action of
         ChangeUserModeToMainMenu ->
-            ( { model | userMode = MainMenu }, Cmd.none )
+            { model | userMode = MainMenu }
         ChangeUserModeToSearchAsset ->
-            ( { model | userMode = SearchAssetInput "" }, Cmd.none )
+            { model | userMode = SearchAssetInput "" }
         ChangeUserModeToSelectAlbum ->
-            ( { model | userMode = SelectAlbumInput <| getAlbumSearch "" model.albums }, Cmd.none )
+            { model | userMode = SelectAlbumInput <| getAlbumSearch "" model.knownAlbums }
         ChangeUserModeToEditAsset ->
-            switchToEditIfAssetFound model 0
+            Tuple.first <| switchToEditIfAssetFound model 0
+        ChangeUserModeToLoading assetSource ->
+            createLoadStateForCurrentAssetSource assetSource model
 
         ReloadData ->
-            ( { model | imagesLoadState = ImmichLoading, albumsLoadState = ImmichLoading }, Cmd.none )
+            { model | imagesLoadState = ImmichLoading, albumsLoadState = ImmichLoading }
 
         UnknownAction ->
-            ( model, Cmd.none )
+            model
 
 switchToEditIfAssetFound : Model -> ImageIndex -> ( Model, Cmd Msg )
 switchToEditIfAssetFound model index =
     let
+        maybeAssetId =
+            model.currentAssets |> List.drop index |> List.head
         maybeAsset =
-            model.images |> List.drop index |> List.head
+            case maybeAssetId of
+                Nothing ->
+                    Nothing
+                Just id ->
+                    Dict.get id model.knownAssets
     in
     case maybeAsset of
+        --TODO: Should not be necessary?
         Nothing ->
-            ( { model | userMode = LoadingAssets }, Cmd.none )
+            ( createLoadStateForCurrentAssetSource model.currentAssetsSource model, Cmd.none )
 
         Just asset ->
-            ( { model | imageIndex = index, userMode = EditAsset NormalMode (getAssetWithActions asset) (getAlbumSearch "" model.albums) }, Cmd.none )
+            let
+                cmdToSend =
+                    if List.isEmpty asset.albumMembership then
+                        Immich.fetchMembershipForAsset model.immichApiPaths asset.id |> Cmd.map ImmichMsg
+                    else
+                        Cmd.none
+            in
+            ( { model | imageIndex = index, userMode = EditAsset NormalMode (getAssetWithActions asset) (getAlbumSearch "" model.knownAlbums) }, cmdToSend )
 
 
 getAssetWithActions : ImmichAsset -> AssetWithActions
@@ -752,14 +887,14 @@ getAssetWithActions asset =
 
         else
             RemainFalse
-    , albumMemership = Dict.empty
+    , albumMembership = Dict.fromList <| List.map (\a -> ( a, RemainTrue )) asset.albumMembership
     }
 
-getAlbumSearch : String -> List ImmichAlbum -> AlbumSearch
+getAlbumSearch : String -> Dict ImmichAssetId ImmichAlbum -> AlbumSearch
 getAlbumSearch searchString albums =
     { searchString = searchString
     , albumScores =
-        Dict.fromList <| List.map (\album -> ( album.id, shittyFuzzyAlgorithmTest searchString album.albumName )) albums
+        Dict.map (\id album -> shittyFuzzyAlgorithmTest searchString album.albumName) albums
     }
 
 
@@ -787,6 +922,7 @@ shittyFuzzyAlgorithmTest searchString textToBeSearched =
         0
     else
         List.filter (\a -> Regex.contains a.regex textToBeSearched) regexes |> List.map .score |> List.foldr (+) 0
+
 
 
 -- SUBSCRIPTIONS --

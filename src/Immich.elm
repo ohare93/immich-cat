@@ -14,13 +14,21 @@ type ImmichLoadState
     | ImmichLoadError Http.Error
 
 type alias ImmichApiPaths =
-    { getAsset : ImmichAssetId -> String
+    { downloadAsset : ImmichAssetId -> String
+    , fetchMembershipForAsset : ImmichAssetId -> String
+    , searchRandom : String
+    , searchAssets : String
+    , getAlbum : ImmichAssetId -> String
     , apiKey : String
     }
 
 getImmichApiPaths : String -> String -> ImmichApiPaths
 getImmichApiPaths immichUrl immichApiKey =
-    { getAsset = \id -> immichUrl ++ "/assets/" ++ id ++ "/original"
+    { downloadAsset = \id -> immichUrl ++ "/assets/" ++ id ++ "/original"
+    , fetchMembershipForAsset = \assetId -> immichUrl ++ "/albums?assetId=" ++ assetId
+    , searchRandom = immichUrl ++ "/search/random"
+    , searchAssets = immichUrl ++ "/search/metadata"
+    , getAlbum = \id -> immichUrl ++ "/albums/" ++ id
     , apiKey = immichApiKey
     }
 
@@ -39,6 +47,7 @@ type alias ImmichAsset =
     , mimeType : String
     , isFavourite : Bool
     , isArchived : Bool
+    , albumMembership : List ImmichAlbumId
     }
 
 
@@ -57,6 +66,13 @@ type alias ImmichConfig =
     , apiKey : String
     }
 
+type SearchModifier
+    = NotInAnyAlbum Bool
+    | OrderDesc Bool
+    | IsFavourited Bool
+
+
+-- type, archived,
 
 getAllAlbums : String -> String -> Cmd Msg
 getAllAlbums url key =
@@ -70,6 +86,21 @@ getAllAlbums url key =
         , tracker = Nothing
         }
 
+getAlbum : ImmichApiPaths -> ImmichAlbumId -> Cmd Msg
+getAlbum apiPaths albumId =
+    Http.request
+        { method = "GET"
+        , headers = [ Http.header "Accept" "application/json", Http.header "x-api-key" apiPaths.apiKey ]
+        , url = apiPaths.getAlbum albumId
+        , body =
+            Http.jsonBody
+                (Encode.object
+                    [ ( "order", Encode.string "desc" ) ]
+                )
+        , expect = Http.expectJson SingleAlbumFetched albumDecoder
+        , timeout = Nothing
+        , tracker = Nothing
+        }
 
 fetchRandomImages : String -> String -> Cmd Msg
 fetchRandomImages url key =
@@ -87,6 +118,34 @@ fetchRandomImages url key =
         , tracker = Nothing
         }
 
+fetchAllImages : ImmichApiPaths -> Cmd Msg
+fetchAllImages apiPaths =
+    Http.request
+        { method = "POST"
+        , headers = [ Http.header "Content-Type" "application/json", Http.header "Accept" "application/json", Http.header "x-api-key" apiPaths.apiKey ]
+        , url = apiPaths.searchAssets
+        , body =
+            Http.jsonBody
+                (Encode.object
+                    [ ( "isNotInAlbum", Encode.bool True ), ( "order", Encode.string "desc" ) ]
+                )
+        , expect = Http.expectJson AllImagesFetched nestedAssetsDecoder
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+fetchMembershipForAsset : ImmichApiPaths -> ImmichAssetId -> Cmd Msg
+fetchMembershipForAsset apiPaths assetId =
+    Http.request
+        { method = "GET"
+        , headers = [ Http.header "Accept" "application/json", Http.header "x-api-key" apiPaths.apiKey ]
+        , url = apiPaths.fetchMembershipForAsset assetId
+        , body = Http.emptyBody
+        , expect = Http.expectJson AssetMembershipFetched (albumToAssetWithMembershipDecoder assetId)
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
 
 albumDecoder : Decode.Decoder ImmichAlbum
 albumDecoder =
@@ -97,6 +156,16 @@ albumDecoder =
         (Decode.field "assets" (Decode.list imageDecoder))
         -- (Decode.field "albumThumbnailAssetId" Decode.string)
         (Decode.field "createdAt" dateDecoder)
+
+nestedAssetsDecoder : Decode.Decoder (List ImmichAsset)
+nestedAssetsDecoder =
+    Decode.field "assets" (Decode.field "items" (Decode.list imageDecoder))
+
+albumToAssetWithMembershipDecoder : ImmichAssetId -> Decode.Decoder AssetWithMembership
+albumToAssetWithMembershipDecoder assetId =
+    Decode.map2 AssetWithMembership
+        (Decode.succeed assetId)
+        (Decode.list (Decode.field "id" Decode.string))
 
 
 splitDateTimeToDate : String -> String
@@ -124,22 +193,47 @@ dateDecoder =
 
 imageDecoder : Decode.Decoder ImmichAsset
 imageDecoder =
-    Decode.map6 ImmichAsset
+    Decode.map7 ImmichAsset
         (Decode.field "id" Decode.string)
         (Decode.field "originalPath" Decode.string)
         (Decode.field "originalFileName" Decode.string)
         (Decode.field "originalMimeType" Decode.string)
         (Decode.field "isFavorite" Decode.bool)
         (Decode.field "isArchived" Decode.bool)
+        (Decode.succeed [])
+
+errorToString : Http.Error -> String
+errorToString error =
+    case error of
+        Http.BadUrl url ->
+            "Bad URL: " ++ url
+
+        Http.Timeout ->
+            "Request timed out."
+
+        Http.NetworkError ->
+            "Network error occurred."
+
+        Http.BadStatus statusCode ->
+            "Bad status: " ++ String.fromInt statusCode
+
+        Http.BadBody message ->
+            "Problem with response body: " ++ message
 
 
 -- UPDATE --
 
+type alias AssetWithMembership =
+    { assetId : ImmichAssetId
+    , albumIds : List ImmichAlbumId
+    }
 
 type Msg
-    = StartLoading
-    | AlbumsFetched (Result Http.Error (List ImmichAlbum))
+    = AlbumsFetched (Result Http.Error (List ImmichAlbum))
+    | SingleAlbumFetched (Result Http.Error ImmichAlbum)
     | RandomImagesFetched (Result Http.Error (List ImmichAsset))
+    | AllImagesFetched (Result Http.Error (List ImmichAsset))
+    | AssetMembershipFetched (Result Http.Error AssetWithMembership)
 
 
 type alias Model r =
