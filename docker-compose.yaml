@@ -1,20 +1,12 @@
 services:
   image-frontend:
-    container_name: image_frontend
-    extends:
-      file: ./frontend/docker-compose.yaml
-      service: image-frontend
-    networks:
-      - image-categoriser
-  image-backend:
-    container_name: image_backend
-    extends:
-      file: ./backend/docker-compose.yaml
-      service: image-backend
-    networks:
-      - image-categoriser
-
-networks:
-  image-categoriser:
-    driver: bridge
-
+    container_name: image-frontend
+    build: .
+    volumes:
+      - .:/mnt
+    ports:
+      - 8000:8000
+    env_file:
+      - .env
+    # we need init to kill elm-test when run with "make test"
+    # init: true

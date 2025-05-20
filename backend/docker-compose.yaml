@@ -1,8 +1,0 @@
-services:
-  image-backend:
-    container_name: image-backend
-    build: .
-    volumes:
-    - ./images:/app/src/images
-    ports:
-    - 3333:3333
