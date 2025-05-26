@@ -1,19 +1,17 @@
 module Main exposing (main)
 
-import Array exposing (Array)
 import Browser exposing (element)
 import Browser.Events exposing (onKeyDown)
 import Date
 import Dict exposing (Dict)
-import Element exposing (Element, alignBottom, alignRight, alignTop, centerX, centerY, column, el, fill, fillPortion, height, paddingXY, row, text, width)
+import Element exposing (Element, alignBottom, alignRight, alignTop, centerX, column, el, fill, fillPortion, height, paddingXY, row, text, width)
 import Element.Background as Background
 import Element.Font as Font
 import Element.Input exposing (button)
-import Helpers exposing (regexFromString, send)
+import Helpers exposing (regexFromString)
 import Html exposing (Html, node)
 import Html.Attributes
-import Http
-import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..), errorToString, getAllAlbums, getImmichApiPaths)
+import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..), getAllAlbums, getImmichApiPaths)
 import Json.Decode as Decode
 import Regex
 
@@ -152,6 +150,19 @@ flipPropertyChange propertyChange =
         ChangeToFalse ->
             RemainTrue
 
+propertyChangeToNumber : PropertyChange -> Int
+propertyChangeToNumber prop =
+    case prop of
+        ChangeToTrue ->
+            0
+        ChangeToFalse ->
+            1
+        RemainTrue ->
+            2
+        RemainFalse ->
+            3
+
+
 init : Flags -> ( Model, Cmd Msg )
 init flags =
     ( { key = ""
@@ -243,7 +254,36 @@ viewAsset apiPaths asset =
 
 assetIsImage : ImmichAsset -> Bool
 assetIsImage asset =
-    List.member asset.mimeType [ "image/jpg", "image/jpeg", "image/png", "image/gif" ]
+    List.member asset.mimeType
+        [ "image/jpeg"
+        , "image/jpg"
+        , "image/pjpeg"
+        , "image/png"
+        , "image/x-png"
+        , "image/gif"
+        , "image/bmp"
+        , "image/x-windows-bmp"
+        , "image/webp"
+        , "image/heif"
+        , "image/heic"
+        , "image/tiff"
+        , "image/x-tiff"
+        , "image/svg+xml"
+        , "image/vnd.adobe.photoshop"
+        , "image/vnd.microsoft.icon"
+        , "image/x-icon"
+        , "image/ico"
+        , "image/avif"
+        , "image/x-canon-cr2"
+        , "image/x-canon-crw"
+        , "image/x-nikon-nef"
+        , "image/x-nikon-nrw"
+        , "image/x-sony-arw"
+        , "image/x-panasonic-rw2"
+        , "image/x-pentax-pef"
+        , "image/x-olympus-orf"
+        , "image/x-fuji-raf"
+        ]
 
 viewImage : ImmichAsset -> ImmichApiPaths -> Element msg
 viewImage asset apiPaths =
@@ -264,7 +304,26 @@ viewImage asset apiPaths =
 
 assetIsVideo : ImmichAsset -> Bool
 assetIsVideo asset =
-    List.member asset.mimeType [ "video/mp4", "video/quicktime" ]
+    List.member asset.mimeType
+        [ "video/mp4"
+        , "video/quicktime"
+        , "video/x-msvideo"
+        , "video/msvideo"
+        , "video/x-flv"
+        , "video/webm"
+        , "video/x-matroska"
+        , "video/mpeg"
+        , "video/x-mpeg"
+        , "video/x-mpeq2a"
+        , "video/mp4v"
+        , "video/ogg"
+        , "video/3gpp"
+        , "video/x-sgi-movie"
+        , "video/avi"
+        , "video/mpv2"
+        , "video/x-ms-wmv"
+        , "video/x-ms-asf"
+        ]
 
 viewVideo : ImmichAsset -> ImmichApiPaths -> Element msg
 viewVideo asset apiPaths =
@@ -303,14 +362,12 @@ viewVideo asset apiPaths =
 --                     []
 --                 ]
 
-viewEditAsset : ImmichApiPaths -> AssetWithActions -> Element Msg
-viewEditAsset apiPaths currentAsset =
+viewEditAsset : ImmichApiPaths -> ImageIndex -> Int -> String -> AssetWithActions -> Element Msg
+viewEditAsset apiPaths imageIndex totalAssets viewTitle currentAsset =
     column [ width fill, height fill ]
-        [ el [ alignTop ] (text "Top Bar")
+        [ el [ alignTop ]
+            (text (String.fromInt (imageIndex + 1) ++ "/" ++ String.fromInt totalAssets ++ "    " ++ viewTitle))
         , viewAsset apiPaths currentAsset.asset
-        , column [ alignBottom ] []
-        -- [ text (String.fromInt index ++ "  ")
-        -- ]
         ]
 
 viewLoadingAssets : ImmichLoadState -> Element Msg
@@ -367,7 +424,19 @@ viewMainWindow model =
         LoadingAssets _ ->
             viewLoadingAssets model.imagesLoadState
         EditAsset _ asset search ->
-            viewWithSidebar (viewSidebar asset search model.knownAlbums) (viewEditAsset model.immichApiPaths asset)
+            let
+                viewTitle =
+                    case model.currentAssetsSource of
+                        Uncategorised ->
+                            "Uncategorised"
+                        Search searchText ->
+                            "Search : '" ++ searchText ++ "'"
+                        Album album ->
+                            album.albumName
+                        NoAssets ->
+                            ""
+            in
+            viewWithSidebar (viewSidebar asset search model.knownAlbums) (viewEditAsset model.immichApiPaths model.imageIndex (Dict.size model.knownAssets) viewTitle asset)
 
 viewInputMode : UserMode -> Element msg
 viewInputMode userMode =
@@ -468,8 +537,9 @@ viewSidebarAlbumsForCurrentAsset asset search albums =
             )
          <|
             List.take 40 <|
-                Dict.values <|
-                    filterToOnlySearchedForAlbums search albums
+                List.sortBy (\a -> ( Maybe.withDefault 1000 (Maybe.map propertyChangeToNumber (Dict.get a.id asset.albumMembership)), -a.assetCount )) <|
+                    Dict.values <|
+                        filterToOnlySearchedForAlbums search albums
         )
 
 filterToOnlySearchedForAlbums : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> Dict ImmichAlbumId ImmichAlbum
@@ -566,7 +636,7 @@ handleFetchAssetMembership assetWithMembership model =
                 newAsset =
                     { asset | albumMembership = assetWithMembership.albumIds }
             in
-            Tuple.first <| switchToEditIfAssetFound { model | knownAssets = Dict.insert assetWithMembership.assetId newAsset model.knownAssets } 0
+            Tuple.first <| switchToEditIfAssetFound { model | knownAssets = Dict.insert assetWithMembership.assetId newAsset model.knownAssets } model.imageIndex
 
 
 handleFetchAssets : List ImmichAsset -> Model -> Model
