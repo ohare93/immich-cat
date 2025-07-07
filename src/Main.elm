@@ -612,18 +612,20 @@ update msg model =
                             model
                                 |> handleFetchAssetMembership assetWithMembership
 
-                        Immich.SingleAlbumFetched (Err error) ->
-                            model
                         Immich.AlbumsFetched (Err error) ->
                             { model | albumsLoadState = ImmichLoadError error }
                         Immich.RandomImagesFetched (Err error) ->
                             { model | imagesLoadState = ImmichLoadError error }
                         Immich.AllImagesFetched (Err error) ->
                             { model | imagesLoadState = ImmichLoadError error }
-                        Immich.AssetMembershipFetched (Err error) ->
+                        _ ->
                             model
             in
-            checkIfLoadingComplete newModel
+            case imsg of
+                Immich.AlbumAssetsChanged _ ->
+                    switchToEditIfAssetFound model model.imageIndex
+                _ ->
+                    checkIfLoadingComplete newModel
 
 handleFetchAssetMembership : Immich.AssetWithMembership -> Model -> Model
 handleFetchAssetMembership assetWithMembership model =
@@ -844,7 +846,7 @@ handleUserInput model key =
                     in
                     case maybeMatch of
                         Just album ->
-                            ( { model | userMode = EditAsset inputMode (toggleAssetAlbum asset album) (getAlbumSearch "" model.knownAlbums) }, Cmd.none )
+                            ( { model | userMode = EditAsset inputMode (toggleAssetAlbum asset album) (getAlbumSearch "" model.knownAlbums) }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] True |> Cmd.map ImmichMsg )
                         Nothing ->
                             ( model, Cmd.none )
                 ChangeInputMode newInputMode ->
@@ -934,10 +936,11 @@ switchToEditIfAssetFound model index =
         Just asset ->
             let
                 cmdToSend =
-                    if List.isEmpty asset.albumMembership then
-                        Immich.fetchMembershipForAsset model.immichApiPaths asset.id |> Cmd.map ImmichMsg
-                    else
-                        Cmd.none
+                    -- if List.isEmpty asset.albumMembership then
+                    Immich.fetchMembershipForAsset model.immichApiPaths asset.id |> Cmd.map ImmichMsg
+
+                -- else
+                --     Cmd.none
             in
             ( { model | imageIndex = index, userMode = EditAsset NormalMode (getAssetWithActions asset) (getAlbumSearch "" model.knownAlbums) }, cmdToSend )
 

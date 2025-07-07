@@ -19,6 +19,7 @@ type alias ImmichApiPaths =
     , searchRandom : String
     , searchAssets : String
     , getAlbum : ImmichAssetId -> String
+    , putAlbumAssets : ImmichAlbumId -> String
     , apiKey : String
     }
 
@@ -29,6 +30,7 @@ getImmichApiPaths immichUrl immichApiKey =
     , searchRandom = immichUrl ++ "/search/random"
     , searchAssets = immichUrl ++ "/search/metadata"
     , getAlbum = \id -> immichUrl ++ "/albums/" ++ id
+    , putAlbumAssets = \id -> immichUrl ++ "/albums/" ++ id ++ "/assets"
     , apiKey = immichApiKey
     }
 
@@ -146,6 +148,25 @@ fetchMembershipForAsset apiPaths assetId =
         , tracker = Nothing
         }
 
+albumChangeAssetMembership : ImmichApiPaths -> ImmichAlbumId -> List ImmichAssetId -> Bool -> Cmd Msg
+albumChangeAssetMembership apiPaths albumId assetIds isAddition =
+    Http.request
+        { method =
+            if isAddition then
+                "PUT"
+            else
+                "DELETE"
+        , headers = [ Http.header "Content-Type" "application/json", Http.header "Accept" "application/json", Http.header "x-api-key" apiPaths.apiKey ]
+        , url = apiPaths.putAlbumAssets albumId
+        , body =
+            Http.jsonBody
+                (Encode.object
+                    [ ( "ids", Encode.list Encode.string assetIds ) ]
+                )
+        , expect = Http.expectWhatever AlbumAssetsChanged
+        , timeout = Nothing
+        , tracker = Nothing
+        }
 
 albumDecoder : Decode.Decoder ImmichAlbum
 albumDecoder =
@@ -234,6 +255,7 @@ type Msg
     | RandomImagesFetched (Result Http.Error (List ImmichAsset))
     | AllImagesFetched (Result Http.Error (List ImmichAsset))
     | AssetMembershipFetched (Result Http.Error AssetWithMembership)
+    | AlbumAssetsChanged (Result Http.Error ())
 
 
 type alias Model r =
