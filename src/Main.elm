@@ -4,7 +4,7 @@ import Browser exposing (element)
 import Browser.Events exposing (onKeyDown)
 import Date
 import Dict exposing (Dict)
-import Element exposing (Element, alignBottom, alignRight, alignTop, centerX, clipY, column, el, fill, fillPortion, height, minimum, paddingXY, px, row, text, width)
+import Element exposing (Element, alignBottom, alignRight, alignTop, centerX, centerY, clipY, column, el, fill, fillPortion, height, minimum, paddingXY, px, row, text, width)
 import Element.Background as Background
 import Element.Font as Font
 import Element.Input exposing (button)
@@ -287,20 +287,22 @@ assetIsImage asset =
 
 viewImage : ImmichAsset -> ImmichApiPaths -> Element msg
 viewImage asset apiPaths =
-    column [ width fill, height fill ]
-        [ -- Element.image [ centerY, centerX ] { src = path, description = "" }
-          el [ centerX ] <|
-            Element.html
-                (node "image-from-api"
+    el [ width fill, height fill ] <|
+        Element.html
+            (Html.div [ Html.Attributes.style "display" "flex", Html.Attributes.style "align-items" "center", Html.Attributes.style "justify-content" "center", Html.Attributes.style "height" "calc(100vh - 40px)", Html.Attributes.style "width" "100%", Html.Attributes.style "overflow" "hidden" ]
+                [ Html.node "style" [] [ Html.text "image-from-api img { max-width: 100% !important; max-height: calc(100vh - 40px) !important; object-fit: contain !important; width: auto !important; height: auto !important; }" ]
+                , node "image-from-api"
                     [ Html.Attributes.attribute "asset-url" (apiPaths.downloadAsset asset.id)
                     , Html.Attributes.attribute "api-key" apiPaths.apiKey
                     , Html.Attributes.class "center"
+                    , Html.Attributes.style "max-width" "100%"
+                    , Html.Attributes.style "max-height" "100%"
+                    , Html.Attributes.style "object-fit" "contain"
+                    , Html.Attributes.style "display" "block"
                     ]
                     []
-                )
-
-        --(text asset.title)
-        ]
+                ]
+            )
 
 assetIsVideo : ImmichAsset -> Bool
 assetIsVideo asset =
@@ -327,20 +329,24 @@ assetIsVideo asset =
 
 viewVideo : ImmichAsset -> ImmichApiPaths -> Element msg
 viewVideo asset apiPaths =
-    column [ width fill, height fill ]
-        [ -- Element.image [ centerY, centerX ] { src = path, description = "" }
-          el [ centerX ] <|
-            Element.html
-                (node "video-from-api"
+    el [ width fill, height fill, Html.Attributes.style "position" "relative" |> Element.htmlAttribute ] <|
+        Element.html
+            (Html.div []
+                [ Html.node "style" [] [ Html.text "video-from-api video { width: 100% !important; height: 100% !important; object-fit: contain !important; }" ]
+                , node "video-from-api"
                     [ Html.Attributes.attribute "asset-url" (apiPaths.downloadAsset asset.id)
                     , Html.Attributes.attribute "api-key" apiPaths.apiKey
                     , Html.Attributes.class "center"
+                    , Html.Attributes.style "width" "100%"
+                    , Html.Attributes.style "height" "calc(100vh - 40px)"
+                    , Html.Attributes.style "max-height" "calc(100vh - 40px)"
+                    , Html.Attributes.style "max-width" "100%"
+                    , Html.Attributes.style "display" "block"
+                    , Html.Attributes.style "overflow" "hidden"
                     ]
                     []
-                )
-
-        --(text asset.title)
-        ]
+                ]
+            )
 
 
 -- viewVideo : List (Element.Attribute msg) -> { poster : String, source : String } -> Element msg
@@ -365,9 +371,9 @@ viewVideo asset apiPaths =
 viewEditAsset : ImmichApiPaths -> ImageIndex -> Int -> String -> AssetWithActions -> Element Msg
 viewEditAsset apiPaths imageIndex totalAssets viewTitle currentAsset =
     column [ width fill, height fill ]
-        [ el [ alignTop ]
+        [ el [ alignTop, height (px 20) ]
             (text (String.fromInt (imageIndex + 1) ++ "/" ++ String.fromInt totalAssets ++ "    " ++ viewTitle))
-        , viewAsset apiPaths currentAsset.asset
+        , el [ width fill, height fill ] <| viewAsset apiPaths currentAsset.asset
         ]
 
 viewLoadingAssets : ImmichLoadState -> Element Msg
@@ -396,7 +402,7 @@ viewWithInputBottomBar : UserMode -> Element Msg -> Element Msg
 viewWithInputBottomBar userMode viewMain =
     column [ width fill, height fill ]
         [ el [ width fill, height (fill |> minimum 1), clipY ] viewMain
-        , el [ width fill ] <| viewInputMode userMode
+        , el [ width fill, height (px 20) ] <| viewInputMode userMode
         ]
 
 
