@@ -22,6 +22,6 @@ COPY package*.json /mnt/
 RUN npm install
 
 COPY elm.json /mnt/
-# RUN elm make src/Main.elm
+# RUN elm make src/Main.elm --output=src/index.html
 
 CMD ["npm", "run", "start-env"]

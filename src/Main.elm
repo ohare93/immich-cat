@@ -4,7 +4,7 @@ import Browser exposing (element)
 import Browser.Events exposing (onKeyDown)
 import Date
 import Dict exposing (Dict)
-import Element exposing (Element, alignBottom, alignRight, alignTop, centerX, column, el, fill, fillPortion, height, paddingXY, row, text, width)
+import Element exposing (Element, alignBottom, alignRight, alignTop, centerX, clipY, column, el, fill, fillPortion, height, minimum, paddingXY, px, row, text, width)
 import Element.Background as Background
 import Element.Font as Font
 import Element.Input exposing (button)
@@ -387,7 +387,7 @@ viewLoadingAssets imagesLoadState =
 
 view : Model -> Html Msg
 view model =
-    Element.layout [ width fill, height fill, Background.color <| usefulColours "darkgrey" ] <|
+    Element.layout [ width fill, height (fill |> minimum 1), Background.color <| usefulColours "darkgrey" ] <|
         viewWithInputBottomBar model.userMode <|
             viewMainWindow model
 
@@ -395,7 +395,7 @@ view model =
 viewWithInputBottomBar : UserMode -> Element Msg -> Element Msg
 viewWithInputBottomBar userMode viewMain =
     column [ width fill, height fill ]
-        [ el [ width fill, height <| fillPortion 15 ] viewMain
+        [ el [ width fill, height (fill |> minimum 1), clipY ] viewMain
         , el [ width fill ] <| viewInputMode userMode
         ]
 
@@ -404,9 +404,12 @@ viewMainWindow : Model -> Element Msg
 viewMainWindow model =
     case model.userMode of
         MainMenu ->
-            column []
-                [ text "Select Asset Source"
-                , button [] { onPress = Just LoadDataAgain, label = text "Load albums" }
+            row [ width fill, height fill ]
+                [ column [ width <| fillPortion 1, height fill ]
+                    [ text "Select Asset Source"
+                    , button [] { onPress = Just LoadDataAgain, label = text "Load albums" }
+                    ]
+                , el [ width <| fillPortion 1, height fill ] <| viewInstructions
                 ]
         SearchAssetInput searchString ->
             column []
@@ -438,6 +441,48 @@ viewMainWindow model =
             in
             viewWithSidebar (viewSidebar asset search model.knownAlbums) (viewEditAsset model.immichApiPaths model.imageIndex (Dict.size model.knownAssets) viewTitle asset)
 
+viewInstructions : Element msg
+viewInstructions =
+    column [ width fill, height fill, paddingXY 20 20, Element.spacingXY 0 10 ]
+        [ el [ Font.size 18, Font.bold ] <| text "Keybindings"
+        , column [ Element.spacingXY 0 8 ]
+            [ el [ Font.size 16, Font.bold ] <| text "Main Menu"
+            , viewKeybinding "u" "Load uncategorized assets"
+            , viewKeybinding "a" "Select album"
+            , viewKeybinding "s" "Search assets"
+            ]
+        , column [ Element.spacingXY 0 8 ]
+            [ el [ Font.size 16, Font.bold ] <| text "Search/Input Modes"
+            , viewKeybinding "[a-z0-9 ]" "Type to search"
+            , viewKeybinding "Backspace" "Delete character"
+            , viewKeybinding "Escape" "Return to previous mode"
+            , viewKeybinding "Enter" "Execute search/selection"
+            ]
+        , column [ Element.spacingXY 0 8 ]
+            [ el [ Font.size 16, Font.bold ] <| text "Asset Navigation (Normal Mode)"
+            , viewKeybinding "←" "Previous image"
+            , viewKeybinding "→" "Next image"
+            , viewKeybinding "Escape" "Return to main menu"
+            , viewKeybinding "i" "Enter insert mode (album search)"
+            , viewKeybinding "d" "Toggle delete/archive"
+            , viewKeybinding "f" "Toggle favorite"
+            ]
+        , column [ Element.spacingXY 0 8 ]
+            [ el [ Font.size 16, Font.bold ] <| text "Asset Navigation (Insert Mode)"
+            , viewKeybinding "[a-z0-9 ]" "Search albums"
+            , viewKeybinding "Backspace" "Delete search character"
+            , viewKeybinding "Escape" "Return to normal mode"
+            , viewKeybinding "Enter" "Add to matching album"
+            ]
+        ]
+
+viewKeybinding : String -> String -> Element msg
+viewKeybinding key description =
+    row [ width fill, Element.spacingXY 10 0 ]
+        [ el [ width <| Element.px 120, Font.family [ Font.monospace ], Background.color <| usefulColours "grey", paddingXY 8 4 ] <| text key
+        , el [ width fill ] <| text description
+        ]
+
 viewInputMode : UserMode -> Element msg
 viewInputMode userMode =
     let
@@ -464,14 +509,14 @@ viewWithSidebar : Element Msg -> Element Msg -> Element Msg
 viewWithSidebar sidebarView viewToBeNextToSidebar =
     row [ width fill, height fill ]
         [ el [ width <| fillPortion 4, height fill ] <| viewToBeNextToSidebar
-        , el [ width <| fillPortion 1, height fill, alignRight ] <| sidebarView
+        , el [ width <| fillPortion 1, height fill, alignRight, clipY ] <| sidebarView
         ]
 
 viewSidebar : AssetWithActions -> AlbumSearch -> Dict ImmichAssetId ImmichAlbum -> Element Msg
 viewSidebar asset search albums =
-    column [ alignTop ]
-        [ el [ alignTop, height <| fillPortion 1 ] <| text "Asset Changes"
-        , row [ alignTop, height <| fillPortion 2 ]
+    column [ alignTop, height fill ]
+        [ el [ alignTop ] <| text "Asset Changes"
+        , row [ alignTop ]
             [ case asset.isFavourite of
                 ChangeToTrue ->
                     el [ Font.color <| usefulColours "green" ] <| text "Fav"
@@ -491,7 +536,7 @@ viewSidebar asset search albums =
                 RemainFalse ->
                     el [ Font.color <| usefulColours "grey" ] <| text ""
             ]
-        , viewSidebarAlbumsForCurrentAsset asset search albums
+        , el [ height fill ] <| viewSidebarAlbumsForCurrentAsset asset search albums
         ]
 
 
