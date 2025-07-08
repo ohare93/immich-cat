@@ -156,7 +156,7 @@ albumChangeAssetMembership apiPaths albumId assetIds isAddition =
                 "PUT"
             else
                 "DELETE"
-        , headers = [ Http.header "Content-Type" "application/json", Http.header "Accept" "application/json", Http.header "x-api-key" apiPaths.apiKey ]
+        , headers = [ Http.header "x-api-key" apiPaths.apiKey ]
         , url = apiPaths.putAlbumAssets albumId
         , body =
             Http.jsonBody

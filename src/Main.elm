@@ -673,7 +673,11 @@ update msg model =
                             model
             in
             case imsg of
-                Immich.AlbumAssetsChanged _ ->
+                Immich.AlbumAssetsChanged (Ok _) ->
+                    -- Album membership change succeeded, keep current UI state
+                    ( newModel, Cmd.none )
+                Immich.AlbumAssetsChanged (Err _) ->
+                    -- Album membership change failed, re-fetch to get correct state
                     switchToEditIfAssetFound model model.imageIndex
                 _ ->
                     checkIfLoadingComplete newModel
@@ -897,7 +901,15 @@ handleUserInput model key =
                     in
                     case maybeMatch of
                         Just album ->
-                            ( { model | userMode = EditAsset inputMode (toggleAssetAlbum asset album) (getAlbumSearch "" model.knownAlbums) }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] True |> Cmd.map ImmichMsg )
+                            let
+                                isNotInAlbum =
+                                    case Dict.get album.id asset.albumMembership of
+                                        Nothing ->
+                                            True
+                                        Just _ ->
+                                            False
+                            in
+                            ( { model | userMode = EditAsset inputMode (toggleAssetAlbum asset album) (getAlbumSearch "" model.knownAlbums) }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
                         Nothing ->
                             ( model, Cmd.none )
                 ChangeInputMode newInputMode ->
