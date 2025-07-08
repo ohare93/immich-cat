@@ -112,7 +112,7 @@
 	    render()
 	    {
 	      this.innerHTML = `
-		<video src="${this.assetBlob}" controls="controls" autoplay=true loop=true />
+		<video src="${this.assetBlob}" controls="controls" autoplay loop />
 	      `;
 	    }
 	}
