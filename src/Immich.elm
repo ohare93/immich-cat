@@ -20,6 +20,7 @@ type alias ImmichApiPaths =
     , searchAssets : String
     , getAlbum : ImmichAssetId -> String
     , putAlbumAssets : ImmichAlbumId -> String
+    , createAlbum : String
     , apiKey : String
     }
 
@@ -31,6 +32,7 @@ getImmichApiPaths immichUrl immichApiKey =
     , searchAssets = immichUrl ++ "/search/metadata"
     , getAlbum = \id -> immichUrl ++ "/albums/" ++ id
     , putAlbumAssets = \id -> immichUrl ++ "/albums/" ++ id ++ "/assets"
+    , createAlbum = immichUrl ++ "/albums"
     , apiKey = immichApiKey
     }
 
@@ -168,6 +170,22 @@ albumChangeAssetMembership apiPaths albumId assetIds isAddition =
         , tracker = Nothing
         }
 
+createAlbum : ImmichApiPaths -> String -> Cmd Msg
+createAlbum apiPaths albumName =
+    Http.request
+        { method = "POST"
+        , headers = [ Http.header "x-api-key" apiPaths.apiKey ]
+        , url = apiPaths.createAlbum
+        , body =
+            Http.jsonBody
+                (Encode.object
+                    [ ( "albumName", Encode.string albumName ) ]
+                )
+        , expect = Http.expectJson AlbumCreated albumDecoder
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
 albumDecoder : Decode.Decoder ImmichAlbum
 albumDecoder =
     Decode.map5 ImmichAlbum
@@ -256,6 +274,7 @@ type Msg
     | AllImagesFetched (Result Http.Error (List ImmichAsset))
     | AssetMembershipFetched (Result Http.Error AssetWithMembership)
     | AlbumAssetsChanged (Result Http.Error ())
+    | AlbumCreated (Result Http.Error ImmichAlbum)
 
 
 type alias Model r =

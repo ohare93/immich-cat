@@ -71,6 +71,7 @@ type UserMode
     | SelectAlbumInput AlbumSearch
     | LoadingAssets SourceLoadState
     | EditAsset InputMode AssetWithActions AlbumSearch
+    | CreateAlbumConfirmation InputMode AssetWithActions AlbumSearch String
 
 type alias SearchString =
     String
@@ -126,6 +127,9 @@ type UserActionEditMode
     | ChangeImageIndex Int
     | TextEditModeInputUpdate TextInputUpdate
     | ApplyAlbumIfMatching
+    | CreateNewAlbum
+    | ConfirmCreateNewAlbum
+    | CancelCreateNewAlbum
     | AssetChange AssetChange
     | UserActionGeneralEdit UserActionGeneral
 
@@ -446,6 +450,16 @@ viewMainWindow model =
                             ""
             in
             viewWithSidebar (viewSidebar asset search model.knownAlbums) (viewEditAsset model.immichApiPaths model.imageIndex (Dict.size model.knownAssets) viewTitle asset)
+        CreateAlbumConfirmation _ asset search albumName ->
+            viewWithSidebar (viewSidebar asset search model.knownAlbums) (viewCreateAlbumConfirmation albumName)
+
+viewCreateAlbumConfirmation : String -> Element msg
+viewCreateAlbumConfirmation albumName =
+    column [ width fill, height fill, paddingXY 20 20, Element.spacingXY 0 20, centerX, centerY ]
+        [ el [ Font.size 18, Font.bold, centerX ] (text "Create New Album")
+        , el [ centerX ] (text ("Album name: \"" ++ albumName ++ "\""))
+        , el [ Font.size 14, centerX ] (text "Press Enter to create, Escape to cancel")
+        ]
 
 viewInstructions : Element msg
 viewInstructions =
@@ -503,6 +517,8 @@ viewInputMode userMode =
                 LoadingAssets _ ->
                     NormalMode
                 EditAsset editInputMode _ _ ->
+                    editInputMode
+                CreateAlbumConfirmation editInputMode _ _ _ ->
                     editInputMode
     in
     case inputMode of
@@ -647,6 +663,13 @@ update msg model =
                         Immich.AlbumsFetched (Ok albums) ->
                             model
                                 |> handleFetchAlbums albums
+                        Immich.AlbumCreated (Ok album) ->
+                            let
+                                updatedModel =
+                                    model
+                                        |> handleFetchAlbums [ album ]
+                            in
+                            updatedModel
 
                         -- |> handleProgressLoadingState FetchedAlbums
                         Immich.RandomImagesFetched (Ok assets) ->
@@ -665,6 +688,16 @@ update msg model =
 
                         Immich.AlbumsFetched (Err error) ->
                             { model | albumsLoadState = ImmichLoadError error }
+                        Immich.AlbumCreated (Err error) ->
+                            case model.userMode of
+                                LoadingAssets _ ->
+                                    case getCurrentAssetWithActions model of
+                                        Just (assetWithActions, search) ->
+                                            { model | userMode = EditAsset InsertMode assetWithActions search }
+                                        Nothing ->
+                                            model
+                                _ ->
+                                    model
                         Immich.RandomImagesFetched (Err error) ->
                             { model | imagesLoadState = ImmichLoadError error }
                         Immich.AllImagesFetched (Err error) ->
@@ -679,6 +712,20 @@ update msg model =
                 Immich.AlbumAssetsChanged (Err _) ->
                     -- Album membership change failed, re-fetch to get correct state
                     switchToEditIfAssetFound model model.imageIndex
+                Immich.AlbumCreated (Ok album) ->
+                    case model.userMode of
+                        LoadingAssets _ ->
+                            case getCurrentAssetWithActions newModel of
+                                Just (assetWithActions, _) ->
+                                    let
+                                        updatedAsset = toggleAssetAlbum assetWithActions album
+                                        updatedModel = { newModel | userMode = EditAsset InsertMode updatedAsset (getAlbumSearch "" newModel.knownAlbums) }
+                                    in
+                                    ( updatedModel, Immich.albumChangeAssetMembership newModel.immichApiPaths album.id [ assetWithActions.asset.id ] True |> Cmd.map ImmichMsg )
+                                Nothing ->
+                                    ( newModel, Cmd.none )
+                        _ ->
+                            ( newModel, Cmd.none )
                 _ ->
                     checkIfLoadingComplete newModel
 
@@ -911,7 +958,10 @@ handleUserInput model key =
                             in
                             ( { model | userMode = EditAsset inputMode (toggleAssetAlbum asset album) (getAlbumSearch "" model.knownAlbums) }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
                         Nothing ->
-                            ( model, Cmd.none )
+                            if String.trim search.searchString /= "" then
+                                ( { model | userMode = CreateAlbumConfirmation inputMode asset search (String.trim search.searchString) }, Cmd.none )
+                            else
+                                ( model, Cmd.none )
                 ChangeInputMode newInputMode ->
                     ( { model | userMode = EditAsset newInputMode asset <| getAlbumSearch "" model.knownAlbums }, Cmd.none )
                 ChangeImageIndex indexChange ->
@@ -933,8 +983,23 @@ handleUserInput model key =
                     in
                     ( { model | userMode = EditAsset inputMode asset <| getAlbumSearch newSearchString model.knownAlbums }, Cmd.none )
 
+                CreateNewAlbum ->
+                    ( model, Cmd.none )
+                ConfirmCreateNewAlbum ->
+                    ( model, Cmd.none )
+                CancelCreateNewAlbum ->
+                    ( model, Cmd.none )
                 UserActionGeneralEdit generalAction ->
                     ( applyGeneralAction model generalAction, Cmd.none )
+
+        CreateAlbumConfirmation inputMode asset search albumName ->
+            case key of
+                "Enter" ->
+                    ( { model | userMode = LoadingAssets { fetchedAssetList = Nothing, fetchedAssetMembership = Nothing } }, Immich.createAlbum model.immichApiPaths albumName |> Cmd.map ImmichMsg )
+                "Escape" ->
+                    ( { model | userMode = EditAsset inputMode asset search }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
 
 getTopMatchToSearch : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> Maybe ImmichAlbum
 getTopMatchToSearch search albums =
@@ -1007,6 +1072,24 @@ switchToEditIfAssetFound model index =
             in
             ( { model | imageIndex = index, userMode = EditAsset NormalMode (getAssetWithActions asset) (getAlbumSearch "" model.knownAlbums) }, cmdToSend )
 
+
+getCurrentAssetWithActions : Model -> Maybe (AssetWithActions, AlbumSearch)
+getCurrentAssetWithActions model =
+    let
+        maybeAssetId =
+            model.currentAssets |> List.drop model.imageIndex |> List.head
+        maybeAsset =
+            case maybeAssetId of
+                Nothing ->
+                    Nothing
+                Just id ->
+                    Dict.get id model.knownAssets
+    in
+    case maybeAsset of
+        Nothing ->
+            Nothing
+        Just asset ->
+            Just (getAssetWithActions asset, getAlbumSearch "" model.knownAlbums)
 
 getAssetWithActions : ImmichAsset -> AssetWithActions
 getAssetWithActions asset =
