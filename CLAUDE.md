@@ -10,21 +10,22 @@ This is an image categorization tool built with Elm that integrates with the Imm
 
 ### Starting Development Server
 ```bash
-npm run start-env
+npm run dev
 ```
-This creates environment-specific files and starts the development server with hot reloading on port 8000.
+Starts a secure development server on port 8000 with hot reloading. Environment variables are injected in-memory only (never written to files).
 
 ### Building for Production
 ```bash
 npm run build
 ```
-Compiles the Elm application to JavaScript in the `dist/` directory.
+Compiles the Elm application to JavaScript in the `dist/` directory. Produces clean builds with no embedded secrets.
 
-### Running with Docker
+### Development Environment Setup
+Requires devbox (NixOS environment management):
 ```bash
-docker compose up -d --remove-orphans --build
+devbox shell  # Enter development environment
+npm run dev   # Start secure development server
 ```
-Starts the complete application stack in containers.
 
 ## Architecture
 
@@ -40,17 +41,25 @@ Starts the complete application stack in containers.
 - Album management and asset categorization
 - Fuzzy search for albums and assets
 - Batch operations for favorites, archives, and deletions
+- Asset preloading and caching system
 
 ### Custom Web Components
-The application uses custom elements defined in `src/index.html.template`:
-- `image-from-api` - Handles authenticated image loading from Immich
-- `video-from-api` - Handles authenticated video playback
-- Both create blob URLs for secure asset access
+The application uses custom elements defined in `src/index.html`:
+- `image-from-api` - Handles authenticated image loading from Immich with preloading
+- `video-from-api` - Handles authenticated video playback with selective preloading
+- Both create blob URLs for secure asset access and implement caching
 
-### Environment Configuration
-- Uses `envsub` to inject environment variables into HTML template
-- Requires Immich API URL and authentication configuration
-- Development environment variables are loaded from `.env` file
+### Environment Configuration (Secure)
+- **Development:** Custom Node.js proxy server injects environment variables in-memory only
+- **Security:** API keys never written to any files on disk
+- **Runtime injection:** Environment variables passed via `window.ENV` at request time
+- **Configuration:** Development environment variables loaded from `.env` file
+
+### Development Security Features
+- ✅ Zero secret persistence - API keys stay in memory only
+- ✅ In-memory injection - Variables loaded at HTTP request time
+- ✅ Clean builds - Production artifacts contain no embedded secrets
+- ✅ Development safety - Shows first 5 characters of API key for verification
 
 ## File Structure
 
@@ -59,16 +68,23 @@ src/
 ├── Main.elm              # Application entry point
 ├── Immich.elm           # Immich API integration
 ├── Helpers.elm          # Utility functions
-└── index.html.template  # HTML template with custom elements
+└── index.html           # HTML with secure environment variable handling
+
+scripts/
+├── dev-server.js        # Secure development server with in-memory env injection
+├── start-dev.js         # Development server launcher
+└── build.js             # Production build script (clean, no secrets)
 
 dist/                    # Compiled JavaScript output
 docs/                    # API documentation
+devbox.json             # NixOS environment configuration
 ```
 
 ## Development Notes
 
 - The application uses Elm 0.19.1 with functional programming patterns
-- Hot reloading is available during development via elm-live
+- Hot reloading provided by elm-live proxied through secure development server
 - All API communication goes through the Immich.elm module
 - UI state is managed through the Elm Architecture pattern
-- Custom web components handle authenticated asset loading from Immich API
+- Custom web components handle authenticated asset loading with blob URL caching
+- Environment variables handled securely - never persisted to files during development
