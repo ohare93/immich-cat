@@ -23,14 +23,12 @@ type Msg
 
 type alias Flags =
     { test : Int
-    , imagePrepend : String
     , immichApiKey : String
     , immichApiUrl : String
     }
 
 type alias Model =
     { key : String
-    , imagePrepend : String
     , currentAssetsSource : AssetSource
     , userMode : UserMode
     , test : Int
@@ -185,7 +183,6 @@ propertyChangeToNumber prop =
 init : Flags -> ( Model, Cmd Msg )
 init flags =
     ( { key = ""
-      , imagePrepend = flags.imagePrepend
       , userMode = MainMenu
       , currentAssetsSource = NoAssets
       , test = flags.test
@@ -329,10 +326,13 @@ generatePreloadUrls : List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Im
 generatePreloadUrls currentAssets knownAssets apiPaths imageIndex count =
     let
         -- Generate indices for next few images and previous few images
-        forwardIndices = List.range (imageIndex + 1) (imageIndex + count)
-        backwardIndices = List.range (max 0 (imageIndex - count)) (imageIndex - 1)
-        adjacentIndices = forwardIndices ++ backwardIndices
-        
+        forwardIndices =
+            List.range (imageIndex + 1) (imageIndex + count)
+        backwardIndices =
+            List.range (max 0 (imageIndex - count)) (imageIndex - 1)
+        adjacentIndices =
+            forwardIndices ++ backwardIndices
+
         getAssetUrl index =
             if index >= 0 && index < List.length currentAssets then
                 currentAssets
@@ -342,11 +342,13 @@ generatePreloadUrls currentAssets knownAssets apiPaths imageIndex count =
                     |> Maybe.map (\asset -> apiPaths.downloadAsset asset.id)
             else
                 Nothing
-        
+
         preloadUrls =
             adjacentIndices
                 |> List.filterMap getAssetUrl
-                |> List.take (count * 2) -- Allow both forward and backward
+                |> List.take (count * 2)
+
+        -- Allow both forward and backward
     in
     String.join "," preloadUrls
 
@@ -486,8 +488,10 @@ viewMainWindow model =
                     case model.currentAssetsSource of
                         ImageSearch config ->
                             case config.categorisation of
-                                Uncategorised -> "Uncategorised"
-                                All -> "All Images"
+                                Uncategorised ->
+                                    "Uncategorised"
+                                All ->
+                                    "All Images"
                         TextSearch searchText ->
                             "Search : '" ++ searchText ++ "'"
                         Album album ->
@@ -502,16 +506,21 @@ viewMainWindow model =
 viewCurrentConfig : ImageSearchConfig -> Element msg
 viewCurrentConfig config =
     let
-        orderText = 
+        orderText =
             case config.order of
-                Desc -> "Descending"
-                Asc -> "Ascending" 
-                Random -> "Random"
-        
+                Desc ->
+                    "Descending"
+                Asc ->
+                    "Ascending"
+                Random ->
+                    "Random"
+
         categorisationText =
             case config.categorisation of
-                All -> "All images"
-                Uncategorised -> "Uncategorised"
+                All ->
+                    "All images"
+                Uncategorised ->
+                    "Uncategorised"
     in
     column [ Element.spacingXY 0 8 ]
         [ el [ Font.size 16, Font.bold ] (text "Current Settings:")
@@ -755,7 +764,7 @@ update msg model =
                             case model.userMode of
                                 LoadingAssets _ ->
                                     getCurrentAssetWithActions model
-                                        |> Maybe.map (\(assetWithActions, search) -> { model | userMode = EditAsset InsertMode assetWithActions search })
+                                        |> Maybe.map (\( assetWithActions, search ) -> { model | userMode = EditAsset InsertMode assetWithActions search })
                                         |> Maybe.withDefault model
                                 _ ->
                                     model
@@ -775,13 +784,16 @@ update msg model =
                     case model.userMode of
                         LoadingAssets _ ->
                             getCurrentAssetWithActions newModel
-                                |> Maybe.map (\(assetWithActions, _) ->
-                                    let
-                                        updatedAsset = toggleAssetAlbum assetWithActions album
-                                        updatedModel = { newModel | userMode = EditAsset InsertMode updatedAsset (getAlbumSearch "" newModel.knownAlbums) }
-                                    in
-                                    ( updatedModel, Immich.albumChangeAssetMembership newModel.immichApiPaths album.id [ assetWithActions.asset.id ] True |> Cmd.map ImmichMsg )
-                                )
+                                |> Maybe.map
+                                    (\( assetWithActions, _ ) ->
+                                        let
+                                            updatedAsset =
+                                                toggleAssetAlbum assetWithActions album
+                                            updatedModel =
+                                                { newModel | userMode = EditAsset InsertMode updatedAsset (getAlbumSearch "" newModel.knownAlbums) }
+                                        in
+                                        ( updatedModel, Immich.albumChangeAssetMembership newModel.immichApiPaths album.id [ assetWithActions.asset.id ] True |> Cmd.map ImmichMsg )
+                                    )
                                 |> Maybe.withDefault ( newModel, Cmd.none )
                         _ ->
                             ( newModel, Cmd.none )
@@ -870,35 +882,48 @@ handleUserInput model key =
             case key of
                 "l" ->
                     let
-                        immichOrder = 
+                        immichOrder =
                             case model.imageSearchConfig.order of
-                                Desc -> Immich.Desc
-                                Asc -> Immich.Asc  
-                                Random -> Immich.Random
+                                Desc ->
+                                    Immich.Desc
+                                Asc ->
+                                    Immich.Asc
+                                Random ->
+                                    Immich.Random
                         immichCategorisation =
                             case model.imageSearchConfig.categorisation of
-                                All -> Immich.All
-                                Uncategorised -> Immich.Uncategorised
-                        config = { order = immichOrder, categorisation = immichCategorisation }
+                                All ->
+                                    Immich.All
+                                Uncategorised ->
+                                    Immich.Uncategorised
+                        config =
+                            { order = immichOrder, categorisation = immichCategorisation }
                     in
                     ( applyGeneralAction model (ChangeUserModeToLoading (ImageSearch model.imageSearchConfig)), Immich.fetchImages model.immichApiPaths config |> Cmd.map ImmichMsg )
                 "o" ->
                     let
-                        newOrder = 
+                        newOrder =
                             case model.imageSearchConfig.order of
-                                Desc -> Asc
-                                Asc -> Random
-                                Random -> Desc
-                        newConfig = { order = newOrder, categorisation = model.imageSearchConfig.categorisation }
+                                Desc ->
+                                    Asc
+                                Asc ->
+                                    Random
+                                Random ->
+                                    Desc
+                        newConfig =
+                            { order = newOrder, categorisation = model.imageSearchConfig.categorisation }
                     in
                     ( { model | imageSearchConfig = newConfig }, Cmd.none )
                 "c" ->
                     let
-                        newCategorisation = 
+                        newCategorisation =
                             case model.imageSearchConfig.categorisation of
-                                All -> Uncategorised
-                                Uncategorised -> All
-                        newConfig = { order = model.imageSearchConfig.order, categorisation = newCategorisation }
+                                All ->
+                                    Uncategorised
+                                Uncategorised ->
+                                    All
+                        newConfig =
+                            { order = model.imageSearchConfig.order, categorisation = newCategorisation }
                     in
                     ( { model | imageSearchConfig = newConfig }, Cmd.none )
                 "a" ->
@@ -1140,27 +1165,28 @@ switchToEditIfAssetFound model index =
         |> List.drop index
         |> List.head
         |> Maybe.andThen (\id -> Dict.get id model.knownAssets)
-        |> Maybe.map (\asset ->
-            let
-                cmdToSend =
-                    -- if List.isEmpty asset.albumMembership then
-                    Immich.fetchMembershipForAsset model.immichApiPaths asset.id |> Cmd.map ImmichMsg
+        |> Maybe.map
+            (\asset ->
+                let
+                    cmdToSend =
+                        -- if List.isEmpty asset.albumMembership then
+                        Immich.fetchMembershipForAsset model.immichApiPaths asset.id |> Cmd.map ImmichMsg
 
-                -- else
-                --     Cmd.none
-            in
-            ( { model | imageIndex = index, userMode = EditAsset NormalMode (getAssetWithActions asset) (getAlbumSearch "" model.knownAlbums) }, cmdToSend )
-        )
+                    -- else
+                    --     Cmd.none
+                in
+                ( { model | imageIndex = index, userMode = EditAsset NormalMode (getAssetWithActions asset) (getAlbumSearch "" model.knownAlbums) }, cmdToSend )
+            )
         |> Maybe.withDefault ( createLoadStateForCurrentAssetSource model.currentAssetsSource model, Cmd.none )
 
 
-getCurrentAssetWithActions : Model -> Maybe (AssetWithActions, AlbumSearch)
+getCurrentAssetWithActions : Model -> Maybe ( AssetWithActions, AlbumSearch )
 getCurrentAssetWithActions model =
     model.currentAssets
         |> List.drop model.imageIndex
         |> List.head
         |> Maybe.andThen (\id -> Dict.get id model.knownAssets)
-        |> Maybe.map (\asset -> (getAssetWithActions asset, getAlbumSearch "" model.knownAlbums))
+        |> Maybe.map (\asset -> ( getAssetWithActions asset, getAlbumSearch "" model.knownAlbums ))
 
 getAssetWithActions : ImmichAsset -> AssetWithActions
 getAssetWithActions asset =

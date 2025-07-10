@@ -1,0 +1,25 @@
+{
+  "packages": [
+    "elmPackages.elm",
+    "elmPackages.elm-test",
+    "elmPackages.elm-format",
+    "elmPackages.elm-live",
+    "elmPackages.nodejs@latest"
+  ],
+  "shell": {
+    "init_hook": [
+      "echo 'Setting up Elm development environment...'",
+      "echo 'Installing npm dependencies...'",
+      "npm install",
+      "echo 'Ready! Run: npm run dev'"
+    ],
+    "scripts": {
+      "dev":   "npm run dev",
+      "build": "npm run build",
+      "test":  "elm-test"
+    }
+  },
+  "env": {
+    "ELM_HOME": ".elm"
+  }
+}

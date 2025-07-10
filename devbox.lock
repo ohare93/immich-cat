@@ -1,0 +1,146 @@
+{
+  "lockfile_version": "1",
+  "packages": {
+    "elmPackages.elm": {
+      "resolved": "github:NixOS/nixpkgs/9b008d60392981ad674e04016d25619281550a9d?narHash=sha256-mgFxAPLWw0Kq%2BC8P3dRrZrOYEQXOtKuYVlo9xvPntt8%3D#elmPackages.elm",
+      "source": "nixpkg",
+      "systems": {
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "path": "/nix/store/wji5yx7kniw101nrn7jfs8vk7m2ixk9q-elm-0.19.1",
+              "default": true
+            }
+          ]
+        }
+      }
+    },
+    "elmPackages.elm-format": {
+      "resolved": "github:NixOS/nixpkgs/9b008d60392981ad674e04016d25619281550a9d?narHash=sha256-mgFxAPLWw0Kq%2BC8P3dRrZrOYEQXOtKuYVlo9xvPntt8%3D#elmPackages.elm-format",
+      "source": "nixpkg",
+      "systems": {
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "path": "/nix/store/ij57w4ax780hlhf4qwwdh8xglcig0s4b-elm-format-0.8.7",
+              "default": true
+            }
+          ]
+        }
+      }
+    },
+    "elmPackages.elm-live": {
+      "resolved": "github:NixOS/nixpkgs/9b008d60392981ad674e04016d25619281550a9d?narHash=sha256-mgFxAPLWw0Kq%2BC8P3dRrZrOYEQXOtKuYVlo9xvPntt8%3D#elmPackages.elm-live",
+      "source": "nixpkg",
+      "systems": {
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "path": "/nix/store/rcl5ajq081ibdjagnp0js3kxwq10yz5b-elm-live-4.0.2",
+              "default": true
+            }
+          ]
+        }
+      }
+    },
+    "elmPackages.elm-test": {
+      "resolved": "github:NixOS/nixpkgs/9b008d60392981ad674e04016d25619281550a9d?narHash=sha256-mgFxAPLWw0Kq%2BC8P3dRrZrOYEQXOtKuYVlo9xvPntt8%3D#elmPackages.elm-test",
+      "source": "nixpkg",
+      "systems": {
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "revision16",
+              "path": "/nix/store/5hylrdvhfwr0yx333dn1wlz7fx093f4w-elm-test-0.19.1-revision16",
+              "default": true
+            }
+          ]
+        }
+      }
+    },
+    "elmPackages.nodejs@latest": {
+      "last_modified": "2025-07-07T11:34:27Z",
+      "resolved": "github:NixOS/nixpkgs/0acc6a91343eb987397c27044a8d1fbcb374c265#elmPackages.nodejs",
+      "source": "devbox-search",
+      "version": "22.16.0",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/abxz7wpw5kwaijzzmf8rl4ga981vk8pc-nodejs-22.16.0",
+              "default": true
+            },
+            {
+              "name": "dev",
+              "path": "/nix/store/78lk3dc4gmcnzmxm4izkvbvr56jdz1x9-nodejs-22.16.0-dev"
+            },
+            {
+              "name": "libv8",
+              "path": "/nix/store/4fwln9knqmx59msrm0i5di5r7p18kf4p-nodejs-22.16.0-libv8"
+            }
+          ],
+          "store_path": "/nix/store/abxz7wpw5kwaijzzmf8rl4ga981vk8pc-nodejs-22.16.0"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/jssj55ihylzsnzc83cybad4fgfs3bcny-nodejs-22.16.0",
+              "default": true
+            },
+            {
+              "name": "dev",
+              "path": "/nix/store/sbp52l9kksr47xxkfvn8ap2lkygxj8sk-nodejs-22.16.0-dev"
+            },
+            {
+              "name": "libv8",
+              "path": "/nix/store/332a0dqmiqf32mjzs8j9bia9n6rlqmga-nodejs-22.16.0-libv8"
+            }
+          ],
+          "store_path": "/nix/store/jssj55ihylzsnzc83cybad4fgfs3bcny-nodejs-22.16.0"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/swzij8xmzv1c81rvhcf2fzlnarjpjcnb-nodejs-22.16.0",
+              "default": true
+            },
+            {
+              "name": "dev",
+              "path": "/nix/store/y48cb55420c58rfg54mh3rqiw2bfhdqs-nodejs-22.16.0-dev"
+            },
+            {
+              "name": "libv8",
+              "path": "/nix/store/qwmhg3jf6b7jzgnjjiw6v84fs9bakfps-nodejs-22.16.0-libv8"
+            }
+          ],
+          "store_path": "/nix/store/swzij8xmzv1c81rvhcf2fzlnarjpjcnb-nodejs-22.16.0"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/pjr8jcds298brhwy1d3rmym9vayxhbfs-nodejs-22.16.0",
+              "default": true
+            },
+            {
+              "name": "dev",
+              "path": "/nix/store/f4mwqm5lg34430cx759rpn2ibf652s8j-nodejs-22.16.0-dev"
+            },
+            {
+              "name": "libv8",
+              "path": "/nix/store/a6jybrxgmdpgy7kyxjh9sv97cp2xgw5h-nodejs-22.16.0-libv8"
+            }
+          ],
+          "store_path": "/nix/store/pjr8jcds298brhwy1d3rmym9vayxhbfs-nodejs-22.16.0"
+        }
+      }
+    },
+    "github:NixOS/nixpkgs/nixpkgs-unstable": {
+      "last_modified": "2025-07-08T04:39:49Z",
+      "resolved": "github:NixOS/nixpkgs/9b008d60392981ad674e04016d25619281550a9d?lastModified=1751949589&narHash=sha256-mgFxAPLWw0Kq%2BC8P3dRrZrOYEQXOtKuYVlo9xvPntt8%3D"
+    }
+  }
+}
