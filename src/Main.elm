@@ -467,7 +467,8 @@ viewInstructions =
         [ el [ Font.size 18, Font.bold ] <| text "Keybindings"
         , column [ Element.spacingXY 0 8 ]
             [ el [ Font.size 16, Font.bold ] <| text "Main Menu"
-            , viewKeybinding "u" "Load uncategorized assets"
+            , viewKeybinding "u" "Load uncategorised assets"
+            , viewKeybinding "l" "Load all assets"
             , viewKeybinding "a" "Select album"
             , viewKeybinding "s" "Search assets"
             ]
@@ -681,6 +682,10 @@ update msg model =
                             model
                                 |> handleFetchAssets assets
                                 |> handleUpdateLoadingState FetchedAssetList
+                        Immich.UncategorisedImagesFetched (Ok assets) ->
+                            model
+                                |> handleFetchAssets assets
+                                |> handleUpdateLoadingState FetchedAssetList
 
                         Immich.AssetMembershipFetched (Ok assetWithMembership) ->
                             model
@@ -699,6 +704,8 @@ update msg model =
                         Immich.RandomImagesFetched (Err error) ->
                             { model | imagesLoadState = ImmichLoadError error }
                         Immich.AllImagesFetched (Err error) ->
+                            { model | imagesLoadState = ImmichLoadError error }
+                        Immich.UncategorisedImagesFetched (Err error) ->
                             { model | imagesLoadState = ImmichLoadError error }
                         _ ->
                             model
@@ -808,7 +815,9 @@ handleUserInput model key =
         MainMenu ->
             case key of
                 "u" ->
-                    ( applyGeneralAction model (ChangeUserModeToLoading Uncategorised), Immich.fetchAllImages model.immichApiPaths |> Cmd.map ImmichMsg )
+                    ( applyGeneralAction model (ChangeUserModeToLoading Uncategorised), Immich.fetchUncategorisedImages model.immichApiPaths |> Cmd.map ImmichMsg )
+                "l" ->
+                    ( applyGeneralAction model (ChangeUserModeToLoading (Search "all")), Immich.fetchAllImages model.immichApiPaths |> Cmd.map ImmichMsg )
                 "a" ->
                     ( applyGeneralAction model ChangeUserModeToSelectAlbum, Cmd.none )
                 "s" ->

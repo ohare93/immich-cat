@@ -82,7 +82,7 @@ getAllAlbums : String -> String -> Cmd Msg
 getAllAlbums url key =
     Http.request
         { method = "GET"
-        , headers = [ Http.header "Content-Type" "application/json", Http.header "x-api-key" key ]
+        , headers = [ Http.header "x-api-key" key ]
         , url = url ++ "/albums"
         , body = Http.emptyBody
         , expect = Http.expectJson AlbumsFetched (Decode.list albumDecoder)
@@ -94,13 +94,9 @@ getAlbum : ImmichApiPaths -> ImmichAlbumId -> Cmd Msg
 getAlbum apiPaths albumId =
     Http.request
         { method = "GET"
-        , headers = [ Http.header "Accept" "application/json", Http.header "x-api-key" apiPaths.apiKey ]
+        , headers = [ Http.header "x-api-key" apiPaths.apiKey ]
         , url = apiPaths.getAlbum albumId
-        , body =
-            Http.jsonBody
-                (Encode.object
-                    [ ( "order", Encode.string "desc" ) ]
-                )
+        , body = Http.emptyBody
         , expect = Http.expectJson SingleAlbumFetched albumDecoder
         , timeout = Nothing
         , tracker = Nothing
@@ -110,7 +106,7 @@ fetchRandomImages : String -> String -> Cmd Msg
 fetchRandomImages url key =
     Http.request
         { method = "POST"
-        , headers = [ Http.header "Content-Type" "application/json", Http.header "Accept" "application/json", Http.header "x-api-key" key ]
+        , headers = [ Http.header "x-api-key" key ]
         , url = url ++ "/search/random"
         , body =
             Http.jsonBody
@@ -126,14 +122,30 @@ fetchAllImages : ImmichApiPaths -> Cmd Msg
 fetchAllImages apiPaths =
     Http.request
         { method = "POST"
-        , headers = [ Http.header "Content-Type" "application/json", Http.header "Accept" "application/json", Http.header "x-api-key" apiPaths.apiKey ]
+        , headers = [ Http.header "x-api-key" apiPaths.apiKey ]
+        , url = apiPaths.searchAssets
+        , body =
+            Http.jsonBody
+                (Encode.object
+                    [ ( "order", Encode.string "desc" ) ]
+                )
+        , expect = Http.expectJson AllImagesFetched nestedAssetsDecoder
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+fetchUncategorisedImages : ImmichApiPaths -> Cmd Msg
+fetchUncategorisedImages apiPaths =
+    Http.request
+        { method = "POST"
+        , headers = [ Http.header "x-api-key" apiPaths.apiKey ]
         , url = apiPaths.searchAssets
         , body =
             Http.jsonBody
                 (Encode.object
                     [ ( "isNotInAlbum", Encode.bool True ), ( "order", Encode.string "desc" ) ]
                 )
-        , expect = Http.expectJson AllImagesFetched nestedAssetsDecoder
+        , expect = Http.expectJson UncategorisedImagesFetched nestedAssetsDecoder
         , timeout = Nothing
         , tracker = Nothing
         }
@@ -142,7 +154,7 @@ fetchMembershipForAsset : ImmichApiPaths -> ImmichAssetId -> Cmd Msg
 fetchMembershipForAsset apiPaths assetId =
     Http.request
         { method = "GET"
-        , headers = [ Http.header "Accept" "application/json", Http.header "x-api-key" apiPaths.apiKey ]
+        , headers = [ Http.header "x-api-key" apiPaths.apiKey ]
         , url = apiPaths.fetchMembershipForAsset assetId
         , body = Http.emptyBody
         , expect = Http.expectJson AssetMembershipFetched (albumToAssetWithMembershipDecoder assetId)
@@ -272,6 +284,7 @@ type Msg
     | SingleAlbumFetched (Result Http.Error ImmichAlbum)
     | RandomImagesFetched (Result Http.Error (List ImmichAsset))
     | AllImagesFetched (Result Http.Error (List ImmichAsset))
+    | UncategorisedImagesFetched (Result Http.Error (List ImmichAsset))
     | AssetMembershipFetched (Result Http.Error AssetWithMembership)
     | AlbumAssetsChanged (Result Http.Error ())
     | AlbumCreated (Result Http.Error ImmichAlbum)
