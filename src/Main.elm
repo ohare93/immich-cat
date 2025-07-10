@@ -691,11 +691,9 @@ update msg model =
                         Immich.AlbumCreated (Err error) ->
                             case model.userMode of
                                 LoadingAssets _ ->
-                                    case getCurrentAssetWithActions model of
-                                        Just (assetWithActions, search) ->
-                                            { model | userMode = EditAsset InsertMode assetWithActions search }
-                                        Nothing ->
-                                            model
+                                    getCurrentAssetWithActions model
+                                        |> Maybe.map (\(assetWithActions, search) -> { model | userMode = EditAsset InsertMode assetWithActions search })
+                                        |> Maybe.withDefault model
                                 _ ->
                                     model
                         Immich.RandomImagesFetched (Err error) ->
@@ -715,15 +713,15 @@ update msg model =
                 Immich.AlbumCreated (Ok album) ->
                     case model.userMode of
                         LoadingAssets _ ->
-                            case getCurrentAssetWithActions newModel of
-                                Just (assetWithActions, _) ->
+                            getCurrentAssetWithActions newModel
+                                |> Maybe.map (\(assetWithActions, _) ->
                                     let
                                         updatedAsset = toggleAssetAlbum assetWithActions album
                                         updatedModel = { newModel | userMode = EditAsset InsertMode updatedAsset (getAlbumSearch "" newModel.knownAlbums) }
                                     in
                                     ( updatedModel, Immich.albumChangeAssetMembership newModel.immichApiPaths album.id [ assetWithActions.asset.id ] True |> Cmd.map ImmichMsg )
-                                Nothing ->
-                                    ( newModel, Cmd.none )
+                                )
+                                |> Maybe.withDefault ( newModel, Cmd.none )
                         _ ->
                             ( newModel, Cmd.none )
                 _ ->
@@ -1046,22 +1044,11 @@ applyGeneralAction model action =
 
 switchToEditIfAssetFound : Model -> ImageIndex -> ( Model, Cmd Msg )
 switchToEditIfAssetFound model index =
-    let
-        maybeAssetId =
-            model.currentAssets |> List.drop index |> List.head
-        maybeAsset =
-            case maybeAssetId of
-                Nothing ->
-                    Nothing
-                Just id ->
-                    Dict.get id model.knownAssets
-    in
-    case maybeAsset of
-        --TODO: Should not be necessary?
-        Nothing ->
-            ( createLoadStateForCurrentAssetSource model.currentAssetsSource model, Cmd.none )
-
-        Just asset ->
+    model.currentAssets
+        |> List.drop index
+        |> List.head
+        |> Maybe.andThen (\id -> Dict.get id model.knownAssets)
+        |> Maybe.map (\asset ->
             let
                 cmdToSend =
                     -- if List.isEmpty asset.albumMembership then
@@ -1071,25 +1058,17 @@ switchToEditIfAssetFound model index =
                 --     Cmd.none
             in
             ( { model | imageIndex = index, userMode = EditAsset NormalMode (getAssetWithActions asset) (getAlbumSearch "" model.knownAlbums) }, cmdToSend )
+        )
+        |> Maybe.withDefault ( createLoadStateForCurrentAssetSource model.currentAssetsSource model, Cmd.none )
 
 
 getCurrentAssetWithActions : Model -> Maybe (AssetWithActions, AlbumSearch)
 getCurrentAssetWithActions model =
-    let
-        maybeAssetId =
-            model.currentAssets |> List.drop model.imageIndex |> List.head
-        maybeAsset =
-            case maybeAssetId of
-                Nothing ->
-                    Nothing
-                Just id ->
-                    Dict.get id model.knownAssets
-    in
-    case maybeAsset of
-        Nothing ->
-            Nothing
-        Just asset ->
-            Just (getAssetWithActions asset, getAlbumSearch "" model.knownAlbums)
+    model.currentAssets
+        |> List.drop model.imageIndex
+        |> List.head
+        |> Maybe.andThen (\id -> Dict.get id model.knownAssets)
+        |> Maybe.map (\asset -> (getAssetWithActions asset, getAlbumSearch "" model.knownAlbums))
 
 getAssetWithActions : ImmichAsset -> AssetWithActions
 getAssetWithActions asset =
