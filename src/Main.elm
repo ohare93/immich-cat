@@ -259,15 +259,15 @@ usefulColours name =
 --         ]
 
 
-viewAsset : ImmichApiPaths -> ImmichAsset -> Element msg
-viewAsset apiPaths asset =
+viewAsset : ImmichApiPaths -> ImmichAsset -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> Element msg
+viewAsset apiPaths asset currentAssets knownAssets imageIndex =
     if asset.path == "" then
         el [] (text "No Asset")
 
     else if assetIsImage asset then
-        viewImage asset apiPaths
+        viewImage asset apiPaths currentAssets knownAssets imageIndex
     else if assetIsVideo asset then
-        viewVideo asset apiPaths
+        viewVideo asset apiPaths currentAssets knownAssets imageIndex
 
     else
         text (String.join " " [ "Error with", asset.title, "Unknown mimetype:", asset.mimeType ])
@@ -305,8 +305,8 @@ assetIsImage asset =
         , "image/x-fuji-raf"
         ]
 
-viewImage : ImmichAsset -> ImmichApiPaths -> Element msg
-viewImage asset apiPaths =
+viewImage : ImmichAsset -> ImmichApiPaths -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> Element msg
+viewImage asset apiPaths currentAssets knownAssets imageIndex =
     el [ width fill, height fill ] <|
         Element.html
             (Html.div [ Html.Attributes.style "display" "flex", Html.Attributes.style "align-items" "center", Html.Attributes.style "justify-content" "center", Html.Attributes.style "height" "calc(100vh - 40px)", Html.Attributes.style "width" "100%", Html.Attributes.style "overflow" "hidden" ]
@@ -314,6 +314,7 @@ viewImage asset apiPaths =
                 , node "image-from-api"
                     [ Html.Attributes.attribute "asset-url" (apiPaths.downloadAsset asset.id)
                     , Html.Attributes.attribute "api-key" apiPaths.apiKey
+                    , Html.Attributes.attribute "preload-urls" (generatePreloadUrls currentAssets knownAssets apiPaths imageIndex 3)
                     , Html.Attributes.class "center"
                     , Html.Attributes.style "max-width" "100%"
                     , Html.Attributes.style "max-height" "100%"
@@ -323,6 +324,31 @@ viewImage asset apiPaths =
                     []
                 ]
             )
+
+generatePreloadUrls : List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> ImmichApiPaths -> Int -> Int -> String
+generatePreloadUrls currentAssets knownAssets apiPaths imageIndex count =
+    let
+        -- Generate indices for next few images and previous few images
+        forwardIndices = List.range (imageIndex + 1) (imageIndex + count)
+        backwardIndices = List.range (max 0 (imageIndex - count)) (imageIndex - 1)
+        adjacentIndices = forwardIndices ++ backwardIndices
+        
+        getAssetUrl index =
+            if index >= 0 && index < List.length currentAssets then
+                currentAssets
+                    |> List.drop index
+                    |> List.head
+                    |> Maybe.andThen (\id -> Dict.get id knownAssets)
+                    |> Maybe.map (\asset -> apiPaths.downloadAsset asset.id)
+            else
+                Nothing
+        
+        preloadUrls =
+            adjacentIndices
+                |> List.filterMap getAssetUrl
+                |> List.take (count * 2) -- Allow both forward and backward
+    in
+    String.join "," preloadUrls
 
 assetIsVideo : ImmichAsset -> Bool
 assetIsVideo asset =
@@ -347,8 +373,8 @@ assetIsVideo asset =
         , "video/x-ms-asf"
         ]
 
-viewVideo : ImmichAsset -> ImmichApiPaths -> Element msg
-viewVideo asset apiPaths =
+viewVideo : ImmichAsset -> ImmichApiPaths -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> Element msg
+viewVideo asset apiPaths currentAssets knownAssets imageIndex =
     el [ width fill, height fill, Html.Attributes.style "position" "relative" |> Element.htmlAttribute ] <|
         Element.html
             (Html.div []
@@ -356,6 +382,7 @@ viewVideo asset apiPaths =
                 , node "video-from-api"
                     [ Html.Attributes.attribute "asset-url" (apiPaths.downloadAsset asset.id)
                     , Html.Attributes.attribute "api-key" apiPaths.apiKey
+                    , Html.Attributes.attribute "preload-urls" (generatePreloadUrls currentAssets knownAssets apiPaths imageIndex 2)
                     , Html.Attributes.class "center"
                     , Html.Attributes.style "width" "100%"
                     , Html.Attributes.style "height" "calc(100vh - 40px)"
@@ -388,12 +415,12 @@ viewVideo asset apiPaths =
 --                     []
 --                 ]
 
-viewEditAsset : ImmichApiPaths -> ImageIndex -> Int -> String -> AssetWithActions -> Element Msg
-viewEditAsset apiPaths imageIndex totalAssets viewTitle currentAsset =
+viewEditAsset : ImmichApiPaths -> ImageIndex -> Int -> String -> AssetWithActions -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Element Msg
+viewEditAsset apiPaths imageIndex totalAssets viewTitle currentAsset currentAssets knownAssets =
     column [ width fill, height fill ]
         [ el [ alignTop, height (px 20) ]
             (text (String.fromInt (imageIndex + 1) ++ "/" ++ String.fromInt totalAssets ++ "    " ++ viewTitle))
-        , el [ width fill, height fill ] <| viewAsset apiPaths currentAsset.asset
+        , el [ width fill, height fill ] <| viewAsset apiPaths currentAsset.asset currentAssets knownAssets imageIndex
         ]
 
 viewLoadingAssets : ImmichLoadState -> Element Msg
@@ -468,7 +495,7 @@ viewMainWindow model =
                         NoAssets ->
                             ""
             in
-            viewWithSidebar (viewSidebar asset search model.knownAlbums) (viewEditAsset model.immichApiPaths model.imageIndex (Dict.size model.knownAssets) viewTitle asset)
+            viewWithSidebar (viewSidebar asset search model.knownAlbums) (viewEditAsset model.immichApiPaths model.imageIndex (Dict.size model.knownAssets) viewTitle asset model.currentAssets model.knownAssets)
         CreateAlbumConfirmation _ asset search albumName ->
             viewWithSidebar (viewSidebar asset search model.knownAlbums) (viewCreateAlbumConfirmation albumName)
 

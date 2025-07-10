@@ -24,29 +24,67 @@
   <body>
     <div id="myapp"></div>
     <script type="text/javascript">
+      // Cache for storing blob URLs
+      const assetCache = new Map();
+      const preloadQueue = new Set();
+      const maxCacheSize = 50; // Max number of cached assets
+
       function fetchWithAuthentication(url, authToken) {
 	const headers = new Headers();
 	headers.set('x-api-key', authToken);
 	return fetch(url, { headers });
       }
 
+      function cleanupOldCache() {
+	if (assetCache.size > maxCacheSize) {
+	  const oldEntries = Array.from(assetCache.entries()).slice(0, assetCache.size - maxCacheSize);
+	  oldEntries.forEach(([url, blobUrl]) => {
+	    URL.revokeObjectURL(blobUrl);
+	    assetCache.delete(url);
+	  });
+	}
+      }
+
       async function getProtectedAssetUrl(imageUrl, authToken) {
-	// Fetch the image.
-	const response = await fetchWithAuthentication(
-	  imageUrl, authToken
-	);
-	
-	// Create an object URL from the data.
-	const blob = await response.blob();
-	const objectUrl = URL.createObjectURL(blob);
+	// Check cache first
+	if (assetCache.has(imageUrl)) {
+	  return assetCache.get(imageUrl);
+	}
 
-	console.log("Blob made: " + objectUrl)
+	// Prevent multiple simultaneous fetches of the same asset
+	if (preloadQueue.has(imageUrl)) {
+	  // Wait for the ongoing fetch to complete
+	  while (preloadQueue.has(imageUrl) && !assetCache.has(imageUrl)) {
+	    await new Promise(resolve => setTimeout(resolve, 50));
+	  }
+	  return assetCache.get(imageUrl);
+	}
 
-	// Update the source of the image.
-	//const imageElement = getElementById(imageId);
-	//imageElement.src = objectUrl;
+	preloadQueue.add(imageUrl);
 
-	return objectUrl;
+	try {
+	  // Fetch the image.
+	  const response = await fetchWithAuthentication(imageUrl, authToken);
+	  
+	  // Create an object URL from the data.
+	  const blob = await response.blob();
+	  const objectUrl = URL.createObjectURL(blob);
+
+	  // Store in cache
+	  assetCache.set(imageUrl, objectUrl);
+	  cleanupOldCache();
+
+	  return objectUrl;
+	} finally {
+	  preloadQueue.delete(imageUrl);
+	}
+      }
+
+      // Preload function for adjacent images
+      function preloadAsset(imageUrl, authToken) {
+	if (!assetCache.has(imageUrl) && !preloadQueue.has(imageUrl)) {
+	  getProtectedAssetUrl(imageUrl, authToken).catch(console.error);
+	}
       }
 
       customElements.define('image-from-api',
@@ -58,13 +96,27 @@
 	    async connectedCallback() {
 	      this.assetUrl = this.getAttribute('asset-url');
 	      this.apiKey = this.getAttribute('api-key');
+	      this.preloadList = this.getAttribute('preload-urls');
+
+	      // Show loading state first
+	      this.render();
 
 	      this.assetBlob = await getProtectedAssetUrl(this.assetUrl, this.apiKey);
-	      console.log("Connected. " + this.assetUrl);
+	      
+	      // Preload adjacent images
+	      if (this.preloadList) {
+		const urls = this.preloadList.split(',');
+		urls.forEach(url => {
+		  if (url.trim()) {
+		    preloadAsset(url.trim(), this.apiKey);
+		  }
+		});
+	      }
+	      
+	      // Now render with the actual asset
 	      this.render(); 
 	    }
 	    async attributeChangedCallback() {
-	      console.log("Attribute changed. " + this.assetUrl);
 	      const newAssetUrl = this.getAttribute('asset-url');
 	      if (this.assetUrl !== newAssetUrl) {
 		this.assetUrl = newAssetUrl;
@@ -72,13 +124,21 @@
 		this.render();
 	      }
 	    }
-	    static get observedAttributes() { return ['asset-url', 'api-key']; }
+	    static get observedAttributes() { return ['asset-url', 'api-key', 'preload-urls']; }
 
 	    render()
 	    {
-		this.innerHTML = `
-		    <img src="${this.assetBlob}" alt="Asset" />
-		`;
+		if (this.assetBlob) {
+		    this.innerHTML = `
+			<img src="${this.assetBlob}" alt="Asset" />
+		    `;
+		} else {
+		    this.innerHTML = `
+			<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #666;">
+			    Loading...
+			</div>
+		    `;
+		}
 	    }
 	}
       );
@@ -92,13 +152,27 @@
 	    async connectedCallback() {
 	      this.assetUrl = this.getAttribute('asset-url');
 	      this.apiKey = this.getAttribute('api-key');
+	      this.preloadList = this.getAttribute('preload-urls');
+
+	      // Show loading state first
+	      this.render();
 
 	      this.assetBlob = await getProtectedAssetUrl(this.assetUrl, this.apiKey);
-	      console.log("Connected. " + this.assetUrl);
+	      
+	      // Preload adjacent videos (smaller priority than images)
+	      if (this.preloadList) {
+		const urls = this.preloadList.split(',');
+		urls.slice(0, 2).forEach(url => { // Only preload 2 adjacent videos
+		  if (url.trim()) {
+		    setTimeout(() => preloadAsset(url.trim(), this.apiKey), 1000); // Delay video preloading
+		  }
+		});
+	      }
+	      
+	      // Now render with the actual asset
 	      this.render(); 
 	    }
 	    async attributeChangedCallback() {
-	      console.log("Attribute changed. " + this.assetUrl);
 	      const newAssetUrl = this.getAttribute('asset-url');
 	      if (this.assetUrl !== newAssetUrl) {
 		this.assetUrl = newAssetUrl;
@@ -107,13 +181,21 @@
 	      }
 	      this.render();
 	    }
-	    static get observedAttributes() { return ['asset-url', 'api-key']; }
+	    static get observedAttributes() { return ['asset-url', 'api-key', 'preload-urls']; }
 
 	    render()
 	    {
-	      this.innerHTML = `
-		<video src="${this.assetBlob}" controls="controls" autoplay loop />
-	      `;
+	      if (this.assetBlob) {
+		this.innerHTML = `
+		  <video src="${this.assetBlob}" controls="controls" autoplay loop />
+		`;
+	      } else {
+		this.innerHTML = `
+		  <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #666;">
+		    Loading video...
+		  </div>
+		`;
+	      }
 	    }
 	}
       );
