@@ -8,6 +8,20 @@ import Json.Encode as Encode
 import String exposing (split)
 
 
+type ImageOrder
+    = Desc
+    | Asc
+    | Random
+
+type CategorisationFilter
+    = All
+    | Uncategorised
+
+type alias ImageSearchConfig =
+    { order : ImageOrder
+    , categorisation : CategorisationFilter
+    }
+
 type ImmichLoadState
     = ImmichLoading
     | ImmichLoadSuccess
@@ -102,53 +116,53 @@ getAlbum apiPaths albumId =
         , tracker = Nothing
         }
 
-fetchRandomImages : String -> String -> Cmd Msg
-fetchRandomImages url key =
-    Http.request
-        { method = "POST"
-        , headers = [ Http.header "x-api-key" key ]
-        , url = url ++ "/search/random"
-        , body =
-            Http.jsonBody
-                (Encode.object
-                    [ ( "isNotInAlbum", Encode.bool True ) ]
-                )
-        , expect = Http.expectJson RandomImagesFetched (Decode.list imageDecoder)
-        , timeout = Nothing
-        , tracker = Nothing
-        }
+fetchImages : ImmichApiPaths -> ImageSearchConfig -> Cmd Msg
+fetchImages apiPaths config =
+    case config.order of
+        Random ->
+            let
+                body = 
+                    case config.categorisation of
+                        Uncategorised ->
+                            Http.jsonBody (Encode.object [ ( "isNotInAlbum", Encode.bool True ) ])
+                        All ->
+                            Http.jsonBody (Encode.object [])
+            in
+            Http.request
+                { method = "POST"
+                , headers = [ Http.header "x-api-key" apiPaths.apiKey ]
+                , url = apiPaths.searchRandom
+                , body = body
+                , expect = Http.expectJson ImagesFetched (Decode.list imageDecoder)
+                , timeout = Nothing
+                , tracker = Nothing
+                }
+        
+        _ ->
+            let
+                orderString = 
+                    case config.order of
+                        Desc -> "desc"
+                        Asc -> "asc"
+                        Random -> "desc" -- fallback, shouldn't happen
+                
+                bodyFields =
+                    [ ( "order", Encode.string orderString ) ] ++
+                    (case config.categorisation of
+                        Uncategorised -> [ ( "isNotInAlbum", Encode.bool True ) ]
+                        All -> []
+                    )
+            in
+            Http.request
+                { method = "POST"
+                , headers = [ Http.header "x-api-key" apiPaths.apiKey ]
+                , url = apiPaths.searchAssets
+                , body = Http.jsonBody (Encode.object bodyFields)
+                , expect = Http.expectJson ImagesFetched nestedAssetsDecoder
+                , timeout = Nothing
+                , tracker = Nothing
+                }
 
-fetchAllImages : ImmichApiPaths -> Cmd Msg
-fetchAllImages apiPaths =
-    Http.request
-        { method = "POST"
-        , headers = [ Http.header "x-api-key" apiPaths.apiKey ]
-        , url = apiPaths.searchAssets
-        , body =
-            Http.jsonBody
-                (Encode.object
-                    [ ( "order", Encode.string "desc" ) ]
-                )
-        , expect = Http.expectJson AllImagesFetched nestedAssetsDecoder
-        , timeout = Nothing
-        , tracker = Nothing
-        }
-
-fetchUncategorisedImages : ImmichApiPaths -> Cmd Msg
-fetchUncategorisedImages apiPaths =
-    Http.request
-        { method = "POST"
-        , headers = [ Http.header "x-api-key" apiPaths.apiKey ]
-        , url = apiPaths.searchAssets
-        , body =
-            Http.jsonBody
-                (Encode.object
-                    [ ( "isNotInAlbum", Encode.bool True ), ( "order", Encode.string "desc" ) ]
-                )
-        , expect = Http.expectJson UncategorisedImagesFetched nestedAssetsDecoder
-        , timeout = Nothing
-        , tracker = Nothing
-        }
 
 fetchMembershipForAsset : ImmichApiPaths -> ImmichAssetId -> Cmd Msg
 fetchMembershipForAsset apiPaths assetId =
@@ -282,9 +296,7 @@ type alias AssetWithMembership =
 type Msg
     = AlbumsFetched (Result Http.Error (List ImmichAlbum))
     | SingleAlbumFetched (Result Http.Error ImmichAlbum)
-    | RandomImagesFetched (Result Http.Error (List ImmichAsset))
-    | AllImagesFetched (Result Http.Error (List ImmichAsset))
-    | UncategorisedImagesFetched (Result Http.Error (List ImmichAsset))
+    | ImagesFetched (Result Http.Error (List ImmichAsset))
     | AssetMembershipFetched (Result Http.Error AssetWithMembership)
     | AlbumAssetsChanged (Result Http.Error ())
     | AlbumCreated (Result Http.Error ImmichAlbum)

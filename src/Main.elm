@@ -36,6 +36,7 @@ type alias Model =
     , test : Int
     , imageIndex : ImageIndex
     , debugging : Bool
+    , imageSearchConfig : ImageSearchConfig
     -- Immich fields
     , currentAssets : List ImmichAssetId
     , knownAssets : Dict ImmichAssetId ImmichAsset
@@ -47,10 +48,24 @@ type alias Model =
     , immichApiPaths : ImmichApiPaths
     }
 
+type ImageOrder
+    = Desc
+    | Asc
+    | Random
+
+type CategorisationFilter
+    = All
+    | Uncategorised
+
+type alias ImageSearchConfig =
+    { order : ImageOrder
+    , categorisation : CategorisationFilter
+    }
+
 type AssetSource
     = NoAssets
-    | Uncategorised
-    | Search String
+    | ImageSearch ImageSearchConfig
+    | TextSearch String
     | Album ImmichAlbum
 
 type alias SourceLoadState =
@@ -176,6 +191,7 @@ init flags =
       , test = flags.test
       , imageIndex = 0
       , debugging = False
+      , imageSearchConfig = { order = Desc, categorisation = Uncategorised }
       -- Immich fields
       , currentAssets = []
       , knownAssets = Dict.empty
@@ -415,9 +431,10 @@ viewMainWindow model =
     case model.userMode of
         MainMenu ->
             row [ width fill, height fill ]
-                [ column [ width <| fillPortion 1, height fill ]
+                [ column [ width <| fillPortion 1, height fill, Element.spacingXY 0 20 ]
                     [ text "Select Asset Source"
                     , button [] { onPress = Just LoadDataAgain, label = text "Load albums" }
+                    , viewCurrentConfig model.imageSearchConfig
                     ]
                 , el [ width <| fillPortion 1, height fill ] <| viewInstructions
                 ]
@@ -440,9 +457,11 @@ viewMainWindow model =
             let
                 viewTitle =
                     case model.currentAssetsSource of
-                        Uncategorised ->
-                            "Uncategorised"
-                        Search searchText ->
+                        ImageSearch config ->
+                            case config.categorisation of
+                                Uncategorised -> "Uncategorised"
+                                All -> "All Images"
+                        TextSearch searchText ->
                             "Search : '" ++ searchText ++ "'"
                         Album album ->
                             album.albumName
@@ -452,6 +471,26 @@ viewMainWindow model =
             viewWithSidebar (viewSidebar asset search model.knownAlbums) (viewEditAsset model.immichApiPaths model.imageIndex (Dict.size model.knownAssets) viewTitle asset)
         CreateAlbumConfirmation _ asset search albumName ->
             viewWithSidebar (viewSidebar asset search model.knownAlbums) (viewCreateAlbumConfirmation albumName)
+
+viewCurrentConfig : ImageSearchConfig -> Element msg
+viewCurrentConfig config =
+    let
+        orderText = 
+            case config.order of
+                Desc -> "Descending"
+                Asc -> "Ascending" 
+                Random -> "Random"
+        
+        categorisationText =
+            case config.categorisation of
+                All -> "All images"
+                Uncategorised -> "Uncategorised"
+    in
+    column [ Element.spacingXY 0 8 ]
+        [ el [ Font.size 16, Font.bold ] (text "Current Settings:")
+        , el [ Font.size 14 ] (text ("Order: " ++ orderText))
+        , el [ Font.size 14 ] (text ("Filter: " ++ categorisationText))
+        ]
 
 viewCreateAlbumConfirmation : String -> Element msg
 viewCreateAlbumConfirmation albumName =
@@ -467,8 +506,9 @@ viewInstructions =
         [ el [ Font.size 18, Font.bold ] <| text "Keybindings"
         , column [ Element.spacingXY 0 8 ]
             [ el [ Font.size 16, Font.bold ] <| text "Main Menu"
-            , viewKeybinding "u" "Load uncategorised assets"
-            , viewKeybinding "l" "Load all assets"
+            , viewKeybinding "o" "Cycle order (desc/asc/random)"
+            , viewKeybinding "c" "Cycle categorisation (all/uncategorised)"
+            , viewKeybinding "l" "Load with current settings"
             , viewKeybinding "a" "Select album"
             , viewKeybinding "s" "Search assets"
             ]
@@ -673,16 +713,7 @@ update msg model =
                             updatedModel
 
                         -- |> handleProgressLoadingState FetchedAlbums
-                        Immich.RandomImagesFetched (Ok assets) ->
-                            model
-                                |> handleFetchAssets assets
-                                |> handleUpdateLoadingState FetchedAssetList
-
-                        Immich.AllImagesFetched (Ok assets) ->
-                            model
-                                |> handleFetchAssets assets
-                                |> handleUpdateLoadingState FetchedAssetList
-                        Immich.UncategorisedImagesFetched (Ok assets) ->
+                        Immich.ImagesFetched (Ok assets) ->
                             model
                                 |> handleFetchAssets assets
                                 |> handleUpdateLoadingState FetchedAssetList
@@ -701,11 +732,7 @@ update msg model =
                                         |> Maybe.withDefault model
                                 _ ->
                                     model
-                        Immich.RandomImagesFetched (Err error) ->
-                            { model | imagesLoadState = ImmichLoadError error }
-                        Immich.AllImagesFetched (Err error) ->
-                            { model | imagesLoadState = ImmichLoadError error }
-                        Immich.UncategorisedImagesFetched (Err error) ->
+                        Immich.ImagesFetched (Err error) ->
                             { model | imagesLoadState = ImmichLoadError error }
                         _ ->
                             model
@@ -801,11 +828,11 @@ createLoadStateForCurrentAssetSource assetSource model =
     case assetSource of
         NoAssets ->
             model
-        Uncategorised ->
+        ImageSearch _ ->
             { model | currentAssetsSource = assetSource, userMode = LoadingAssets { fetchedAssetList = Just False, fetchedAssetMembership = Nothing } }
         Album _ ->
             { model | currentAssetsSource = assetSource, userMode = LoadingAssets { fetchedAssetList = Just False, fetchedAssetMembership = Nothing } }
-        Search _ ->
+        TextSearch _ ->
             { model | currentAssetsSource = assetSource, userMode = LoadingAssets { fetchedAssetList = Just False, fetchedAssetMembership = Nothing } }
 
 
@@ -814,10 +841,39 @@ handleUserInput model key =
     case model.userMode of
         MainMenu ->
             case key of
-                "u" ->
-                    ( applyGeneralAction model (ChangeUserModeToLoading Uncategorised), Immich.fetchUncategorisedImages model.immichApiPaths |> Cmd.map ImmichMsg )
                 "l" ->
-                    ( applyGeneralAction model (ChangeUserModeToLoading (Search "all")), Immich.fetchAllImages model.immichApiPaths |> Cmd.map ImmichMsg )
+                    let
+                        immichOrder = 
+                            case model.imageSearchConfig.order of
+                                Desc -> Immich.Desc
+                                Asc -> Immich.Asc  
+                                Random -> Immich.Random
+                        immichCategorisation =
+                            case model.imageSearchConfig.categorisation of
+                                All -> Immich.All
+                                Uncategorised -> Immich.Uncategorised
+                        config = { order = immichOrder, categorisation = immichCategorisation }
+                    in
+                    ( applyGeneralAction model (ChangeUserModeToLoading (ImageSearch model.imageSearchConfig)), Immich.fetchImages model.immichApiPaths config |> Cmd.map ImmichMsg )
+                "o" ->
+                    let
+                        newOrder = 
+                            case model.imageSearchConfig.order of
+                                Desc -> Asc
+                                Asc -> Random
+                                Random -> Desc
+                        newConfig = { order = newOrder, categorisation = model.imageSearchConfig.categorisation }
+                    in
+                    ( { model | imageSearchConfig = newConfig }, Cmd.none )
+                "c" ->
+                    let
+                        newCategorisation = 
+                            case model.imageSearchConfig.categorisation of
+                                All -> Uncategorised
+                                Uncategorised -> All
+                        newConfig = { order = model.imageSearchConfig.order, categorisation = newCategorisation }
+                    in
+                    ( { model | imageSearchConfig = newConfig }, Cmd.none )
                 "a" ->
                     ( applyGeneralAction model ChangeUserModeToSelectAlbum, Cmd.none )
                 "s" ->
@@ -836,7 +892,7 @@ handleUserInput model key =
                             "Escape" ->
                                 UserActionGeneralSearch <| ChangeUserModeToMainMenu
                             "Enter" ->
-                                UserActionGeneralSearch <| ChangeUserModeToLoading (Search searchString)
+                                UserActionGeneralSearch <| ChangeUserModeToLoading (TextSearch searchString)
                             _ ->
                                 UserActionGeneralSearch UnknownAction
             in
