@@ -56,8 +56,8 @@ function getHtmlWithEnvVars() {
       };
     </script>`;
 
-  // Insert the environment script before the closing </head> tag
-  htmlTemplate = htmlTemplate.replace('</head>', `${envScript}\n  </head>`);
+  // Insert the environment script at the very beginning of <head> to ensure it loads first
+  htmlTemplate = htmlTemplate.replace('<head>', `<head>${envScript}`);
   
   return htmlTemplate;
 }

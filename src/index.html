@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
   <head>
     <meta charset="UTF-8" />
@@ -97,41 +97,51 @@
             super();
             //this.attachShadow({mode: 'open'});
           }
-          async connectedCallback() {
+          connectedCallback() {
+            // Initialize properties but don't start loading yet
+            // We'll wait for attributes to be set via attributeChangedCallback
             this.assetUrl = this.getAttribute("asset-url");
             this.apiKey = this.getAttribute("api-key");
             this.preloadList = this.getAttribute("preload-urls");
-
-            // Show loading state first
-            this.render();
-
-            this.assetBlob = await getProtectedAssetUrl(
-              this.assetUrl,
-              this.apiKey,
-            );
-
-            // Preload adjacent images
-            if (this.preloadList) {
-              const urls = this.preloadList.split(",");
-              urls.forEach((url) => {
-                if (url.trim()) {
-                  preloadAsset(url.trim(), this.apiKey);
-                }
-              });
-            }
-
-            // Now render with the actual asset
+            
+            // Show initial loading state
             this.render();
           }
-          async attributeChangedCallback() {
-            const newAssetUrl = this.getAttribute("asset-url");
-            if (this.assetUrl !== newAssetUrl) {
-              this.assetUrl = newAssetUrl;
-              this.assetBlob = await getProtectedAssetUrl(
-                this.assetUrl,
-                this.apiKey,
-              );
-              this.render();
+          async attributeChangedCallback(name, oldValue, newValue) {
+            if (name === 'api-key') {
+              this.apiKey = newValue;
+            } else if (name === 'asset-url') {
+              this.assetUrl = newValue;
+            } else if (name === 'preload-urls') {
+              this.preloadList = newValue;
+            }
+            
+            // Start loading when we have both asset URL and API key
+            if (this.assetUrl && this.apiKey && this.apiKey !== 'undefined' && !this.assetBlob) {
+              this.render(); // Show loading state
+              
+              try {
+                this.assetBlob = await getProtectedAssetUrl(this.assetUrl, this.apiKey);
+                
+                // Preload adjacent images
+                if (this.preloadList) {
+                  const urls = this.preloadList.split(",");
+                  urls.forEach((url) => {
+                    if (url.trim()) {
+                      preloadAsset(url.trim(), this.apiKey);
+                    }
+                  });
+                }
+                
+                this.render(); // Show actual image
+              } catch (error) {
+                console.error('Error loading image:', error);
+                this.innerHTML = `
+                  <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #f66;">
+                    Error loading image
+                  </div>
+                `;
+              }
             }
           }
           static get observedAttributes() {
@@ -238,4 +248,3 @@
     </script>
   </body>
 </html>
-
