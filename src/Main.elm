@@ -815,6 +815,9 @@ update msg model =
                             model
                                 |> handleFetchAssetMembership assetWithMembership
 
+                        Immich.AssetUpdated (Ok updatedAsset) ->
+                            { model | knownAssets = Dict.insert updatedAsset.id updatedAsset model.knownAssets }
+
                         Immich.AlbumsFetched (Err error) ->
                             { model | albumsLoadState = ImmichLoadError error }
                         Immich.AlbumCreated (Err error) ->
@@ -1125,14 +1128,26 @@ handleUserInput model key =
                     let
                         newAsset =
                             { asset | isFavourite = flipPropertyChange asset.isFavourite }
+                        newIsFavorite = 
+                            case newAsset.isFavourite of
+                                ChangeToTrue -> True
+                                RemainTrue -> True
+                                ChangeToFalse -> False
+                                RemainFalse -> False
                     in
-                    ( { model | userMode = EditAsset inputMode newAsset search }, Cmd.none )
+                    ( { model | userMode = EditAsset inputMode newAsset search }, Immich.updateAssetFavorite model.immichApiPaths asset.asset.id newIsFavorite |> Cmd.map ImmichMsg )
                 AssetChange ToggleDelete ->
                     let
                         newAsset =
                             { asset | isArchived = flipPropertyChange asset.isArchived }
+                        newIsArchived = 
+                            case newAsset.isArchived of
+                                ChangeToTrue -> True
+                                RemainTrue -> True
+                                ChangeToFalse -> False
+                                RemainFalse -> False
                     in
-                    ( { model | userMode = EditAsset inputMode newAsset search }, Cmd.none )
+                    ( { model | userMode = EditAsset inputMode newAsset search }, Immich.updateAssetArchived model.immichApiPaths asset.asset.id newIsArchived |> Cmd.map ImmichMsg )
                 AssetChange (ToggleAlbum album) ->
                     ( { model | userMode = EditAsset inputMode (toggleAssetAlbum asset album) search }, Cmd.none )
                 ApplyAlbumIfMatching ->

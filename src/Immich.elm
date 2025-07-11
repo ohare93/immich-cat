@@ -32,9 +32,11 @@ type alias ImmichApiPaths =
     , fetchMembershipForAsset : ImmichAssetId -> String
     , searchRandom : String
     , searchAssets : String
+    , searchSmart : String
     , getAlbum : ImmichAssetId -> String
     , putAlbumAssets : ImmichAlbumId -> String
     , createAlbum : String
+    , updateAsset : ImmichAssetId -> String
     , apiKey : String
     }
 
@@ -43,10 +45,12 @@ getImmichApiPaths immichUrl immichApiKey =
     { downloadAsset = \id -> immichUrl ++ "/assets/" ++ id ++ "/original"
     , fetchMembershipForAsset = \assetId -> immichUrl ++ "/albums?assetId=" ++ assetId
     , searchRandom = immichUrl ++ "/search/random"
-    , searchAssets = immichUrl ++ "/search/smart"
+    , searchAssets = immichUrl ++ "/search/metadata"
+    , searchSmart = immichUrl ++ "/search/smart"
     , getAlbum = \id -> immichUrl ++ "/albums/" ++ id
     , putAlbumAssets = \id -> immichUrl ++ "/albums/" ++ id ++ "/assets"
     , createAlbum = immichUrl ++ "/albums"
+    , updateAsset = \id -> immichUrl ++ "/assets/" ++ id
     , apiKey = immichApiKey
     }
 
@@ -173,7 +177,7 @@ searchAssets apiPaths searchText =
     Http.request
         { method = "POST"
         , headers = [ Http.header "x-api-key" apiPaths.apiKey ]
-        , url = apiPaths.searchAssets
+        , url = apiPaths.searchSmart
         , body = Http.jsonBody (Encode.object bodyFields)
         , expect = Http.expectJson ImagesFetched nestedAssetsDecoder
         , timeout = Nothing
@@ -224,6 +228,38 @@ createAlbum apiPaths albumName =
                     [ ( "albumName", Encode.string albumName ) ]
                 )
         , expect = Http.expectJson AlbumCreated albumDecoder
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+updateAssetFavorite : ImmichApiPaths -> ImmichAssetId -> Bool -> Cmd Msg
+updateAssetFavorite apiPaths assetId isFavorite =
+    Http.request
+        { method = "PUT"
+        , headers = [ Http.header "x-api-key" apiPaths.apiKey ]
+        , url = apiPaths.updateAsset assetId
+        , body =
+            Http.jsonBody
+                (Encode.object
+                    [ ( "isFavorite", Encode.bool isFavorite ) ]
+                )
+        , expect = Http.expectJson AssetUpdated imageDecoder
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+updateAssetArchived : ImmichApiPaths -> ImmichAssetId -> Bool -> Cmd Msg
+updateAssetArchived apiPaths assetId isArchived =
+    Http.request
+        { method = "PUT"
+        , headers = [ Http.header "x-api-key" apiPaths.apiKey ]
+        , url = apiPaths.updateAsset assetId
+        , body =
+            Http.jsonBody
+                (Encode.object
+                    [ ( "isArchived", Encode.bool isArchived ) ]
+                )
+        , expect = Http.expectJson AssetUpdated imageDecoder
         , timeout = Nothing
         , tracker = Nothing
         }
@@ -316,6 +352,7 @@ type Msg
     | AssetMembershipFetched (Result Http.Error AssetWithMembership)
     | AlbumAssetsChanged (Result Http.Error ())
     | AlbumCreated (Result Http.Error ImmichAlbum)
+    | AssetUpdated (Result Http.Error ImmichAsset)
 
 
 type alias Model r =
