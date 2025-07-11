@@ -112,6 +112,8 @@
               this.apiKey = newValue;
             } else if (name === 'asset-url') {
               this.assetUrl = newValue;
+              // Clear existing blob when URL changes so new asset can load
+              this.assetBlob = null;
             } else if (name === 'preload-urls') {
               this.preloadList = newValue;
             }
