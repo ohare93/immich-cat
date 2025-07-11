@@ -6,6 +6,7 @@ import Date
 import Dict exposing (Dict)
 import Element exposing (Element, alignBottom, alignRight, alignTop, centerX, centerY, clipY, column, el, fill, fillPortion, height, minimum, paddingXY, px, row, text, width)
 import Element.Background as Background
+import Element.Events exposing (onClick)
 import Element.Font as Font
 import Element.Input exposing (button)
 import Helpers exposing (regexFromString)
@@ -20,6 +21,7 @@ type Msg
     = KeyPress String
     | ImmichMsg Immich.Msg
     | LoadDataAgain
+    | SelectAlbum ImmichAlbum
 
 type alias Flags =
     { test : Int
@@ -102,6 +104,7 @@ type alias AssetWithActions =
 type alias AlbumSearch =
     { searchString : String
     , albumScores : Dict ImmichAlbumId Int
+    , selectedIndex : Int
     }
 
 type InputMode
@@ -133,6 +136,8 @@ type UserActionSearchMode
 type UserActionAlbumSelectMode
     = TextSelectInputUpdate TextInputUpdate
     | SelectAlbumIfMatching
+    | MoveSelectionUp
+    | MoveSelectionDown
     | UserActionGeneralAlbumSelect UserActionGeneral
 
 type UserActionEditMode
@@ -141,8 +146,8 @@ type UserActionEditMode
     | TextEditModeInputUpdate TextInputUpdate
     | ApplyAlbumIfMatching
     | CreateNewAlbum
-    | ConfirmCreateNewAlbum
-    | CancelCreateNewAlbum
+    | MoveAlbumSelectionUp
+    | MoveAlbumSelectionDown
     | AssetChange AssetChange
     | UserActionGeneralEdit UserActionGeneral
 
@@ -482,7 +487,7 @@ viewMainWindow model =
                 )
         LoadingAssets _ ->
             viewLoadingAssets model.imagesLoadState
-        EditAsset _ asset search ->
+        EditAsset inputMode asset search ->
             let
                 viewTitle =
                     case model.currentAssetsSource of
@@ -499,9 +504,9 @@ viewMainWindow model =
                         NoAssets ->
                             ""
             in
-            viewWithSidebar (viewSidebar asset search model.knownAlbums) (viewEditAsset model.immichApiPaths model.imageIndex (Dict.size model.knownAssets) viewTitle asset model.currentAssets model.knownAssets)
+            viewWithSidebar (viewSidebar asset search model.knownAlbums (Just inputMode)) (viewEditAsset model.immichApiPaths model.imageIndex (Dict.size model.knownAssets) viewTitle asset model.currentAssets model.knownAssets)
         CreateAlbumConfirmation _ asset search albumName ->
-            viewWithSidebar (viewSidebar asset search model.knownAlbums) (viewCreateAlbumConfirmation albumName)
+            viewWithSidebar (viewSidebar asset search model.knownAlbums Nothing) (viewCreateAlbumConfirmation albumName)
 
 viewCurrentConfig : ImageSearchConfig -> Element msg
 viewCurrentConfig config =
@@ -545,15 +550,8 @@ viewInstructions =
             , viewKeybinding "o" "Cycle order (desc/asc/random)"
             , viewKeybinding "c" "Cycle categorisation (all/uncategorised)"
             , viewKeybinding "l" "Load with current settings"
-            , viewKeybinding "a" "Select album"
+            , viewKeybinding "a" "Browse and select albums"
             , viewKeybinding "s" "Search assets"
-            ]
-        , column [ Element.spacingXY 0 8 ]
-            [ el [ Font.size 16, Font.bold ] <| text "Search/Input Modes"
-            , viewKeybinding "[a-z0-9 ]" "Type to search"
-            , viewKeybinding "Backspace" "Delete character"
-            , viewKeybinding "Escape" "Return to previous mode"
-            , viewKeybinding "Enter" "Execute search/selection"
             ]
         , column [ Element.spacingXY 0 8 ]
             [ el [ Font.size 16, Font.bold ] <| text "Asset Navigation (Normal Mode)"
@@ -565,11 +563,13 @@ viewInstructions =
             , viewKeybinding "f" "Toggle favorite"
             ]
         , column [ Element.spacingXY 0 8 ]
-            [ el [ Font.size 16, Font.bold ] <| text "Asset Navigation (Insert Mode)"
-            , viewKeybinding "[a-z0-9 ]" "Search albums"
-            , viewKeybinding "Backspace" "Delete search character"
-            , viewKeybinding "Escape" "Return to normal mode"
-            , viewKeybinding "Enter" "Add to matching album"
+            [ el [ Font.size 16, Font.bold ] <| text "Album Selection & Search"
+            , viewKeybinding "a" "Browse albums by name"
+            , viewKeybinding "↑↓" "Navigate through album results"
+            , viewKeybinding "Enter" "Select highlighted album"
+            , viewKeybinding "Click" "Click any album to select"
+            , viewKeybinding "Tab" "Create new album with search text"
+            , viewKeybinding "Escape" "Return to previous mode"
             ]
         ]
 
@@ -611,10 +611,14 @@ viewWithSidebar sidebarView viewToBeNextToSidebar =
         , el [ width <| fillPortion 1, height fill, alignRight, clipY ] <| sidebarView
         ]
 
-viewSidebar : AssetWithActions -> AlbumSearch -> Dict ImmichAssetId ImmichAlbum -> Element Msg
-viewSidebar asset search albums =
+viewSidebar : AssetWithActions -> AlbumSearch -> Dict ImmichAssetId ImmichAlbum -> Maybe InputMode -> Element Msg
+viewSidebar asset search albums maybeInputMode =
     column [ alignTop, height fill ]
         [ el [ alignTop ] <| text "Asset Changes"
+        , if search.searchString /= "" then
+            el [ alignTop, Font.color <| usefulColours "blue" ] <| text ("Search: \"" ++ search.searchString ++ "\"")
+          else
+            Element.none
         , row [ alignTop ]
             [ case asset.isFavourite of
                 ChangeToTrue ->
@@ -635,7 +639,7 @@ viewSidebar asset search albums =
                 RemainFalse ->
                     el [ Font.color <| usefulColours "grey" ] <| text ""
             ]
-        , el [ height fill ] <| viewSidebarAlbumsForCurrentAsset asset search albums
+        , el [ height fill ] <| viewSidebarAlbumsForCurrentAsset asset search albums maybeInputMode
         ]
 
 
@@ -644,7 +648,7 @@ viewSidebarAlbums search albums =
     column [ height fill ]
         (List.map
             (\album ->
-                row []
+                row [ onClick (SelectAlbum album) ]
                     [ el [ paddingXY 5 0 ] <| text (String.fromInt album.assetCount)
                     , el [] <| text album.albumName
                     ]
@@ -655,15 +659,19 @@ viewSidebarAlbums search albums =
                     filterToOnlySearchedForAlbums search albums
         )
 
-viewSidebarAlbumsForCurrentAsset : AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> Element Msg
-viewSidebarAlbumsForCurrentAsset asset search albums =
+viewSidebarAlbumsForCurrentAsset : AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> Maybe InputMode -> Element Msg
+viewSidebarAlbumsForCurrentAsset asset search albums maybeInputMode =
+    let
+        filteredAlbums = List.take 40 (getFilteredAlbumsList search albums)
+    in
     column [ height fill ]
-        (List.map
-            (\album ->
+        (List.indexedMap
+            (\index album ->
                 let
                     assetInAlbum =
                         Maybe.withDefault RemainFalse <| Dict.get album.id asset.albumMembership
-                    attrs =
+                    isSelected = index == search.selectedIndex && maybeInputMode == Just InsertMode
+                    baseAttrs =
                         case assetInAlbum of
                             RemainTrue ->
                                 [ Background.color <| usefulColours "green" ]
@@ -673,17 +681,17 @@ viewSidebarAlbumsForCurrentAsset asset search albums =
                                 [ Background.color <| usefulColours "blue" ]
                             ChangeToFalse ->
                                 [ Background.color <| usefulColours "red" ]
+                    attrs = if isSelected then
+                                Font.color (usefulColours "white") :: Font.bold :: baseAttrs
+                            else
+                                baseAttrs
                 in
-                row []
+                row [ onClick (SelectAlbum album) ]
                     [ el [ paddingXY 5 0 ] <| text (String.fromInt album.assetCount)
-                    , el attrs <| text album.albumName
+                    , el attrs <| text (if isSelected then "► " ++ album.albumName else album.albumName)
                     ]
             )
-         <|
-            List.take 40 <|
-                List.sortBy (\a -> ( Maybe.withDefault 1000 (Maybe.map propertyChangeToNumber (Dict.get a.id asset.albumMembership)), -a.assetCount )) <|
-                    Dict.values <|
-                        filterToOnlySearchedForAlbums search albums
+            filteredAlbums
         )
 
 filterToOnlySearchedForAlbums : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> Dict ImmichAlbumId ImmichAlbum
@@ -725,6 +733,22 @@ update msg model =
     case msg of
         LoadDataAgain ->
             ( model, Immich.getAllAlbums model.apiUrl model.apiKey |> Cmd.map ImmichMsg )
+        SelectAlbum album ->
+            case model.userMode of
+                SelectAlbumInput _ ->
+                    ( createLoadStateForCurrentAssetSource (Album album) model, Immich.getAlbum model.immichApiPaths album.id |> Cmd.map ImmichMsg )
+                EditAsset inputMode asset search ->
+                    let
+                        isNotInAlbum =
+                            case Dict.get album.id asset.albumMembership of
+                                Nothing ->
+                                    True
+                                Just _ ->
+                                    False
+                    in
+                    ( { model | userMode = EditAsset inputMode (toggleAssetAlbum asset album) (getAlbumSearch "" model.knownAlbums) }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
+                _ ->
+                    ( model, Cmd.none )
         KeyPress key ->
             handleUserInput model key
         ImmichMsg imsg ->
@@ -976,6 +1000,10 @@ handleUserInput model key =
                                 UserActionGeneralAlbumSelect ChangeUserModeToMainMenu
                             "Enter" ->
                                 SelectAlbumIfMatching
+                            "ArrowUp" ->
+                                MoveSelectionUp
+                            "ArrowDown" ->
+                                MoveSelectionDown
                             _ ->
                                 UserActionGeneralAlbumSelect UnknownAction
             in
@@ -985,23 +1013,27 @@ handleUserInput model key =
                         newSearchString =
                             searchResults.searchString ++ newKey
                     in
-                    ( { model | userMode = SelectAlbumInput <| getAlbumSearch newSearchString model.knownAlbums }, Cmd.none )
+                    ( { model | userMode = SelectAlbumInput <| updateAlbumSearchString newSearchString searchResults model.knownAlbums }, Cmd.none )
                 TextSelectInputUpdate TextInputBackspace ->
                     let
                         newSearchString =
                             String.slice 0 (String.length searchResults.searchString - 1) searchResults.searchString
                     in
-                    ( { model | userMode = SelectAlbumInput <| getAlbumSearch newSearchString model.knownAlbums }, Cmd.none )
+                    ( { model | userMode = SelectAlbumInput <| updateAlbumSearchString newSearchString searchResults model.knownAlbums }, Cmd.none )
                 SelectAlbumIfMatching ->
                     let
                         maybeMatch =
-                            getTopMatchToSearch searchResults model.knownAlbums
+                            getSelectedAlbum searchResults model.knownAlbums
                     in
                     case maybeMatch of
                         Just album ->
                             ( createLoadStateForCurrentAssetSource (Album album) model, Immich.getAlbum model.immichApiPaths album.id |> Cmd.map ImmichMsg )
                         Nothing ->
                             ( model, Cmd.none )
+                MoveSelectionUp ->
+                    ( { model | userMode = SelectAlbumInput <| moveSelectionUp searchResults model.knownAlbums }, Cmd.none )
+                MoveSelectionDown ->
+                    ( { model | userMode = SelectAlbumInput <| moveSelectionDown searchResults model.knownAlbums }, Cmd.none )
                 UserActionGeneralAlbumSelect action ->
                     ( applyGeneralAction model action, Cmd.none )
         LoadingAssets _ ->
@@ -1020,6 +1052,12 @@ handleUserInput model key =
                                     TextEditModeInputUpdate TextInputBackspace
                                 "Enter" ->
                                     ApplyAlbumIfMatching
+                                "Tab" ->
+                                    CreateNewAlbum
+                                "ArrowUp" ->
+                                    MoveAlbumSelectionUp
+                                "ArrowDown" ->
+                                    MoveAlbumSelectionDown
                                 _ ->
                                     UserActionGeneralEdit UnknownAction
                     else
@@ -1059,7 +1097,7 @@ handleUserInput model key =
                 ApplyAlbumIfMatching ->
                     let
                         maybeMatch =
-                            getTopMatchToSearch search model.knownAlbums
+                            getSelectedAlbum search model.knownAlbums
                     in
                     case maybeMatch of
                         Just album ->
@@ -1077,6 +1115,11 @@ handleUserInput model key =
                                 ( { model | userMode = CreateAlbumConfirmation inputMode asset search (String.trim search.searchString) }, Cmd.none )
                             else
                                 ( model, Cmd.none )
+                CreateNewAlbum ->
+                    if String.trim search.searchString /= "" then
+                        ( { model | userMode = CreateAlbumConfirmation inputMode asset search (String.trim search.searchString) }, Cmd.none )
+                    else
+                        ( model, Cmd.none )
                 ChangeInputMode newInputMode ->
                     ( { model | userMode = EditAsset newInputMode asset <| getAlbumSearch "" model.knownAlbums }, Cmd.none )
                 ChangeImageIndex indexChange ->
@@ -1090,20 +1133,18 @@ handleUserInput model key =
                         newSearchString =
                             search.searchString ++ newKey
                     in
-                    ( { model | userMode = EditAsset inputMode asset <| getAlbumSearch newSearchString model.knownAlbums }, Cmd.none )
+                    ( { model | userMode = EditAsset inputMode asset <| updateAlbumSearchString newSearchString search model.knownAlbums }, Cmd.none )
                 TextEditModeInputUpdate TextInputBackspace ->
                     let
                         newSearchString =
                             String.slice 0 (String.length search.searchString - 1) search.searchString
                     in
-                    ( { model | userMode = EditAsset inputMode asset <| getAlbumSearch newSearchString model.knownAlbums }, Cmd.none )
+                    ( { model | userMode = EditAsset inputMode asset <| updateAlbumSearchString newSearchString search model.knownAlbums }, Cmd.none )
 
-                CreateNewAlbum ->
-                    ( model, Cmd.none )
-                ConfirmCreateNewAlbum ->
-                    ( model, Cmd.none )
-                CancelCreateNewAlbum ->
-                    ( model, Cmd.none )
+                MoveAlbumSelectionUp ->
+                    ( { model | userMode = EditAsset inputMode asset <| moveSelectionUp search model.knownAlbums }, Cmd.none )
+                MoveAlbumSelectionDown ->
+                    ( { model | userMode = EditAsset inputMode asset <| moveSelectionDown search model.knownAlbums }, Cmd.none )
                 UserActionGeneralEdit generalAction ->
                     ( applyGeneralAction model generalAction, Cmd.none )
 
@@ -1124,15 +1165,51 @@ getTopMatchToSearch search albums =
     in
     if Dict.isEmpty matchesDict then
         Nothing
-    else if Dict.size matchesDict == 1 then
-        case Dict.values matchesDict of
-            [ album ] ->
-                Just album
-            _ ->
-                Nothing
-
     else
-        Nothing
+        -- Find the album with the highest score
+        matchesDict
+            |> Dict.toList
+            |> List.map (\(id, album) -> (Dict.get id search.albumScores |> Maybe.withDefault 0, album))
+            |> List.sortBy (\(score, _) -> -score)  -- Sort by score descending
+            |> List.head
+            |> Maybe.map (\(_, album) -> album)
+
+-- Helper functions for album selection navigation
+getFilteredAlbumsList : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> List ImmichAlbum
+getFilteredAlbumsList search albums =
+    let
+        matchesDict =
+            filterToOnlySearchedForAlbums search albums
+    in
+    matchesDict
+        |> Dict.toList
+        |> List.map (\(id, album) -> (Dict.get id search.albumScores |> Maybe.withDefault 0, album))
+        |> List.sortBy (\(score, _) -> -score)  -- Sort by score descending
+        |> List.map (\(_, album) -> album)
+
+getSelectedAlbum : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> Maybe ImmichAlbum
+getSelectedAlbum search albums =
+    let
+        filteredAlbums = getFilteredAlbumsList search albums
+    in
+    List.drop search.selectedIndex filteredAlbums
+        |> List.head
+
+moveSelectionUp : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> AlbumSearch
+moveSelectionUp search albums =
+    { search | selectedIndex = max 0 (search.selectedIndex - 1) }
+
+moveSelectionDown : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> AlbumSearch
+moveSelectionDown search albums =
+    let
+        filteredCount = List.length (getFilteredAlbumsList search albums)
+        maxIndex = max 0 (filteredCount - 1)
+    in
+    { search | selectedIndex = min maxIndex (search.selectedIndex + 1) }
+
+updateAlbumSearchString : String -> AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> AlbumSearch
+updateAlbumSearchString newSearchString oldSearch albums =
+    getAlbumSearchWithIndex newSearchString 0 albums
 
 toggleAssetAlbum : AssetWithActions -> ImmichAlbum -> AssetWithActions
 toggleAssetAlbum asset album =
@@ -1211,6 +1288,15 @@ getAlbumSearch searchString albums =
     { searchString = searchString
     , albumScores =
         Dict.map (\id album -> shittyFuzzyAlgorithmTest searchString album.albumName) albums
+    , selectedIndex = 0
+    }
+
+getAlbumSearchWithIndex : String -> Int -> Dict ImmichAssetId ImmichAlbum -> AlbumSearch
+getAlbumSearchWithIndex searchString selectedIndex albums =
+    { searchString = searchString
+    , albumScores =
+        Dict.map (\id album -> shittyFuzzyAlgorithmTest searchString album.albumName) albums
+    , selectedIndex = selectedIndex
     }
 
 
