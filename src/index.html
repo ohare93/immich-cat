@@ -219,8 +219,15 @@
           render() {
             if (this.assetBlob) {
               this.innerHTML = `
-		  <video src="${this.assetBlob}" controls="controls" autoplay loop />
+		  <video src="${this.assetBlob}" controls="controls" autoplay loop style="max-width: 100%; max-height: 100%;" />
 		`;
+              // Force autoplay after render
+              setTimeout(() => {
+                const video = this.querySelector('video');
+                if (video) {
+                  video.play().catch(console.error);
+                }
+              }, 100);
             } else {
               this.innerHTML = `
 		  <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #666;">
