@@ -87,6 +87,7 @@ type UserMode
     | LoadingAssets SourceLoadState
     | EditAsset InputMode AssetWithActions AlbumSearch
     | CreateAlbumConfirmation InputMode AssetWithActions AlbumSearch String
+    | ShowEditAssetHelp InputMode AssetWithActions AlbumSearch
 
 type alias SearchString =
     String
@@ -148,6 +149,7 @@ type UserActionEditMode
     | CreateNewAlbum
     | MoveAlbumSelectionUp
     | MoveAlbumSelectionDown
+    | ShowHelp
     | AssetChange AssetChange
     | UserActionGeneralEdit UserActionGeneral
 
@@ -507,6 +509,8 @@ viewMainWindow model =
             viewWithSidebar (viewSidebar asset search model.knownAlbums (Just inputMode)) (viewEditAsset model.immichApiPaths model.imageIndex (Dict.size model.knownAssets) viewTitle asset model.currentAssets model.knownAssets)
         CreateAlbumConfirmation _ asset search albumName ->
             viewWithSidebar (viewSidebar asset search model.knownAlbums Nothing) (viewCreateAlbumConfirmation albumName)
+        ShowEditAssetHelp inputMode asset search ->
+            viewWithSidebar (viewSidebar asset search model.knownAlbums (Just inputMode)) (viewEditAssetHelp inputMode)
 
 viewCurrentConfig : ImageSearchConfig -> Element msg
 viewCurrentConfig config =
@@ -541,6 +545,37 @@ viewCreateAlbumConfirmation albumName =
         , el [ Font.size 14, centerX ] (text "Press Enter to create, Escape to cancel")
         ]
 
+viewEditAssetHelp : InputMode -> Element msg
+viewEditAssetHelp inputMode =
+    column [ width fill, height fill, paddingXY 20 20, Element.spacingXY 0 20, centerX, centerY ]
+        [ el [ Font.size 18, Font.bold, centerX ] (text "Asset Navigation Help")
+        , column [ Element.spacingXY 0 8 ]
+            [ el [ Font.size 16, Font.bold ] <| text "Navigation"
+            , viewKeybinding "←" "Previous image"
+            , viewKeybinding "→" "Next image" 
+            , viewKeybinding "Escape" "Return to main menu"
+            ]
+        , column [ Element.spacingXY 0 8 ]
+            [ el [ Font.size 16, Font.bold ] <| text "Asset Actions"
+            , viewKeybinding "d" "Toggle delete/archive"
+            , viewKeybinding "f" "Toggle favorite"
+            , viewKeybinding "i" "Enter album search mode"
+            ]
+        , if inputMode == InsertMode then
+            column [ Element.spacingXY 0 8 ]
+                [ el [ Font.size 16, Font.bold ] <| text "Album Search (Insert Mode)"
+                , viewKeybinding "Type" "Search albums by name"
+                , viewKeybinding "↑↓" "Navigate through results"
+                , viewKeybinding "Enter" "Add to highlighted album"
+                , viewKeybinding "Tab" "Create new album"
+                , viewKeybinding "Click" "Click album to add"
+                , viewKeybinding "Escape" "Exit search mode"
+                ]
+          else
+            Element.none
+        , el [ Font.size 14, centerX ] (text "Press ? or Escape to close help")
+        ]
+
 viewInstructions : Element msg
 viewInstructions =
     column [ width fill, height fill, paddingXY 20 20, Element.spacingXY 0 10 ]
@@ -561,15 +596,7 @@ viewInstructions =
             , viewKeybinding "i" "Enter insert mode (album search)"
             , viewKeybinding "d" "Toggle delete/archive"
             , viewKeybinding "f" "Toggle favorite"
-            ]
-        , column [ Element.spacingXY 0 8 ]
-            [ el [ Font.size 16, Font.bold ] <| text "Album Selection & Search"
-            , viewKeybinding "a" "Browse albums by name"
-            , viewKeybinding "↑↓" "Navigate through album results"
-            , viewKeybinding "Enter" "Select highlighted album"
-            , viewKeybinding "Click" "Click any album to select"
-            , viewKeybinding "Tab" "Create new album with search text"
-            , viewKeybinding "Escape" "Return to previous mode"
+            , viewKeybinding "?" "Show help"
             ]
         ]
 
@@ -596,6 +623,8 @@ viewInputMode userMode =
                 EditAsset editInputMode _ _ ->
                     editInputMode
                 CreateAlbumConfirmation editInputMode _ _ _ ->
+                    editInputMode
+                ShowEditAssetHelp editInputMode _ _ ->
                     editInputMode
     in
     case inputMode of
@@ -1058,6 +1087,8 @@ handleUserInput model key =
                                     MoveAlbumSelectionUp
                                 "ArrowDown" ->
                                     MoveAlbumSelectionDown
+                                "?" ->
+                                    ShowHelp
                                 _ ->
                                     UserActionGeneralEdit UnknownAction
                     else
@@ -1076,6 +1107,8 @@ handleUserInput model key =
                                 AssetChange ToggleDelete
                             "f" ->
                                 AssetChange ToggleFavourite
+                            "?" ->
+                                ShowHelp
                             _ ->
                                 UserActionGeneralEdit UnknownAction
             in
@@ -1145,6 +1178,8 @@ handleUserInput model key =
                     ( { model | userMode = EditAsset inputMode asset <| moveSelectionUp search model.knownAlbums }, Cmd.none )
                 MoveAlbumSelectionDown ->
                     ( { model | userMode = EditAsset inputMode asset <| moveSelectionDown search model.knownAlbums }, Cmd.none )
+                ShowHelp ->
+                    ( { model | userMode = ShowEditAssetHelp inputMode asset search }, Cmd.none )
                 UserActionGeneralEdit generalAction ->
                     ( applyGeneralAction model generalAction, Cmd.none )
 
@@ -1153,6 +1188,15 @@ handleUserInput model key =
                 "Enter" ->
                     ( { model | userMode = LoadingAssets { fetchedAssetList = Nothing, fetchedAssetMembership = Nothing } }, Immich.createAlbum model.immichApiPaths albumName |> Cmd.map ImmichMsg )
                 "Escape" ->
+                    ( { model | userMode = EditAsset inputMode asset search }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
+
+        ShowEditAssetHelp inputMode asset search ->
+            case key of
+                "Escape" ->
+                    ( { model | userMode = EditAsset inputMode asset search }, Cmd.none )
+                "?" ->
                     ( { model | userMode = EditAsset inputMode asset search }, Cmd.none )
                 _ ->
                     ( model, Cmd.none )
