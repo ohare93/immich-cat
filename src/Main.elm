@@ -42,6 +42,7 @@ type alias Model =
     , knownAssets : Dict ImmichAssetId ImmichAsset
     , imagesLoadState : ImmichLoadState
     , knownAlbums : Dict ImmichAlbumId ImmichAlbum
+    , albumKeybindings : Dict ImmichAlbumId String
     , albumsLoadState : ImmichLoadState
     , apiUrl : String
     , apiKey : String
@@ -106,11 +107,13 @@ type alias AlbumSearch =
     { searchString : String
     , albumScores : Dict ImmichAlbumId Int
     , selectedIndex : Int
+    , partialKeybinding : String
     }
 
 type InputMode
     = NormalMode
     | InsertMode
+    | KeybindingMode
 
 type AssetChange
     = ToggleAlbum ImmichAlbum
@@ -145,6 +148,7 @@ type UserActionEditMode
     = ChangeInputMode InputMode
     | ChangeImageIndex Int
     | TextEditModeInputUpdate TextInputUpdate
+    | StartKeybindingMode String
     | ApplyAlbumIfMatching
     | CreateNewAlbum
     | MoveAlbumSelectionUp
@@ -201,6 +205,7 @@ init flags =
       , knownAssets = Dict.empty
       , imagesLoadState = ImmichLoading
       , knownAlbums = Dict.empty
+      , albumKeybindings = Dict.empty
       , albumsLoadState = ImmichLoading
       , apiUrl = flags.immichApiUrl
       , apiKey = flags.immichApiKey
@@ -481,7 +486,7 @@ viewMainWindow model =
                 ]
         SelectAlbumInput search ->
             viewWithSidebar
-                (viewSidebarAlbums search model.knownAlbums)
+                (viewSidebarAlbums search model.albumKeybindings model.knownAlbums)
                 (column []
                     [ text "Select Album"
                     , text search.searchString
@@ -506,11 +511,11 @@ viewMainWindow model =
                         NoAssets ->
                             ""
             in
-            viewWithSidebar (viewSidebar asset search model.knownAlbums (Just inputMode)) (viewEditAsset model.immichApiPaths model.imageIndex (Dict.size model.knownAssets) viewTitle asset model.currentAssets model.knownAssets)
+            viewWithSidebar (viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode)) (viewEditAsset model.immichApiPaths model.imageIndex (Dict.size model.knownAssets) viewTitle asset model.currentAssets model.knownAssets)
         CreateAlbumConfirmation _ asset search albumName ->
-            viewWithSidebar (viewSidebar asset search model.knownAlbums Nothing) (viewCreateAlbumConfirmation albumName)
+            viewWithSidebar (viewSidebar asset search model.albumKeybindings model.knownAlbums Nothing) (viewCreateAlbumConfirmation albumName)
         ShowEditAssetHelp inputMode asset search ->
-            viewWithSidebar (viewSidebar asset search model.knownAlbums (Just inputMode)) (viewEditAssetHelp inputMode)
+            viewWithSidebar (viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode)) (viewEditAssetHelp inputMode)
 
 viewCurrentConfig : ImageSearchConfig -> Element msg
 viewCurrentConfig config =
@@ -552,14 +557,15 @@ viewEditAssetHelp inputMode =
         , column [ Element.spacingXY 0 8 ]
             [ el [ Font.size 16, Font.bold ] <| text "Navigation"
             , viewKeybinding "←" "Previous image"
-            , viewKeybinding "→" "Next image" 
+            , viewKeybinding "→" "Next image"
+            , viewKeybinding "Space" "Next image"
             , viewKeybinding "Escape" "Return to main menu"
             ]
         , column [ Element.spacingXY 0 8 ]
             [ el [ Font.size 16, Font.bold ] <| text "Asset Actions"
-            , viewKeybinding "d" "Toggle delete/archive"
-            , viewKeybinding "f" "Toggle favorite"
-            , viewKeybinding "i" "Enter album search mode"
+            , viewKeybinding "D" "Toggle delete/archive"
+            , viewKeybinding "F" "Toggle favorite"
+            , viewKeybinding "I" "Enter album search mode"
             ]
         , if inputMode == InsertMode then
             column [ Element.spacingXY 0 8 ]
@@ -592,10 +598,11 @@ viewInstructions =
             [ el [ Font.size 16, Font.bold ] <| text "Asset Navigation (Normal Mode)"
             , viewKeybinding "←" "Previous image"
             , viewKeybinding "→" "Next image"
+            , viewKeybinding "Space" "Next image"
             , viewKeybinding "Escape" "Return to main menu"
-            , viewKeybinding "i" "Enter insert mode (album search)"
-            , viewKeybinding "d" "Toggle delete/archive"
-            , viewKeybinding "f" "Toggle favorite"
+            , viewKeybinding "I" "Enter insert mode (album search)"
+            , viewKeybinding "D" "Toggle delete/archive"
+            , viewKeybinding "F" "Toggle favorite"
             , viewKeybinding "?" "Show help"
             ]
         ]
@@ -632,6 +639,8 @@ viewInputMode userMode =
             el [ width fill, Background.color <| Element.fromRgb { red = 0.8, green = 0.8, blue = 0.8, alpha = 1 } ] <| text "Normal"
         InsertMode ->
             el [ width fill, Background.color <| Element.fromRgb { red = 0, green = 1, blue = 0, alpha = 1 } ] <| text "Input"
+        KeybindingMode ->
+            el [ width fill, Background.color <| Element.fromRgb { red = 1, green = 0.5, blue = 0, alpha = 1 } ] <| text "Keybind"
 
 viewWithSidebar : Element Msg -> Element Msg -> Element Msg
 viewWithSidebar sidebarView viewToBeNextToSidebar =
@@ -640,12 +649,16 @@ viewWithSidebar sidebarView viewToBeNextToSidebar =
         , el [ width <| fillPortion 1, height fill, alignRight, clipY ] <| sidebarView
         ]
 
-viewSidebar : AssetWithActions -> AlbumSearch -> Dict ImmichAssetId ImmichAlbum -> Maybe InputMode -> Element Msg
-viewSidebar asset search albums maybeInputMode =
+viewSidebar : AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAssetId ImmichAlbum -> Maybe InputMode -> Element Msg
+viewSidebar asset search albumKeybindings albums maybeInputMode =
     column [ alignTop, height fill ]
         [ el [ alignTop ] <| text "Asset Changes"
         , if search.searchString /= "" then
             el [ alignTop, Font.color <| usefulColours "blue" ] <| text ("Search: \"" ++ search.searchString ++ "\"")
+          else
+            Element.none
+        , if search.partialKeybinding /= "" then
+            el [ alignTop, Font.color <| Element.fromRgb { red = 1, green = 0.5, blue = 0, alpha = 1 } ] <| text ("Keybind: \"" ++ search.partialKeybinding ++ "\"")
           else
             Element.none
         , row [ alignTop ]
@@ -668,30 +681,46 @@ viewSidebar asset search albums maybeInputMode =
                 RemainFalse ->
                     el [ Font.color <| usefulColours "grey" ] <| text ""
             ]
-        , el [ height fill ] <| viewSidebarAlbumsForCurrentAsset asset search albums maybeInputMode
+        , el [ height fill ] <| viewSidebarAlbumsForCurrentAsset asset search albumKeybindings albums maybeInputMode
         ]
 
 
-viewSidebarAlbums : AlbumSearch -> Dict ImmichAssetId ImmichAlbum -> Element Msg
-viewSidebarAlbums search albums =
+viewSidebarAlbums : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAssetId ImmichAlbum -> Element Msg
+viewSidebarAlbums search albumKeybindings albums =
     column [ height fill ]
         (List.map
             (\album ->
+                let
+                    keybinding = Dict.get album.id albumKeybindings |> Maybe.withDefault ""
+                    isKeybindingMatch = 
+                        search.partialKeybinding /= "" && String.startsWith search.partialKeybinding keybinding
+                    albumDisplayName = 
+                        if keybinding == "" then
+                            album.albumName
+                        else
+                            album.albumName ++ " (" ++ keybinding ++ ")"
+                    
+                    attrs = 
+                        if isKeybindingMatch then
+                            [ Background.color <| Element.fromRgb { red = 1, green = 0.8, blue = 0.4, alpha = 0.8 } ]
+                        else
+                            []
+                in
                 row [ onClick (SelectAlbum album) ]
                     [ el [ paddingXY 5 0 ] <| text (String.fromInt album.assetCount)
-                    , el [] <| text album.albumName
+                    , el attrs <| text albumDisplayName
                     ]
             )
          <|
             List.take 40 <|
                 Dict.values <|
-                    filterToOnlySearchedForAlbums search albums
+                    filterToOnlySearchedForAlbums search albumKeybindings albums
         )
 
-viewSidebarAlbumsForCurrentAsset : AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> Maybe InputMode -> Element Msg
-viewSidebarAlbumsForCurrentAsset asset search albums maybeInputMode =
+viewSidebarAlbumsForCurrentAsset : AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Maybe InputMode -> Element Msg
+viewSidebarAlbumsForCurrentAsset asset search albumKeybindings albums maybeInputMode =
     let
-        filteredAlbums = List.take 40 (getFilteredAlbumsListForAsset search albums asset)
+        filteredAlbums = List.take 40 (getFilteredAlbumsListForAsset search albumKeybindings albums asset)
     in
     column [ height fill ]
         (List.indexedMap
@@ -715,20 +744,55 @@ viewSidebarAlbumsForCurrentAsset asset search albums maybeInputMode =
                             else
                                 baseAttrs
                 in
+                let
+                    keybinding = Dict.get album.id albumKeybindings |> Maybe.withDefault ""
+                    isKeybindingMatch = 
+                        search.partialKeybinding /= "" && String.startsWith search.partialKeybinding keybinding
+                    albumDisplayName = 
+                        if keybinding == "" then
+                            album.albumName
+                        else
+                            album.albumName ++ " (" ++ keybinding ++ ")"
+                    
+                    finalAttrs = 
+                        if isKeybindingMatch then
+                            (Background.color <| Element.fromRgb { red = 1, green = 0.8, blue = 0.4, alpha = 0.8 }) :: attrs
+                        else
+                            attrs
+                in
                 row [ onClick (SelectAlbum album) ]
                     [ el [ paddingXY 5 0 ] <| text (String.fromInt album.assetCount)
-                    , el attrs <| text (if isSelected then "► " ++ album.albumName else album.albumName)
+                    , el finalAttrs <| text (if isSelected then "► " ++ albumDisplayName else albumDisplayName)
                     ]
             )
             filteredAlbums
         )
 
-filterToOnlySearchedForAlbums : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> Dict ImmichAlbumId ImmichAlbum
-filterToOnlySearchedForAlbums search albums =
-    if search.searchString == "" then
-        albums
+filterToOnlySearchedForAlbums : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Dict ImmichAlbumId ImmichAlbum
+filterToOnlySearchedForAlbums search albumKeybindings albums =
+    let
+        textFiltered = 
+            if search.searchString == "" then
+                albums
+            else
+                Dict.filter (\id _ -> shouldFilterAlbum search.albumScores id) albums
+    in
+    if search.partialKeybinding == "" then
+        textFiltered
     else
-        Dict.filter (\id _ -> shouldFilterAlbum search.albumScores id) albums
+        filterAlbumsByKeybinding search.partialKeybinding albumKeybindings textFiltered
+
+filterAlbumsByKeybinding : String -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Dict ImmichAlbumId ImmichAlbum
+filterAlbumsByKeybinding partialKeybinding albumKeybindings albums =
+    Dict.filter 
+        (\albumId _ -> 
+            case Dict.get albumId albumKeybindings of
+                Just keybinding ->
+                    String.startsWith partialKeybinding keybinding
+                Nothing ->
+                    False
+        ) 
+        albums
 
 shouldFilterAlbum : Dict ImmichAlbumId Int -> ImmichAlbumId -> Bool
 shouldFilterAlbum albumScores albumId =
@@ -753,6 +817,14 @@ isSupportedSearchLetter testString =
     let
         regex =
             Regex.fromString "^[a-zA-Z0-9 ]$" |> Maybe.withDefault Regex.never
+    in
+    Regex.contains regex testString
+
+isKeybindingLetter : String -> Bool
+isKeybindingLetter testString =
+    let
+        regex =
+            Regex.fromString "^[a-z0-9]$" |> Maybe.withDefault Regex.never
     in
     Regex.contains regex testString
 
@@ -878,9 +950,384 @@ handleFetchAssets : List ImmichAsset -> Model -> Model
 handleFetchAssets assets model =
     { model | knownAssets = Helpers.listOverrideDict assets (\a -> ( a.id, a )) model.knownAssets, currentAssets = List.map .id assets, imagesLoadState = ImmichLoadSuccess }
 
+-- KEYBINDING GENERATION --
+
+generateAlbumKeybindings : List ImmichAlbum -> Dict ImmichAlbumId String
+generateAlbumKeybindings albums =
+    let
+        -- Generate candidates for all albums
+        albumCandidates = List.map (\album -> (album.id, generateSimpleCandidates album.albumName)) albums
+        
+        -- Build map of all possible candidates across all albums
+        allPossibleCandidates = buildAllCandidatesMap albumCandidates
+        
+        -- Assign keybindings avoiding global prefix conflicts
+        resolvedKeybindings = assignWithGlobalConflictCheck albumCandidates allPossibleCandidates
+    in
+    Dict.fromList resolvedKeybindings
+
+buildAllCandidatesMap : List (ImmichAlbumId, List String) -> Dict String (List ImmichAlbumId)
+buildAllCandidatesMap albumCandidates =
+    let
+        addCandidates (albumId, candidates) acc =
+            List.foldl (\candidate dict ->
+                Dict.update candidate (\maybeList ->
+                    case maybeList of
+                        Nothing -> Just [albumId]
+                        Just list -> Just (albumId :: list)
+                ) dict
+            ) acc candidates
+    in
+    List.foldl addCandidates Dict.empty albumCandidates
+
+assignWithGlobalConflictCheck : List (ImmichAlbumId, List String) -> Dict String (List ImmichAlbumId) -> List (ImmichAlbumId, String)
+assignWithGlobalConflictCheck albumCandidates allCandidates =
+    let
+        assignHelper remaining used =
+            case remaining of
+                [] -> []
+                (albumId, candidates) :: rest ->
+                    case findFirstGloballyValid candidates allCandidates used albumId of
+                        Just keybinding ->
+                            let newUsed = Dict.insert keybinding True used
+                            in (albumId, keybinding) :: assignHelper rest newUsed
+                        Nothing ->
+                            -- Fallback
+                            let fallback = String.left 3 albumId
+                                newUsed = Dict.insert fallback True used
+                            in (albumId, fallback) :: assignHelper rest newUsed
+    in
+    assignHelper albumCandidates Dict.empty
+
+findFirstGloballyValid : List String -> Dict String (List ImmichAlbumId) -> Dict String Bool -> ImmichAlbumId -> Maybe String
+findFirstGloballyValid candidates allCandidates used albumId =
+    case candidates of
+        [] -> Nothing
+        candidate :: rest ->
+            if isGloballyValidKeybinding candidate allCandidates used albumId then
+                Just candidate
+            else
+                findFirstGloballyValid rest allCandidates used albumId
+
+isGloballyValidKeybinding : String -> Dict String (List ImmichAlbumId) -> Dict String Bool -> ImmichAlbumId -> Bool
+isGloballyValidKeybinding candidate allCandidates used albumId =
+    let
+        -- Check if already used
+        alreadyUsed = Dict.member candidate used
+        
+        -- Check if ANY other album has a candidate that starts with this candidate
+        -- This is the key fix: reject "co" if any other album wants "con", "cor", etc.
+        wouldBlockOthers = 
+            Dict.toList allCandidates
+                |> List.any (\(otherCandidate, albumIds) ->
+                    String.startsWith candidate otherCandidate && 
+                    otherCandidate /= candidate &&
+                    not (List.all (\id -> id == albumId) albumIds)
+                )
+    in
+    not alreadyUsed && not wouldBlockOthers
+
+generateSimpleCandidates : String -> List String
+generateSimpleCandidates albumName =
+    let
+        cleanName = String.toLower (String.trim albumName)
+        words = String.split " " cleanName |> List.filter (not << String.isEmpty)
+        
+        firstChar = String.left 1 cleanName
+        firstTwoChars = String.left 2 cleanName
+        firstThreeChars = String.left 3 cleanName
+        
+        -- First letter of each word for multi-word names
+        wordAbbrev = words |> List.map (String.left 1) |> String.join ""
+        
+        -- Generate ALL possible 2-letter combinations first
+        twoCharVariants = generateTwoCharVariants cleanName
+        
+        allCandidates = 
+            [ firstChar ] ++           -- 1 char (lowest priority)
+            [ wordAbbrev ] ++          -- Multi-word abbrev (high priority for 2+ chars)
+            [ firstTwoChars ] ++       -- Basic 2-char prefix
+            twoCharVariants ++         -- Other 2-char combinations  
+            [ firstThreeChars ] ++     -- 3-char prefix
+            [ String.left 4 cleanName ] -- 4-char prefix
+    in
+    allCandidates
+    |> List.filter (not << String.isEmpty)
+    |> List.filter isValidKeybinding
+    |> removeDuplicates
+    |> List.sortBy String.length  -- SORT BY LENGTH - shortest first!
+
+generateTwoCharVariants : String -> List String
+generateTwoCharVariants cleanName =
+    let
+        firstChar = String.left 1 cleanName
+        chars = String.toList cleanName |> List.drop 1 |> List.take 4 -- Next few chars
+        
+        -- Generate first char + each subsequent char
+        variants = List.map (\c -> firstChar ++ String.fromChar c) chars
+    in
+    variants
+
+assignSimpleKeybindings : List (ImmichAlbumId, List String) -> Dict String Bool -> List (ImmichAlbumId, String)
+assignSimpleKeybindings albumCandidates usedKeybindings =
+    case albumCandidates of
+        [] -> []
+        (albumId, candidates) :: rest ->
+            case findFirstNonPrefixConflict candidates usedKeybindings of
+                Just keybinding ->
+                    let newUsed = Dict.insert keybinding True usedKeybindings
+                    in (albumId, keybinding) :: assignSimpleKeybindings rest newUsed
+                Nothing ->
+                    -- Better fallback: generate from album name
+                    let fallback = String.left 2 (String.filter Char.isAlphaNum (String.toLower albumId))
+                        newUsed = Dict.insert fallback True usedKeybindings
+                    in (albumId, fallback) :: assignSimpleKeybindings rest newUsed
+
+findFirstNonPrefixConflict : List String -> Dict String Bool -> Maybe String
+findFirstNonPrefixConflict candidates usedKeybindings =
+    case candidates of
+        [] -> Nothing
+        candidate :: rest ->
+            if isValidNonConflictingKeybinding candidate usedKeybindings then
+                Just candidate
+            else
+                findFirstNonPrefixConflict rest usedKeybindings
+
+isValidNonConflictingKeybinding : String -> Dict String Bool -> Bool
+isValidNonConflictingKeybinding candidate usedKeybindings =
+    let
+        existingKeys = Dict.keys usedKeybindings
+        
+        -- Check if this candidate is already used
+        alreadyUsed = Dict.member candidate usedKeybindings
+        
+        -- Check if this candidate is a prefix of any existing key
+        isPrefixOfExisting = List.any (String.startsWith candidate) existingKeys
+        
+        -- Check if any existing key is a prefix of this candidate  
+        existingIsPrefixOfThis = List.any (\existing -> String.startsWith existing candidate) existingKeys
+    in
+    not alreadyUsed && not isPrefixOfExisting && not existingIsPrefixOfThis
+
+generateAllPossibleKeybindings : String -> List String
+generateAllPossibleKeybindings albumName =
+    let
+        cleanName = String.toLower (String.trim albumName)
+        words = String.split " " cleanName |> List.filter (not << String.isEmpty)
+        consonants = getConsonants cleanName
+        
+        -- Generate all possible keybindings of different lengths and types
+        prefixes = List.range 1 (min 6 (String.length cleanName))
+                  |> List.map (\len -> String.left len cleanName)
+                  |> List.filter isValidKeybinding
+        
+        firstCharsOfWords = words |> List.map (String.left 1) |> String.join ""
+        
+        -- Generate consonant-based combinations
+        consonantCombos = generateConsonantCombinations cleanName consonants
+        
+        allCandidates = [ firstCharsOfWords ] ++ prefixes ++ consonantCombos
+    in
+    allCandidates
+    |> List.filter (not << String.isEmpty)
+    |> List.filter isValidKeybinding
+    |> removeDuplicates
+    |> List.sortBy String.length  -- Sort by length (shortest first)
+
+generateConsonantCombinations : String -> List String -> List String
+generateConsonantCombinations name consonants =
+    let
+        firstChar = String.left 1 name
+        
+        consonantCombos = case consonants of
+            [] -> []
+            first :: rest ->
+                [ firstChar ++ first ] ++
+                (case rest of
+                    second :: _ -> [ firstChar ++ first ++ second ]
+                    [] -> []
+                )
+    in
+    consonantCombos
+
+isValidKeybinding : String -> Bool
+isValidKeybinding keybinding =
+    let
+        regex = Regex.fromString "^[a-z0-9]+$" |> Maybe.withDefault Regex.never
+    in
+    Regex.contains regex keybinding
+
+getConsonants : String -> List String
+getConsonants str =
+    str
+    |> String.toList
+    |> List.map String.fromChar
+    |> List.filter (\char -> 
+        let lowChar = String.toLower char
+        in not (List.member lowChar ["a", "e", "i", "o", "u", " ", "-", "_", "."]) && 
+           (String.length lowChar == 1) &&
+           isValidKeybinding lowChar
+    )
+    |> List.drop 1  -- Skip first character since we want chars after first letter
+
+removeDuplicates : List String -> List String
+removeDuplicates list =
+    case list of
+        [] -> []
+        head :: tail ->
+            if List.member head tail then
+                removeDuplicates tail
+            else
+                head :: removeDuplicates tail
+
+optimizeKeybindingAssignment : List (ImmichAlbumId, String, List String) -> List (ImmichAlbumId, String)
+optimizeKeybindingAssignment albumCandidates =
+    let
+        -- Simpler approach: just assign the first available candidate that doesn't create prefix conflicts
+        assignSimple : List (ImmichAlbumId, String, List String) -> Dict String Bool -> List (ImmichAlbumId, String)
+        assignSimple remaining used =
+            case remaining of
+                [] -> []
+                (albumId, albumName, candidates) :: rest ->
+                    case findFirstNonConflicting candidates used of
+                        Just keybinding ->
+                            let newUsed = Dict.insert keybinding True used
+                            in (albumId, keybinding) :: assignSimple rest newUsed
+                        Nothing ->
+                            -- Fallback: use album ID
+                            let fallback = String.left 3 albumId
+                                newUsed = Dict.insert fallback True used
+                            in (albumId, fallback) :: assignSimple rest newUsed
+    in
+    assignSimple albumCandidates Dict.empty
+
+findFirstNonConflicting : List String -> Dict String Bool -> Maybe String
+findFirstNonConflicting candidates used =
+    case candidates of
+        [] -> Nothing
+        candidate :: rest ->
+            if not (Dict.member candidate used) && not (isPrefixConflict candidate used) then
+                Just candidate
+            else
+                findFirstNonConflicting rest used
+
+isPrefixConflict : String -> Dict String Bool -> Bool
+isPrefixConflict candidate used =
+    Dict.keys used
+        |> List.any (\existingKey -> 
+            String.startsWith candidate existingKey || String.startsWith existingKey candidate
+        )
+
+buildCandidateMap : List (ImmichAlbumId, List String) -> Dict String (List ImmichAlbumId)
+buildCandidateMap albumCandidates =
+    let
+        addCandidates : (ImmichAlbumId, List String) -> Dict String (List ImmichAlbumId) -> Dict String (List ImmichAlbumId)
+        addCandidates (albumId, candidates) acc =
+            List.foldl (\candidate dict ->
+                Dict.update candidate (\maybeList ->
+                    case maybeList of
+                        Nothing -> Just [albumId]
+                        Just list -> Just (albumId :: list)
+                ) dict
+            ) acc candidates
+    in
+    List.foldl addCandidates Dict.empty albumCandidates
+
+findSafeSingleCharacters : Dict String (List ImmichAlbumId) -> Dict String ImmichAlbumId
+findSafeSingleCharacters candidateMap =
+    let
+        singleCharCandidates = Dict.filter (\key _ -> String.length key == 1) candidateMap
+        
+        isSafeSingleChar : String -> List ImmichAlbumId -> Bool
+        isSafeSingleChar singleChar albumIds =
+            -- Safe ONLY if exactly one album wants this single char AND no other keybinding exists that starts with this char
+            case albumIds of
+                [singleAlbumId] -> 
+                    let allKeybindingsStartingWithChar = Dict.filter (\key _ -> 
+                            String.startsWith singleChar key) candidateMap
+                        
+                        -- Check if there are any other keybindings starting with this character
+                        hasConflicts = Dict.size allKeybindingsStartingWithChar > 1
+                    in
+                    not hasConflicts
+                _ -> False
+    in
+    singleCharCandidates
+        |> Dict.filter isSafeSingleChar
+        |> Dict.map (\_ albumIds -> 
+            case albumIds of
+                [albumId] -> albumId
+                _ -> "" -- This should never happen due to filter above
+        )
+        |> Dict.filter (\_ albumId -> albumId /= "")
+
+assignKeybindingsSmartly : List (ImmichAlbumId, List String) -> Dict String (List ImmichAlbumId) -> Dict String ImmichAlbumId -> Dict String Bool -> List (ImmichAlbumId, String)
+assignKeybindingsSmartly albumCandidates candidateMap safeSingleChars usedKeybindings =
+    let
+        -- First assign safe single characters
+        singleCharAssignments = Dict.toList safeSingleChars |> List.map (\(key, albumId) -> (albumId, key))
+        usedAfterSingleChars = Dict.union usedKeybindings (Dict.map (\_ _ -> True) safeSingleChars)
+        assignedAlbumIds = List.map Tuple.first singleCharAssignments
+        
+        -- Then assign remaining albums
+        remainingAlbums = List.filter (\(albumId, _) -> not (List.member albumId assignedAlbumIds)) albumCandidates
+        remainingAssignments = assignRemainingAlbumsSmartly remainingAlbums usedAfterSingleChars
+    in
+    singleCharAssignments ++ remainingAssignments
+
+assignRemainingAlbumsSmartly : List (ImmichAlbumId, List String) -> Dict String Bool -> List (ImmichAlbumId, String)
+assignRemainingAlbumsSmartly albums usedKeybindings =
+    let
+        assignHelper : List (ImmichAlbumId, List String) -> Dict String Bool -> List (ImmichAlbumId, String)
+        assignHelper remaining used =
+            case remaining of
+                [] -> []
+                (albumId, candidates) :: rest ->
+                    case findFirstAvailable candidates used of
+                        Just selectedKeybinding ->
+                            let updatedUsed = Dict.insert selectedKeybinding True used
+                            in (albumId, selectedKeybinding) :: assignHelper rest updatedUsed
+                        Nothing ->
+                            -- Fallback: generate unique keybinding
+                            let fallbackKey = generateFallbackKeybinding albumId used
+                                updatedUsed = Dict.insert fallbackKey True used
+                            in (albumId, fallbackKey) :: assignHelper rest updatedUsed
+    in
+    assignHelper albums usedKeybindings
+
+generateFallbackKeybinding : String -> Dict String Bool -> String
+generateFallbackKeybinding albumId usedKeybindings =
+    let
+        tryCandidate : String -> Int -> String
+        tryCandidate base suffix =
+            let candidate = base ++ (if suffix == 0 then "" else String.fromInt suffix)
+            in if Dict.member candidate usedKeybindings then
+                tryCandidate base (suffix + 1)
+               else
+                candidate
+    in
+    tryCandidate (String.left 2 albumId) 0
+
+findFirstAvailable : List String -> Dict String Bool -> Maybe String
+findFirstAvailable candidates usedKeybindings =
+    case candidates of
+        [] -> Nothing
+        candidate :: rest ->
+            if Dict.member candidate usedKeybindings then
+                findFirstAvailable rest usedKeybindings
+            else
+                Just candidate
+
 handleFetchAlbums : List ImmichAlbum -> Model -> Model
 handleFetchAlbums albums model =
-    { model | knownAlbums = Helpers.listOverrideDict albums (\a -> ( a.id, a )) model.knownAlbums, albumsLoadState = ImmichLoadSuccess }
+    let
+        albumKeybindings = generateAlbumKeybindings albums
+    in
+    { model 
+    | knownAlbums = Helpers.listOverrideDict albums (\a -> ( a.id, a )) model.knownAlbums
+    , albumsLoadState = ImmichLoadSuccess
+    , albumKeybindings = albumKeybindings
+    }
 
 handleUpdateLoadingState : AssetSourceUpdate -> Model -> Model
 handleUpdateLoadingState updateType model =
@@ -1063,7 +1510,7 @@ handleUserInput model key =
                 SelectAlbumIfMatching ->
                     let
                         maybeMatch =
-                            getSelectedAlbum searchResults model.knownAlbums
+                            getSelectedAlbum searchResults model.albumKeybindings model.knownAlbums
                     in
                     case maybeMatch of
                         Just album ->
@@ -1071,9 +1518,9 @@ handleUserInput model key =
                         Nothing ->
                             ( model, Cmd.none )
                 MoveSelectionUp ->
-                    ( { model | userMode = SelectAlbumInput <| moveSelectionUp searchResults model.knownAlbums }, Cmd.none )
+                    ( { model | userMode = SelectAlbumInput <| moveSelectionUp searchResults model.albumKeybindings model.knownAlbums }, Cmd.none )
                 MoveSelectionDown ->
-                    ( { model | userMode = SelectAlbumInput <| moveSelectionDown searchResults model.knownAlbums }, Cmd.none )
+                    ( { model | userMode = SelectAlbumInput <| moveSelectionDown searchResults model.albumKeybindings model.knownAlbums }, Cmd.none )
                 UserActionGeneralAlbumSelect action ->
                     ( applyGeneralAction model action, Cmd.none )
         LoadingAssets _ ->
@@ -1102,26 +1549,46 @@ handleUserInput model key =
                                     ShowHelp
                                 _ ->
                                     UserActionGeneralEdit UnknownAction
+                    else if inputMode == KeybindingMode then
+                        if isKeybindingLetter key then
+                            TextEditModeInputUpdate (TextInputAddition key)
+                        else
+                            case key of
+                                "Escape" ->
+                                    ChangeInputMode NormalMode
+                                "Backspace" ->
+                                    TextEditModeInputUpdate TextInputBackspace
+                                "Enter" ->
+                                    ApplyAlbumIfMatching
+                                "?" ->
+                                    ShowHelp
+                                _ ->
+                                    UserActionGeneralEdit UnknownAction
                     else
-                        case key of
-                            "ArrowLeft" ->
-                                ChangeImageIndex -1
-                            "ArrowRight" ->
-                                ChangeImageIndex 1
-                            "Escape" ->
-                                UserActionGeneralEdit <| ChangeUserModeToMainMenu
-                            -- "Backspace" ->
-                            --     RemoveFromAssetChangeList
-                            "i" ->
-                                ChangeInputMode InsertMode
-                            "d" ->
-                                AssetChange ToggleDelete
-                            "f" ->
-                                AssetChange ToggleFavourite
-                            "?" ->
-                                ShowHelp
-                            _ ->
-                                UserActionGeneralEdit UnknownAction
+                        if isKeybindingLetter key then
+                            StartKeybindingMode key
+                        else
+                            case key of
+                                "ArrowLeft" ->
+                                    ChangeImageIndex -1
+                                "ArrowRight" ->
+                                    ChangeImageIndex 1
+                                " " ->
+                                    ChangeImageIndex 1
+                                "Escape" ->
+                                    UserActionGeneralEdit <| ChangeUserModeToMainMenu
+                                -- "Backspace" ->
+                                --     RemoveFromAssetChangeList
+                                "I" ->
+                                    ChangeInputMode InsertMode
+                                "D" ->
+                                    AssetChange ToggleDelete
+                                "F" ->
+                                    AssetChange ToggleFavourite
+                                "?" ->
+                                    ShowHelp
+                                _ ->
+                                    UserActionGeneralEdit UnknownAction
             in
             case userAction of
                 AssetChange ToggleFavourite ->
@@ -1153,7 +1620,10 @@ handleUserInput model key =
                 ApplyAlbumIfMatching ->
                     let
                         maybeMatch =
-                            getSelectedAlbumForAsset search model.knownAlbums asset
+                            if inputMode == KeybindingMode then
+                                getAlbumByExactKeybinding search.partialKeybinding model.albumKeybindings model.knownAlbums
+                            else
+                                getSelectedAlbumForAsset search model.albumKeybindings model.knownAlbums asset
                     in
                     case maybeMatch of
                         Just album ->
@@ -1164,10 +1634,18 @@ handleUserInput model key =
                                             True
                                         Just _ ->
                                             False
+                                
+                                resetSearch = 
+                                    if inputMode == KeybindingMode then
+                                        { search | partialKeybinding = "" }
+                                    else
+                                        getAlbumSearch "" model.knownAlbums
                             in
-                            ( { model | userMode = EditAsset inputMode (toggleAssetAlbum asset album) (getAlbumSearch "" model.knownAlbums) }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
+                            ( { model | userMode = EditAsset NormalMode (toggleAssetAlbum asset album) resetSearch }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
                         Nothing ->
-                            if String.trim search.searchString /= "" then
+                            if inputMode == KeybindingMode then
+                                ( model, Cmd.none )  -- No exact keybinding match, do nothing
+                            else if String.trim search.searchString /= "" then
                                 ( { model | userMode = CreateAlbumConfirmation inputMode asset search (String.trim search.searchString) }, Cmd.none )
                             else
                                 ( model, Cmd.none )
@@ -1185,22 +1663,83 @@ handleUserInput model key =
                     in
                     switchToEditIfAssetFound model newIndex
                 TextEditModeInputUpdate (TextInputAddition newKey) ->
-                    let
-                        newSearchString =
-                            search.searchString ++ newKey
-                    in
-                    ( { model | userMode = EditAsset inputMode asset <| updateAlbumSearchString newSearchString search model.knownAlbums }, Cmd.none )
+                    if inputMode == KeybindingMode then
+                        let
+                            newPartialKeybinding =
+                                search.partialKeybinding ++ newKey
+                            updatedSearch = { search | partialKeybinding = newPartialKeybinding }
+                            
+                            -- Check for exact keybinding match and auto-apply
+                            maybeExactMatch = getAlbumByExactKeybinding newPartialKeybinding model.albumKeybindings model.knownAlbums
+                        in
+                        case maybeExactMatch of
+                            Just album ->
+                                let
+                                    isNotInAlbum =
+                                        case Dict.get album.id asset.albumMembership of
+                                            Nothing ->
+                                                True
+                                            Just _ ->
+                                                False
+                                    
+                                    resetSearch = { search | partialKeybinding = "" }
+                                in
+                                ( { model | userMode = EditAsset NormalMode (toggleAssetAlbum asset album) resetSearch }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
+                            
+                            Nothing ->
+                                ( { model | userMode = EditAsset inputMode asset updatedSearch }, Cmd.none )
+                    else
+                        let
+                            newSearchString =
+                                search.searchString ++ newKey
+                        in
+                        ( { model | userMode = EditAsset inputMode asset <| updateAlbumSearchString newSearchString search model.knownAlbums }, Cmd.none )
                 TextEditModeInputUpdate TextInputBackspace ->
+                    if inputMode == KeybindingMode then
+                        let
+                            newPartialKeybinding =
+                                String.slice 0 (String.length search.partialKeybinding - 1) search.partialKeybinding
+                            updatedSearch = { search | partialKeybinding = newPartialKeybinding }
+                        in
+                        if newPartialKeybinding == "" then
+                            ( { model | userMode = EditAsset NormalMode asset updatedSearch }, Cmd.none )
+                        else
+                            ( { model | userMode = EditAsset inputMode asset updatedSearch }, Cmd.none )
+                    else
+                        let
+                            newSearchString =
+                                String.slice 0 (String.length search.searchString - 1) search.searchString
+                        in
+                        ( { model | userMode = EditAsset inputMode asset <| updateAlbumSearchString newSearchString search model.knownAlbums }, Cmd.none )
+
+                StartKeybindingMode partialKey ->
                     let
-                        newSearchString =
-                            String.slice 0 (String.length search.searchString - 1) search.searchString
+                        updatedSearch = { search | partialKeybinding = partialKey }
+                        
+                        -- Check for exact keybinding match and auto-apply
+                        maybeExactMatch = getAlbumByExactKeybinding partialKey model.albumKeybindings model.knownAlbums
                     in
-                    ( { model | userMode = EditAsset inputMode asset <| updateAlbumSearchString newSearchString search model.knownAlbums }, Cmd.none )
+                    case maybeExactMatch of
+                        Just album ->
+                            let
+                                isNotInAlbum =
+                                    case Dict.get album.id asset.albumMembership of
+                                        Nothing ->
+                                            True
+                                        Just _ ->
+                                            False
+                                
+                                resetSearch = { search | partialKeybinding = "" }
+                            in
+                            ( { model | userMode = EditAsset NormalMode (toggleAssetAlbum asset album) resetSearch }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
+                        
+                        Nothing ->
+                            ( { model | userMode = EditAsset KeybindingMode asset updatedSearch }, Cmd.none )
 
                 MoveAlbumSelectionUp ->
-                    ( { model | userMode = EditAsset inputMode asset <| moveSelectionUpForAsset search model.knownAlbums asset }, Cmd.none )
+                    ( { model | userMode = EditAsset inputMode asset <| moveSelectionUpForAsset search model.albumKeybindings model.knownAlbums asset }, Cmd.none )
                 MoveAlbumSelectionDown ->
-                    ( { model | userMode = EditAsset inputMode asset <| moveSelectionDownForAsset search model.knownAlbums asset }, Cmd.none )
+                    ( { model | userMode = EditAsset inputMode asset <| moveSelectionDownForAsset search model.albumKeybindings model.knownAlbums asset }, Cmd.none )
                 ShowHelp ->
                     ( { model | userMode = ShowEditAssetHelp inputMode asset search }, Cmd.none )
                 UserActionGeneralEdit generalAction ->
@@ -1224,11 +1763,11 @@ handleUserInput model key =
                 _ ->
                     ( model, Cmd.none )
 
-getTopMatchToSearch : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> Maybe ImmichAlbum
-getTopMatchToSearch search albums =
+getTopMatchToSearch : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Maybe ImmichAlbum
+getTopMatchToSearch search albumKeybindings albums =
     let
         matchesDict =
-            filterToOnlySearchedForAlbums search albums
+            filterToOnlySearchedForAlbums search albumKeybindings albums
     in
     if Dict.isEmpty matchesDict then
         Nothing
@@ -1242,11 +1781,11 @@ getTopMatchToSearch search albums =
             |> Maybe.map (\(_, album) -> album)
 
 -- Helper functions for album selection navigation
-getFilteredAlbumsList : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> List ImmichAlbum
-getFilteredAlbumsList search albums =
+getFilteredAlbumsList : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> List ImmichAlbum
+getFilteredAlbumsList search albumKeybindings albums =
     let
         matchesDict =
-            filterToOnlySearchedForAlbums search albums
+            filterToOnlySearchedForAlbums search albumKeybindings albums
     in
     if search.searchString == "" then
         -- When no search, just sort by asset count
@@ -1261,11 +1800,11 @@ getFilteredAlbumsList search albums =
             |> List.sortBy (\(score, album) -> (if score > 0 then 0 else 1, -album.assetCount))
             |> List.map (\(_, album) -> album)
 
-getFilteredAlbumsListForAsset : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> AssetWithActions -> List ImmichAlbum
-getFilteredAlbumsListForAsset search albums asset =
+getFilteredAlbumsListForAsset : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AssetWithActions -> List ImmichAlbum
+getFilteredAlbumsListForAsset search albumKeybindings albums asset =
     let
         matchesDict =
-            filterToOnlySearchedForAlbums search albums
+            filterToOnlySearchedForAlbums search albumKeybindings albums
     in
     if search.searchString == "" then
         -- When no search, sort by: asset membership first, then by asset count
@@ -1284,45 +1823,53 @@ getFilteredAlbumsListForAsset search albums asset =
                 ))
             |> List.map (\(_, album) -> album)
 
-getSelectedAlbum : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> Maybe ImmichAlbum
-getSelectedAlbum search albums =
+getSelectedAlbum : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Maybe ImmichAlbum
+getSelectedAlbum search albumKeybindings albums =
     let
-        filteredAlbums = getFilteredAlbumsList search albums
+        filteredAlbums = getFilteredAlbumsList search albumKeybindings albums
     in
     List.drop search.selectedIndex filteredAlbums
         |> List.head
 
-moveSelectionUp : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> AlbumSearch
-moveSelectionUp search albums =
+moveSelectionUp : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AlbumSearch
+moveSelectionUp search albumKeybindings albums =
     { search | selectedIndex = max 0 (search.selectedIndex - 1) }
 
-moveSelectionDown : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> AlbumSearch
-moveSelectionDown search albums =
+moveSelectionDown : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AlbumSearch
+moveSelectionDown search albumKeybindings albums =
     let
-        filteredCount = List.length (getFilteredAlbumsList search albums)
+        filteredCount = List.length (getFilteredAlbumsList search albumKeybindings albums)
         maxIndex = max 0 (filteredCount - 1)
     in
     { search | selectedIndex = min maxIndex (search.selectedIndex + 1) }
 
-moveSelectionDownForAsset : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> AssetWithActions -> AlbumSearch
-moveSelectionDownForAsset search albums asset =
+moveSelectionDownForAsset : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AssetWithActions -> AlbumSearch
+moveSelectionDownForAsset search albumKeybindings albums asset =
     let
-        filteredCount = List.length (getFilteredAlbumsListForAsset search albums asset)
+        filteredCount = List.length (getFilteredAlbumsListForAsset search albumKeybindings albums asset)
         maxIndex = max 0 (filteredCount - 1)
     in
     { search | selectedIndex = min maxIndex (search.selectedIndex + 1) }
 
-moveSelectionUpForAsset : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> AssetWithActions -> AlbumSearch
-moveSelectionUpForAsset search albums asset =
+moveSelectionUpForAsset : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AssetWithActions -> AlbumSearch
+moveSelectionUpForAsset search albumKeybindings albums asset =
     { search | selectedIndex = max 0 (search.selectedIndex - 1) }
 
-getSelectedAlbumForAsset : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> AssetWithActions -> Maybe ImmichAlbum
-getSelectedAlbumForAsset search albums asset =
+getSelectedAlbumForAsset : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AssetWithActions -> Maybe ImmichAlbum
+getSelectedAlbumForAsset search albumKeybindings albums asset =
     let
-        filteredAlbums = getFilteredAlbumsListForAsset search albums asset
+        filteredAlbums = getFilteredAlbumsListForAsset search albumKeybindings albums asset
     in
     List.drop search.selectedIndex filteredAlbums
         |> List.head
+
+getAlbumByExactKeybinding : String -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Maybe ImmichAlbum
+getAlbumByExactKeybinding keybinding albumKeybindings albums =
+    albumKeybindings
+        |> Dict.toList
+        |> List.filter (\(_, albumKeybinding) -> albumKeybinding == keybinding)
+        |> List.head
+        |> Maybe.andThen (\(albumId, _) -> Dict.get albumId albums)
 
 updateAlbumSearchString : String -> AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> AlbumSearch
 updateAlbumSearchString newSearchString oldSearch albums =
@@ -1406,6 +1953,7 @@ getAlbumSearch searchString albums =
     , albumScores =
         Dict.map (\id album -> shittyFuzzyAlgorithmTest searchString album.albumName) albums
     , selectedIndex = 0
+    , partialKeybinding = ""
     }
 
 getAlbumSearchWithIndex : String -> Int -> Dict ImmichAssetId ImmichAlbum -> AlbumSearch
@@ -1414,6 +1962,7 @@ getAlbumSearchWithIndex searchString selectedIndex albums =
     , albumScores =
         Dict.map (\id album -> shittyFuzzyAlgorithmTest searchString album.albumName) albums
     , selectedIndex = selectedIndex
+    , partialKeybinding = ""
     }
 
 
