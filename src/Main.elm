@@ -803,9 +803,13 @@ update msg model =
 
                         -- |> handleProgressLoadingState FetchedAlbums
                         Immich.ImagesFetched (Ok assets) ->
-                            model
-                                |> handleFetchAssets assets
-                                |> handleUpdateLoadingState FetchedAssetList
+                            let
+                                updatedModel =
+                                    model
+                                        |> handleFetchAssets assets
+                                        |> handleUpdateLoadingState FetchedAssetList
+                            in
+                            updatedModel
 
                         Immich.AssetMembershipFetched (Ok assetWithMembership) ->
                             model
@@ -1015,7 +1019,11 @@ handleUserInput model key =
                     in
                     ( { model | userMode = SearchAssetInput newSearchString }, Cmd.none )
                 UserActionGeneralSearch action ->
-                    ( applyGeneralAction model action, Cmd.none )
+                    case action of
+                        ChangeUserModeToLoading (TextSearch searchText) ->
+                            ( applyGeneralAction model action, Immich.searchAssets model.immichApiPaths searchText |> Cmd.map ImmichMsg )
+                        _ ->
+                            ( applyGeneralAction model action, Cmd.none )
         SelectAlbumInput searchResults ->
             let
                 userAction =

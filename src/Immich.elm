@@ -43,7 +43,7 @@ getImmichApiPaths immichUrl immichApiKey =
     { downloadAsset = \id -> immichUrl ++ "/assets/" ++ id ++ "/original"
     , fetchMembershipForAsset = \assetId -> immichUrl ++ "/albums?assetId=" ++ assetId
     , searchRandom = immichUrl ++ "/search/random"
-    , searchAssets = immichUrl ++ "/search/metadata"
+    , searchAssets = immichUrl ++ "/search/smart"
     , getAlbum = \id -> immichUrl ++ "/albums/" ++ id
     , putAlbumAssets = \id -> immichUrl ++ "/albums/" ++ id ++ "/assets"
     , createAlbum = immichUrl ++ "/albums"
@@ -163,6 +163,22 @@ fetchImages apiPaths config =
                 , tracker = Nothing
                 }
 
+searchAssets : ImmichApiPaths -> String -> Cmd Msg
+searchAssets apiPaths searchText =
+    let
+        bodyFields =
+            [ ( "query", Encode.string searchText )
+            ]
+    in
+    Http.request
+        { method = "POST"
+        , headers = [ Http.header "x-api-key" apiPaths.apiKey ]
+        , url = apiPaths.searchAssets
+        , body = Http.jsonBody (Encode.object bodyFields)
+        , expect = Http.expectJson ImagesFetched nestedAssetsDecoder
+        , timeout = Nothing
+        , tracker = Nothing
+        }
 
 fetchMembershipForAsset : ImmichApiPaths -> ImmichAssetId -> Cmd Msg
 fetchMembershipForAsset apiPaths assetId =
