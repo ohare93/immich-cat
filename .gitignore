@@ -5,6 +5,7 @@
 elm-stuff
 # elm-repl generated files
 repl-temp-*
+.elm/
 
 # Logs
 logs
