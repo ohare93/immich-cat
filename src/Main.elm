@@ -691,7 +691,7 @@ viewSidebarAlbums search albums =
 viewSidebarAlbumsForCurrentAsset : AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> Maybe InputMode -> Element Msg
 viewSidebarAlbumsForCurrentAsset asset search albums maybeInputMode =
     let
-        filteredAlbums = List.take 40 (getFilteredAlbumsList search albums)
+        filteredAlbums = List.take 40 (getFilteredAlbumsListForAsset search albums asset)
     in
     column [ height fill ]
         (List.indexedMap
@@ -1130,7 +1130,7 @@ handleUserInput model key =
                 ApplyAlbumIfMatching ->
                     let
                         maybeMatch =
-                            getSelectedAlbum search model.knownAlbums
+                            getSelectedAlbumForAsset search model.knownAlbums asset
                     in
                     case maybeMatch of
                         Just album ->
@@ -1175,9 +1175,9 @@ handleUserInput model key =
                     ( { model | userMode = EditAsset inputMode asset <| updateAlbumSearchString newSearchString search model.knownAlbums }, Cmd.none )
 
                 MoveAlbumSelectionUp ->
-                    ( { model | userMode = EditAsset inputMode asset <| moveSelectionUp search model.knownAlbums }, Cmd.none )
+                    ( { model | userMode = EditAsset inputMode asset <| moveSelectionUpForAsset search model.knownAlbums asset }, Cmd.none )
                 MoveAlbumSelectionDown ->
-                    ( { model | userMode = EditAsset inputMode asset <| moveSelectionDown search model.knownAlbums }, Cmd.none )
+                    ( { model | userMode = EditAsset inputMode asset <| moveSelectionDownForAsset search model.knownAlbums asset }, Cmd.none )
                 ShowHelp ->
                     ( { model | userMode = ShowEditAssetHelp inputMode asset search }, Cmd.none )
                 UserActionGeneralEdit generalAction ->
@@ -1225,11 +1225,41 @@ getFilteredAlbumsList search albums =
         matchesDict =
             filterToOnlySearchedForAlbums search albums
     in
-    matchesDict
-        |> Dict.toList
-        |> List.map (\(id, album) -> (Dict.get id search.albumScores |> Maybe.withDefault 0, album))
-        |> List.sortBy (\(score, _) -> -score)  -- Sort by score descending
-        |> List.map (\(_, album) -> album)
+    if search.searchString == "" then
+        -- When no search, just sort by asset count
+        matchesDict
+            |> Dict.values
+            |> List.sortBy (\album -> -album.assetCount)
+    else
+        -- When searching, sort by: score > 0 first, then by asset count within each group
+        matchesDict
+            |> Dict.toList
+            |> List.map (\(id, album) -> (Dict.get id search.albumScores |> Maybe.withDefault 0, album))
+            |> List.sortBy (\(score, album) -> (if score > 0 then 0 else 1, -album.assetCount))
+            |> List.map (\(_, album) -> album)
+
+getFilteredAlbumsListForAsset : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> AssetWithActions -> List ImmichAlbum
+getFilteredAlbumsListForAsset search albums asset =
+    let
+        matchesDict =
+            filterToOnlySearchedForAlbums search albums
+    in
+    if search.searchString == "" then
+        -- When no search, sort by: asset membership first, then by asset count
+        matchesDict
+            |> Dict.values
+            |> List.sortBy (\album -> (if Dict.member album.id asset.albumMembership then 0 else 1, -album.assetCount))
+    else
+        -- When searching, sort by: score > 0 first, then asset membership, then by asset count
+        matchesDict
+            |> Dict.toList
+            |> List.map (\(id, album) -> (Dict.get id search.albumScores |> Maybe.withDefault 0, album))
+            |> List.sortBy (\(score, album) -> 
+                ( if score > 0 then 0 else 1
+                , if Dict.member album.id asset.albumMembership then 0 else 1
+                , -album.assetCount
+                ))
+            |> List.map (\(_, album) -> album)
 
 getSelectedAlbum : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> Maybe ImmichAlbum
 getSelectedAlbum search albums =
@@ -1250,6 +1280,26 @@ moveSelectionDown search albums =
         maxIndex = max 0 (filteredCount - 1)
     in
     { search | selectedIndex = min maxIndex (search.selectedIndex + 1) }
+
+moveSelectionDownForAsset : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> AssetWithActions -> AlbumSearch
+moveSelectionDownForAsset search albums asset =
+    let
+        filteredCount = List.length (getFilteredAlbumsListForAsset search albums asset)
+        maxIndex = max 0 (filteredCount - 1)
+    in
+    { search | selectedIndex = min maxIndex (search.selectedIndex + 1) }
+
+moveSelectionUpForAsset : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> AssetWithActions -> AlbumSearch
+moveSelectionUpForAsset search albums asset =
+    { search | selectedIndex = max 0 (search.selectedIndex - 1) }
+
+getSelectedAlbumForAsset : AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> AssetWithActions -> Maybe ImmichAlbum
+getSelectedAlbumForAsset search albums asset =
+    let
+        filteredAlbums = getFilteredAlbumsListForAsset search albums asset
+    in
+    List.drop search.selectedIndex filteredAlbums
+        |> List.head
 
 updateAlbumSearchString : String -> AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> AlbumSearch
 updateAlbumSearchString newSearchString oldSearch albums =
