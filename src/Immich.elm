@@ -106,175 +106,203 @@ type SearchModifier
     | IsFavourited Bool
 
 
--- type, archived,
+-- GENERIC HTTP REQUEST BUILDERS
+
+makeApiRequest : 
+    { method : String
+    , url : String
+    , apiKey : String
+    , body : Http.Body
+    , expect : Http.Expect Msg
+    } -> Cmd Msg
+makeApiRequest config =
+    Http.request
+        { method = config.method
+        , headers = [ Http.header "x-api-key" config.apiKey ]
+        , url = config.url
+        , body = config.body
+        , expect = config.expect
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+makeGetRequest : String -> String -> Decode.Decoder a -> (Result Http.Error a -> Msg) -> Cmd Msg
+makeGetRequest apiKey url decoder msgConstructor =
+    makeApiRequest
+        { method = "GET"
+        , url = url
+        , apiKey = apiKey
+        , body = Http.emptyBody
+        , expect = Http.expectJson msgConstructor decoder
+        }
+
+makePostRequest : String -> String -> Encode.Value -> Decode.Decoder a -> (Result Http.Error a -> Msg) -> Cmd Msg
+makePostRequest apiKey url jsonBody decoder msgConstructor =
+    makeApiRequest
+        { method = "POST"
+        , url = url
+        , apiKey = apiKey
+        , body = Http.jsonBody jsonBody
+        , expect = Http.expectJson msgConstructor decoder
+        }
+
+makePutRequest : String -> String -> Encode.Value -> Decode.Decoder a -> (Result Http.Error a -> Msg) -> Cmd Msg
+makePutRequest apiKey url jsonBody decoder msgConstructor =
+    makeApiRequest
+        { method = "PUT"
+        , url = url
+        , apiKey = apiKey
+        , body = Http.jsonBody jsonBody
+        , expect = Http.expectJson msgConstructor decoder
+        }
+
+makeDeleteRequest : String -> String -> Encode.Value -> (Result Http.Error () -> Msg) -> Cmd Msg
+makeDeleteRequest apiKey url jsonBody msgConstructor =
+    makeApiRequest
+        { method = "DELETE"
+        , url = url
+        , apiKey = apiKey
+        , body = Http.jsonBody jsonBody
+        , expect = Http.expectWhatever msgConstructor
+        }
+
+makePutRequestWithWhatever : String -> String -> Encode.Value -> (Result Http.Error () -> Msg) -> Cmd Msg
+makePutRequestWithWhatever apiKey url jsonBody msgConstructor =
+    makeApiRequest
+        { method = "PUT"
+        , url = url
+        , apiKey = apiKey
+        , body = Http.jsonBody jsonBody
+        , expect = Http.expectWhatever msgConstructor
+        }
+
+-- BODY CONSTRUCTION HELPERS
+
+makeSimpleJsonBody : List (String, Encode.Value) -> Encode.Value
+makeSimpleJsonBody fields =
+    Encode.object fields
+
+makeAssetIdsBody : List ImmichAssetId -> Encode.Value
+makeAssetIdsBody assetIds =
+    Encode.object [ ( "ids", Encode.list Encode.string assetIds ) ]
+
+makeSearchBody : ImageSearchConfig -> Encode.Value
+makeSearchBody config =
+    let
+        orderField = 
+            case config.order of
+                Desc -> [ ( "order", Encode.string "desc" ) ]
+                Asc -> [ ( "order", Encode.string "asc" ) ]
+                Random -> [] -- Random uses different endpoint
+
+        categorisationField = 
+            case config.categorisation of
+                Uncategorised -> [ ( "isNotInAlbum", Encode.bool True ) ]
+                All -> []
+    in
+    Encode.object (orderField ++ categorisationField)
+
+-- API FUNCTIONS (REFACTORED)
 
 getAllAlbums : String -> String -> Cmd Msg
 getAllAlbums baseUrl key =
-    Http.request
-        { method = "GET"
-        , headers = [ Http.header "x-api-key" key ]
-        , url = joinUrl baseUrl ["api", "albums"]
-        , body = Http.emptyBody
-        , expect = Http.expectJson AlbumsFetched (Decode.list albumDecoder)
-        , timeout = Nothing
-        , tracker = Nothing
-        }
+    makeGetRequest 
+        key
+        (joinUrl baseUrl ["api", "albums"])
+        (Decode.list albumDecoder)
+        AlbumsFetched
 
 getAlbum : ImmichApiPaths -> ImmichAlbumId -> Cmd Msg
 getAlbum apiPaths albumId =
-    Http.request
-        { method = "GET"
-        , headers = [ Http.header "x-api-key" apiPaths.apiKey ]
-        , url = apiPaths.getAlbum albumId
-        , body = Http.emptyBody
-        , expect = Http.expectJson SingleAlbumFetched albumDecoder
-        , timeout = Nothing
-        , tracker = Nothing
-        }
+    makeGetRequest
+        apiPaths.apiKey
+        (apiPaths.getAlbum albumId)
+        albumDecoder
+        SingleAlbumFetched
 
 fetchImages : ImmichApiPaths -> ImageSearchConfig -> Cmd Msg
 fetchImages apiPaths config =
     case config.order of
         Random ->
             let
-                body = 
+                randomBody = 
                     case config.categorisation of
-                        Uncategorised ->
-                            Http.jsonBody (Encode.object [ ( "isNotInAlbum", Encode.bool True ) ])
-                        All ->
-                            Http.jsonBody (Encode.object [])
+                        Uncategorised -> Encode.object [ ( "isNotInAlbum", Encode.bool True ) ]
+                        All -> Encode.object []
             in
-            Http.request
-                { method = "POST"
-                , headers = [ Http.header "x-api-key" apiPaths.apiKey ]
-                , url = apiPaths.searchRandom
-                , body = body
-                , expect = Http.expectJson ImagesFetched (Decode.list imageDecoder)
-                , timeout = Nothing
-                , tracker = Nothing
-                }
+            makePostRequest
+                apiPaths.apiKey
+                apiPaths.searchRandom
+                randomBody
+                (Decode.list imageDecoder)
+                ImagesFetched
         
         _ ->
-            let
-                orderString = 
-                    case config.order of
-                        Desc -> "desc"
-                        Asc -> "asc"
-                        Random -> "desc" -- fallback, shouldn't happen
-                
-                bodyFields =
-                    [ ( "order", Encode.string orderString ) ] ++
-                    (case config.categorisation of
-                        Uncategorised -> [ ( "isNotInAlbum", Encode.bool True ) ]
-                        All -> []
-                    )
-            in
-            Http.request
-                { method = "POST"
-                , headers = [ Http.header "x-api-key" apiPaths.apiKey ]
-                , url = apiPaths.searchAssets
-                , body = Http.jsonBody (Encode.object bodyFields)
-                , expect = Http.expectJson ImagesFetched nestedAssetsDecoder
-                , timeout = Nothing
-                , tracker = Nothing
-                }
+            makePostRequest
+                apiPaths.apiKey
+                apiPaths.searchAssets
+                (makeSearchBody config)
+                nestedAssetsDecoder
+                ImagesFetched
 
 searchAssets : ImmichApiPaths -> String -> Cmd Msg
 searchAssets apiPaths searchText =
-    let
-        bodyFields =
-            [ ( "query", Encode.string searchText )
-            ]
-    in
-    Http.request
-        { method = "POST"
-        , headers = [ Http.header "x-api-key" apiPaths.apiKey ]
-        , url = apiPaths.searchSmart
-        , body = Http.jsonBody (Encode.object bodyFields)
-        , expect = Http.expectJson ImagesFetched nestedAssetsDecoder
-        , timeout = Nothing
-        , tracker = Nothing
-        }
+    makePostRequest
+        apiPaths.apiKey
+        apiPaths.searchSmart
+        (makeSimpleJsonBody [ ( "query", Encode.string searchText ) ])
+        nestedAssetsDecoder
+        ImagesFetched
 
 fetchMembershipForAsset : ImmichApiPaths -> ImmichAssetId -> Cmd Msg
 fetchMembershipForAsset apiPaths assetId =
-    Http.request
-        { method = "GET"
-        , headers = [ Http.header "x-api-key" apiPaths.apiKey ]
-        , url = apiPaths.fetchMembershipForAsset assetId
-        , body = Http.emptyBody
-        , expect = Http.expectJson AssetMembershipFetched (albumToAssetWithMembershipDecoder assetId)
-        , timeout = Nothing
-        , tracker = Nothing
-        }
+    makeGetRequest
+        apiPaths.apiKey
+        (apiPaths.fetchMembershipForAsset assetId)
+        (albumToAssetWithMembershipDecoder assetId)
+        AssetMembershipFetched
 
 albumChangeAssetMembership : ImmichApiPaths -> ImmichAlbumId -> List ImmichAssetId -> Bool -> Cmd Msg
 albumChangeAssetMembership apiPaths albumId assetIds isAddition =
-    Http.request
-        { method =
-            if isAddition then
-                "PUT"
-            else
-                "DELETE"
-        , headers = [ Http.header "x-api-key" apiPaths.apiKey ]
-        , url = apiPaths.putAlbumAssets albumId
-        , body =
-            Http.jsonBody
-                (Encode.object
-                    [ ( "ids", Encode.list Encode.string assetIds ) ]
-                )
-        , expect = Http.expectWhatever AlbumAssetsChanged
-        , timeout = Nothing
-        , tracker = Nothing
-        }
+    if isAddition then
+        makePutRequestWithWhatever
+            apiPaths.apiKey
+            (apiPaths.putAlbumAssets albumId)
+            (makeAssetIdsBody assetIds)
+            AlbumAssetsChanged
+    else
+        makeDeleteRequest
+            apiPaths.apiKey
+            (apiPaths.putAlbumAssets albumId)
+            (makeAssetIdsBody assetIds)
+            AlbumAssetsChanged
 
 createAlbum : ImmichApiPaths -> String -> Cmd Msg
 createAlbum apiPaths albumName =
-    Http.request
-        { method = "POST"
-        , headers = [ Http.header "x-api-key" apiPaths.apiKey ]
-        , url = apiPaths.createAlbum
-        , body =
-            Http.jsonBody
-                (Encode.object
-                    [ ( "albumName", Encode.string albumName ) ]
-                )
-        , expect = Http.expectJson AlbumCreated albumDecoder
-        , timeout = Nothing
-        , tracker = Nothing
-        }
+    makePostRequest
+        apiPaths.apiKey
+        apiPaths.createAlbum
+        (makeSimpleJsonBody [ ( "albumName", Encode.string albumName ) ])
+        albumDecoder
+        AlbumCreated
 
 updateAssetFavorite : ImmichApiPaths -> ImmichAssetId -> Bool -> Cmd Msg
 updateAssetFavorite apiPaths assetId isFavorite =
-    Http.request
-        { method = "PUT"
-        , headers = [ Http.header "x-api-key" apiPaths.apiKey ]
-        , url = apiPaths.updateAsset assetId
-        , body =
-            Http.jsonBody
-                (Encode.object
-                    [ ( "isFavorite", Encode.bool isFavorite ) ]
-                )
-        , expect = Http.expectJson AssetUpdated imageDecoder
-        , timeout = Nothing
-        , tracker = Nothing
-        }
+    makePutRequest
+        apiPaths.apiKey
+        (apiPaths.updateAsset assetId)
+        (makeSimpleJsonBody [ ( "isFavorite", Encode.bool isFavorite ) ])
+        imageDecoder
+        AssetUpdated
 
 updateAssetArchived : ImmichApiPaths -> ImmichAssetId -> Bool -> Cmd Msg
 updateAssetArchived apiPaths assetId isArchived =
-    Http.request
-        { method = "PUT"
-        , headers = [ Http.header "x-api-key" apiPaths.apiKey ]
-        , url = apiPaths.updateAsset assetId
-        , body =
-            Http.jsonBody
-                (Encode.object
-                    [ ( "isArchived", Encode.bool isArchived ) ]
-                )
-        , expect = Http.expectJson AssetUpdated imageDecoder
-        , timeout = Nothing
-        , tracker = Nothing
-        }
+    makePutRequest
+        apiPaths.apiKey
+        (apiPaths.updateAsset assetId)
+        (makeSimpleJsonBody [ ( "isArchived", Encode.bool isArchived ) ])
+        imageDecoder
+        AssetUpdated
 
 albumDecoder : Decode.Decoder ImmichAlbum
 albumDecoder =
