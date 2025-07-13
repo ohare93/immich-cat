@@ -1,12 +1,5 @@
 port module Main exposing 
     ( main
-    , SearchContext(..)
-    , TimelineConfig
-    , SearchConfig
-    , AlbumConfig
-    , defaultTimelineConfig
-    , defaultSearchConfig
-    , defaultAlbumConfig
     )
 
 import Browser exposing (element)
@@ -24,7 +17,10 @@ import Html.Attributes
 import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..), ImageOrder(..), CategorisationFilter(..), ImageSearchConfig, MediaTypeFilter(..), StatusFilter(..), getAllAlbums, getImmichApiPaths, fetchAlbumAssetsWithFilters)
 import Json.Decode as Decode
 import KeybindingGenerator exposing (generateAlbumKeybindings)
+import Menus exposing (SearchContext(..), TimelineConfig, SearchConfig, AlbumConfig, defaultTimelineConfig, defaultSearchConfig, defaultAlbumConfig, viewTimelineView, viewSearchView, viewAlbumView, viewSettings, viewMainMenu, viewInstructions, viewMainMenuOption, toggleMediaType, toggleCategorisation, toggleOrder, toggleStatus, toggleSearchContext, filterByMediaType, filterByStatus)
 import Regex
+import ViewAlbums exposing (PropertyChange(..), AssetWithActions, AlbumSearch, AlbumPagination, InputMode(..), viewWithSidebar, viewSidebar, viewSidebarAlbums, viewSidebarAlbumsForCurrentAsset, getAlbumSearch, getAlbumSearchWithHeight, getAlbumSearchWithIndex, getAssetWithActions, toggleAssetAlbum, isAddingToAlbum, isCurrentlyInAlbum, updateAlbumSearchString, getSelectedAlbum, getSelectedAlbumForAsset, getAlbumByExactKeybinding, moveSelectionUp, moveSelectionDown, moveSelectionUpForAsset, moveSelectionDownForAsset, getFilteredAlbumsList, getFilteredAlbumsListForAsset, filterToOnlySearchedForAlbums, calculateItemsPerPage, calculateTotalPages, updatePagination, pageUp, pageDown, halfPageUp, halfPageDown, shittyFuzzyAlgorithmTest, usefulColours, flipPropertyChange)
+import ViewAsset exposing (viewAsset, viewImage, viewVideo, viewEditAsset, viewEditAssetHelp, viewCreateAlbumConfirmation, viewLoadingAssets, viewKeybinding)
 
 
 -- PORTS
@@ -83,31 +79,6 @@ type alias Model =
     , pendingAlbumChange : Maybe (ImmichAlbumId, Bool) -- (albumId, isAddition)
     }
 
-type SearchContext
-    = ContentSearch
-    | FilenameSearch
-    | DescriptionSearch
-
-type alias TimelineConfig =
-    { mediaType : MediaTypeFilter
-    , categorisation : CategorisationFilter
-    , order : ImageOrder
-    , status : StatusFilter
-    }
-
-type alias SearchConfig =
-    { mediaType : MediaTypeFilter
-    , searchContext : SearchContext
-    , status : StatusFilter
-    , query : String
-    , inputFocused : Bool
-    }
-
-type alias AlbumConfig =
-    { mediaType : MediaTypeFilter
-    , order : ImageOrder
-    , status : StatusFilter
-    }
 
 type AssetSource
     = NoAssets
@@ -149,31 +120,6 @@ type alias SearchString =
 type alias ImageIndex =
     Int
 
-type alias AssetWithActions =
-    { asset : ImmichAsset
-    , isFavourite : PropertyChange
-    , isArchived : PropertyChange
-    , albumMembership : Dict ImmichAlbumId PropertyChange
-    }
-
-type alias AlbumSearch =
-    { searchString : String
-    , albumScores : Dict ImmichAlbumId Int
-    , selectedIndex : Int
-    , partialKeybinding : String
-    , pagination : AlbumPagination
-    }
-
-type alias AlbumPagination =
-    { currentPage : Int
-    , itemsPerPage : Int
-    , totalItems : Int
-    }
-
-type InputMode
-    = NormalMode
-    | InsertMode
-    | KeybindingMode
 
 type AssetChange
     = ToggleAlbum ImmichAlbum
@@ -230,38 +176,7 @@ type UserActionEditMode
     | OpenInImmich
     | UserActionGeneralEdit UserActionGeneral
 
-type PropertyChange
-    = RemainTrue
-    | RemainFalse
-    | ChangeToTrue
-    | ChangeToFalse
 
-flipPropertyChange : PropertyChange -> PropertyChange
-flipPropertyChange propertyChange =
-    case propertyChange of
-        RemainTrue ->
-            ChangeToFalse
-
-        RemainFalse ->
-            ChangeToTrue
-
-        ChangeToTrue ->
-            RemainFalse
-
-        ChangeToFalse ->
-            RemainTrue
-
-propertyChangeToNumber : PropertyChange -> Int
-propertyChangeToNumber prop =
-    case prop of
-        ChangeToTrue ->
-            0
-        ChangeToFalse ->
-            1
-        RemainTrue ->
-            2
-        RemainFalse ->
-            3
 
 
 init : Flags -> ( Model, Cmd Msg )
@@ -306,23 +221,6 @@ getDebugAssets =
     )
 
 
-usefulColours : String -> Element.Color
-usefulColours name =
-    case name of
-        "red" ->
-            Element.fromRgb { red = 1, green = 0, blue = 0, alpha = 1 }
-        "green" ->
-            Element.fromRgb { red = 0, green = 1, blue = 0, alpha = 1 }
-        "blue" ->
-            Element.fromRgb { red = 0, green = 0, blue = 1, alpha = 1 }
-        "grey" ->
-            Element.fromRgb { red = 0.8, green = 0.8, blue = 0.8, alpha = 0.6 }
-        "darkgrey" ->
-            Element.fromRgb { red = 0.2, green = 0.2, blue = 0.2, alpha = 0.4 }
-        "black" ->
-            Element.fromRgb { red = 0, green = 0, blue = 0, alpha = 1 }
-        _ ->
-            Element.fromRgb { red = 0, green = 0, blue = 0, alpha = 1 }
 
 
 -- VIEW --
@@ -342,19 +240,6 @@ usefulColours name =
 --             [ text ("Not In Albumns: " ++ String.join ", " (List.map (\album -> album.name) notInAlbumns)) ]
 --         ]
 
-
-viewAsset : ImmichApiPaths -> ImmichAsset -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> Element msg
-viewAsset apiPaths asset currentAssets knownAssets imageIndex =
-    if asset.path == "" then
-        el [] (text "No Asset")
-
-    else if assetIsImage asset then
-        viewImage asset apiPaths currentAssets knownAssets imageIndex
-    else if assetIsVideo asset then
-        viewVideo asset apiPaths currentAssets knownAssets imageIndex
-
-    else
-        text (String.join " " [ "Error with", asset.title, "Unknown mimetype:", asset.mimeType ])
 
 assetIsImage : ImmichAsset -> Bool
 assetIsImage asset =
@@ -388,26 +273,6 @@ assetIsImage asset =
         , "image/x-olympus-orf"
         , "image/x-fuji-raf"
         ]
-
-viewImage : ImmichAsset -> ImmichApiPaths -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> Element msg
-viewImage asset apiPaths currentAssets knownAssets imageIndex =
-    el [ width fill, height fill ] <|
-        Element.html
-            (Html.div [ Html.Attributes.style "display" "flex", Html.Attributes.style "align-items" "center", Html.Attributes.style "justify-content" "center", Html.Attributes.style "height" "calc(100vh - 40px)", Html.Attributes.style "width" "100%", Html.Attributes.style "overflow" "hidden" ]
-                [ Html.node "style" [] [ Html.text "image-from-api img { max-width: 100% !important; max-height: calc(100vh - 40px) !important; object-fit: contain !important; width: auto !important; height: auto !important; }" ]
-                , node "image-from-api"
-                    [ Html.Attributes.attribute "asset-url" (apiPaths.downloadAsset asset.id)
-                    , Html.Attributes.attribute "api-key" apiPaths.apiKey
-                    , Html.Attributes.attribute "preload-urls" (generatePreloadUrls currentAssets knownAssets apiPaths imageIndex 3)
-                    , Html.Attributes.class "center"
-                    , Html.Attributes.style "max-width" "100%"
-                    , Html.Attributes.style "max-height" "100%"
-                    , Html.Attributes.style "object-fit" "contain"
-                    , Html.Attributes.style "display" "block"
-                    ]
-                    []
-                ]
-            )
 
 generatePreloadUrls : List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> ImmichApiPaths -> Int -> Int -> String
 generatePreloadUrls currentAssets knownAssets apiPaths imageIndex count =
@@ -462,47 +327,6 @@ assetIsVideo asset =
         , "video/x-ms-asf"
         ]
 
-viewVideo : ImmichAsset -> ImmichApiPaths -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> Element msg
-viewVideo asset apiPaths currentAssets knownAssets imageIndex =
-    el [ width fill, height fill, Html.Attributes.style "position" "relative" |> Element.htmlAttribute ] <|
-        Element.html
-            (Html.div []
-                [ Html.node "style" [] [ Html.text "video-from-api video { width: 100% !important; height: 100% !important; object-fit: contain !important; }" ]
-                , node "video-from-api"
-                    [ Html.Attributes.attribute "asset-url" (apiPaths.downloadAsset asset.id)
-                    , Html.Attributes.attribute "api-key" apiPaths.apiKey
-                    , Html.Attributes.attribute "preload-urls" (generatePreloadUrls currentAssets knownAssets apiPaths imageIndex 2)
-                    , Html.Attributes.class "center"
-                    , Html.Attributes.style "width" "100%"
-                    , Html.Attributes.style "height" "calc(100vh - 40px)"
-                    , Html.Attributes.style "max-height" "calc(100vh - 40px)"
-                    , Html.Attributes.style "max-width" "100%"
-                    , Html.Attributes.style "display" "block"
-                    , Html.Attributes.style "overflow" "hidden"
-                    ]
-                    []
-                ]
-            )
-
-
--- viewVideo : List (Element.Attribute msg) -> { poster : String, source : String } -> Element msg
--- viewVideo attrs { poster, source } =
---     el attrs <|
---         Element.html <|
---             Html.video
---                 [ Html.Attributes.attribute "controls" "controls"
---                 , Html.Attributes.preload "none"
---                 -- , Html.Attributes.poster poster
---                 , Html.Attributes.autoplay True
---                 , Html.Attributes.loop True
---                 ]
---                 [ Html.source
---                     [ Html.Attributes.id "mp4"
---                     , Html.Attributes.src source
---                     , Html.Attributes.type_ "video/mp4"
---                     ]
---                     []
---                 ]
 
 createDetailedViewTitle : AssetSource -> String
 createDetailedViewTitle assetSource =
@@ -557,32 +381,11 @@ createDetailedViewTitle assetSource =
         NoAssets ->
             ""
 
-viewEditAsset : ImmichApiPaths -> ImageIndex -> Int -> String -> AssetWithActions -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Element Msg
-viewEditAsset apiPaths imageIndex totalAssets viewTitle currentAsset currentAssets knownAssets =
-    column [ width fill, height fill ]
-        [ el [ alignTop, height (px 20) ]
-            (text (String.fromInt (imageIndex + 1) ++ "/" ++ String.fromInt totalAssets ++ "    " ++ viewTitle))
-        , el [ width fill, height fill ] <| viewAsset apiPaths currentAsset.asset currentAssets knownAssets imageIndex
-        ]
-
-viewLoadingAssets : ImmichLoadState -> Element Msg
-viewLoadingAssets imagesLoadState =
-    case imagesLoadState of
-        ImmichLoading ->
-            text "Loading images"
-        ImmichLoadSuccess ->
-            text "Loaded. Should move states...."
-        ImmichLoadError error ->
-            let
-                errorMessage =
-                    Immich.errorToString error
-            in
-            text errorMessage
 
 
 view : Model -> Html Msg
 view model =
-    Element.layout [ width fill, height (fill |> minimum 1), Background.color <| usefulColours "darkgrey" ] <|
+    Element.layout [ width fill, height (fill |> minimum 1), Background.color <| ViewAlbums.usefulColours "darkgrey" ] <|
         viewWithInputBottomBar model.userMode <|
             viewMainWindow model
 
@@ -599,30 +402,14 @@ viewMainWindow : Model -> Element Msg
 viewMainWindow model =
     case model.userMode of
         MainMenu ->
-            row [ width fill, height fill ]
-                [ column [ width <| fillPortion 1, height fill, Element.spacingXY 0 20, paddingXY 20 20 ]
-                    [ el [ Font.size 24, Font.bold ] (text "Image Categorizer")
-                    , column [ Element.spacingXY 0 15 ]
-                        [ el [ Font.size 18, Font.bold ] (text "Choose View Mode")
-                        , viewMainMenuOption "t" "📅 Timeline View" "Browse all assets with timeline filters"
-                        , viewMainMenuOption "s" "🔍 Search Assets" "Smart search with context options"
-                        , viewMainMenuOption "a" "📁 Browse Albums" "Select and view album contents"
-                        , viewMainMenuOption "g" "⚙️ Settings" "Configure preferences and options"
-                        ]
-                    , column [ Element.spacingXY 0 10 ]
-                        [ button [] { onPress = Just LoadDataAgain, label = text "↻ Reload Albums" }
-                        , el [ Font.size 12 ] (text "Press the highlighted key or click to navigate")
-                        ]
-                    ]
-                , el [ width <| fillPortion 1, height fill ] <| viewInstructions
-                ]
+            Menus.viewMainMenu LoadDataAgain
         TimelineView config ->
-            viewTimelineView model config
+            Menus.viewTimelineView model config LoadDataAgain LoadTimelineAssets
         SearchView config ->
-            viewSearchView model config
+            Menus.viewSearchView model config ExecuteSearch
         AlbumBrowse search ->
-            viewWithSidebar
-                (viewSidebarAlbums search model.albumKeybindings model.knownAlbums)
+            ViewAlbums.viewWithSidebar
+                (ViewAlbums.viewSidebarAlbums search model.albumKeybindings model.knownAlbums SelectAlbum)
                 (column []
                     [ text "Browse Albums"
                     , if search.searchString /= "" then
@@ -638,43 +425,34 @@ viewMainWindow model =
                     ]
                 )
         AlbumView album config ->
-            viewAlbumView model album config
+            Menus.viewAlbumView model album config LoadAlbumAssets
         Settings ->
-            viewSettings model
+            Menus.viewSettings model
         SearchAssetInput searchString ->
             column []
                 [ text "Input Search String"
                 , text searchString
                 ]
         SelectAlbumInput search ->
-            viewWithSidebar
-                (viewSidebarAlbums search model.albumKeybindings model.knownAlbums)
+            ViewAlbums.viewWithSidebar
+                (ViewAlbums.viewSidebarAlbums search model.albumKeybindings model.knownAlbums SelectAlbum)
                 (column []
                     [ text "Select Album"
                     , text search.searchString
                     ]
                 )
         LoadingAssets _ ->
-            viewLoadingAssets model.imagesLoadState
+            ViewAsset.viewLoadingAssets model.imagesLoadState
         EditAsset inputMode asset search ->
             let
                 viewTitle = createDetailedViewTitle model.currentAssetsSource
             in
-            viewWithSidebar (viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode)) (viewEditAsset model.immichApiPaths model.imageIndex (List.length model.currentAssets) viewTitle asset model.currentAssets model.knownAssets)
+            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) SelectAlbum) (ViewAsset.viewEditAsset model.immichApiPaths model.apiKey model.imageIndex (List.length model.currentAssets) viewTitle asset model.currentAssets model.knownAssets)
         CreateAlbumConfirmation _ asset search albumName ->
-            viewWithSidebar (viewSidebar asset search model.albumKeybindings model.knownAlbums Nothing) (viewCreateAlbumConfirmation albumName)
+            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums Nothing SelectAlbum) (ViewAsset.viewCreateAlbumConfirmation albumName)
         ShowEditAssetHelp inputMode asset search ->
-            viewWithSidebar (viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode)) (viewEditAssetHelp inputMode)
+            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) SelectAlbum) (ViewAsset.viewEditAssetHelp inputMode)
 
-viewMainMenuOption : String -> String -> String -> Element msg
-viewMainMenuOption key title description =
-    row [ width fill, Element.spacingXY 10 0, paddingXY 10 8 ]
-        [ el [ Font.bold, Font.color (Element.rgb 0.2 0.6 1.0), width (px 20) ] (text key)
-        , column [ Element.spacingXY 0 3 ]
-            [ el [ Font.size 16, Font.bold ] (text title)
-            , el [ Font.size 14, Font.color (Element.rgb 0.6 0.6 0.6) ] (text description)
-            ]
-        ]
 
 viewCurrentConfig : ImageSearchConfig -> Element msg
 viewCurrentConfig config =
@@ -701,78 +479,6 @@ viewCurrentConfig config =
         , el [ Font.size 14 ] (text ("Filter: " ++ categorisationText))
         ]
 
-viewCreateAlbumConfirmation : String -> Element msg
-viewCreateAlbumConfirmation albumName =
-    column [ width fill, height fill, paddingXY 20 20, Element.spacingXY 0 20, centerX, centerY ]
-        [ el [ Font.size 18, Font.bold, centerX ] (text "Create New Album")
-        , el [ centerX ] (text ("Album name: \"" ++ albumName ++ "\""))
-        , el [ Font.size 14, centerX ] (text "Press Enter to create, Escape to cancel")
-        ]
-
-viewEditAssetHelp : InputMode -> Element msg
-viewEditAssetHelp inputMode =
-    column [ width fill, height fill, paddingXY 20 20, Element.spacingXY 0 20, centerX, centerY ]
-        [ el [ Font.size 18, Font.bold, centerX ] (text "Asset Navigation Help")
-        , column [ Element.spacingXY 0 8 ]
-            [ el [ Font.size 16, Font.bold ] <| text "Navigation"
-            , viewKeybinding "←" "Previous image"
-            , viewKeybinding "→" "Next image"
-            , viewKeybinding "Space" "Next image"
-            , viewKeybinding "Escape" "Return to main menu"
-            ]
-        , column [ Element.spacingXY 0 8 ]
-            [ el [ Font.size 16, Font.bold ] <| text "Asset Actions"
-            , viewKeybinding "D" "Toggle delete/archive"
-            , viewKeybinding "F" "Toggle favorite"
-            , viewKeybinding "K" "Open in Immich (new tab)"
-            , viewKeybinding "I" "Enter album search mode"
-            ]
-        , if inputMode == InsertMode then
-            column [ Element.spacingXY 0 8 ]
-                [ el [ Font.size 16, Font.bold ] <| text "Album Search (Insert Mode)"
-                , viewKeybinding "Type" "Search albums by name"
-                , viewKeybinding "↑↓" "Navigate through results"
-                , viewKeybinding "Enter" "Add to highlighted album"
-                , viewKeybinding "Tab" "Create new album"
-                , viewKeybinding "Click" "Click album to add"
-                , viewKeybinding "Escape" "Exit search mode"
-                ]
-          else
-            Element.none
-        , el [ Font.size 14, centerX ] (text "Press ? or Escape to close help")
-        ]
-
-viewInstructions : Element msg
-viewInstructions =
-    column [ width fill, height fill, paddingXY 20 20, Element.spacingXY 0 10 ]
-        [ el [ Font.size 18, Font.bold ] <| text "Keybindings"
-        , column [ Element.spacingXY 0 8 ]
-            [ el [ Font.size 16, Font.bold ] <| text "Main Menu"
-            , viewKeybinding "o" "Cycle order (desc/asc/random)"
-            , viewKeybinding "c" "Cycle categorisation (all/uncategorised)"
-            , viewKeybinding "l" "Load with current settings"
-            , viewKeybinding "a" "Browse and select albums"
-            , viewKeybinding "s" "Search assets"
-            ]
-        , column [ Element.spacingXY 0 8 ]
-            [ el [ Font.size 16, Font.bold ] <| text "Asset Navigation (Normal Mode)"
-            , viewKeybinding "←" "Previous image"
-            , viewKeybinding "→" "Next image"
-            , viewKeybinding "Space" "Next image"
-            , viewKeybinding "Escape" "Return to main menu"
-            , viewKeybinding "I" "Enter insert mode (album search)"
-            , viewKeybinding "D" "Toggle delete/archive"
-            , viewKeybinding "F" "Toggle favorite"
-            , viewKeybinding "?" "Show help"
-            ]
-        ]
-
-viewKeybinding : String -> String -> Element msg
-viewKeybinding key description =
-    row [ width fill, Element.spacingXY 10 0 ]
-        [ el [ width <| Element.px 120, Font.family [ Font.monospace ], Background.color <| usefulColours "grey", paddingXY 8 4 ] <| text key
-        , el [ width fill ] <| text description
-        ]
 
 viewInputMode : UserMode -> Element msg
 viewInputMode userMode =
@@ -812,12 +518,6 @@ viewInputMode userMode =
         KeybindingMode ->
             el [ width fill, Background.color <| Element.fromRgb { red = 1, green = 0.5, blue = 0, alpha = 1 } ] <| text "Keybind"
 
-viewWithSidebar : Element Msg -> Element Msg -> Element Msg
-viewWithSidebar sidebarView viewToBeNextToSidebar =
-    row [ width fill, height fill ]
-        [ el [ width <| fillPortion 4, height fill ] <| viewToBeNextToSidebar
-        , el [ width <| fillPortion 1, height fill, alignRight, clipY ] <| sidebarView
-        ]
 
 viewSidebar : AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAssetId ImmichAlbum -> Maybe InputMode -> Element Msg
 viewSidebar asset search albumKeybindings albums maybeInputMode =

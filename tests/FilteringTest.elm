@@ -5,8 +5,8 @@ import Test exposing (..)
 import Fuzz exposing (..)
 import Date
 
--- Import the types from Immich and Main modules
-import Main exposing 
+-- Import the types from Immich and Menus modules  
+import Menus exposing 
     ( SearchContext(..)
     , TimelineConfig
     , SearchConfig
