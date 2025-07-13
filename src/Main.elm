@@ -1,4 +1,4 @@
-module Main exposing (main)
+port module Main exposing (main)
 
 import Browser exposing (element)
 import Browser.Events exposing (onKeyDown, onResize)
@@ -16,6 +16,11 @@ import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset,
 import Json.Decode as Decode
 import KeybindingGenerator exposing (generateAlbumKeybindings)
 import Regex
+
+
+-- PORTS
+
+port openUrl : String -> Cmd msg
 
 
 type Msg
@@ -46,7 +51,7 @@ type alias Model =
     , knownAlbums : Dict ImmichAlbumId ImmichAlbum
     , albumKeybindings : Dict ImmichAlbumId String
     , albumsLoadState : ImmichLoadState
-    , apiUrl : String
+    , baseUrl : String
     , apiKey : String
     , immichApiPaths : ImmichApiPaths
     , screenHeight : Int
@@ -177,6 +182,7 @@ type UserActionEditMode
     | EditHalfPageDown
     | EditFullPageUp
     | EditFullPageDown
+    | OpenInImmich
     | UserActionGeneralEdit UserActionGeneral
 
 type PropertyChange
@@ -229,7 +235,7 @@ init flags =
       , knownAlbums = Dict.empty
       , albumKeybindings = Dict.empty
       , albumsLoadState = ImmichLoading
-      , apiUrl = flags.immichApiUrl
+      , baseUrl = flags.immichApiUrl
       , apiKey = flags.immichApiKey
       , immichApiPaths = getImmichApiPaths flags.immichApiUrl flags.immichApiKey
       , screenHeight = 800  -- Default, will be updated by window resize
@@ -588,6 +594,7 @@ viewEditAssetHelp inputMode =
             [ el [ Font.size 16, Font.bold ] <| text "Asset Actions"
             , viewKeybinding "D" "Toggle delete/archive"
             , viewKeybinding "F" "Toggle favorite"
+            , viewKeybinding "K" "Open in Immich (new tab)"
             , viewKeybinding "I" "Enter album search mode"
             ]
         , if inputMode == InsertMode then
@@ -916,7 +923,7 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         LoadDataAgain ->
-            ( model, Immich.getAllAlbums model.apiUrl model.apiKey |> Cmd.map ImmichMsg )
+            ( model, Immich.getAllAlbums model.baseUrl model.apiKey |> Cmd.map ImmichMsg )
         SelectAlbum album ->
             case model.userMode of
                 SelectAlbumInput _ ->
@@ -1377,6 +1384,8 @@ handleUserInput model key =
                                     AssetChange ToggleDelete
                                 "F" ->
                                     AssetChange ToggleFavourite
+                                "K" ->
+                                    OpenInImmich
                                 "PageUp" ->
                                     EditPageUp
                                 "PageDown" ->
@@ -1556,6 +1565,11 @@ handleUserInput model key =
                     ( { model | userMode = EditAsset inputMode asset { search | pagination = pageUp search.pagination } }, Cmd.none )
                 EditFullPageDown ->
                     ( { model | userMode = EditAsset inputMode asset { search | pagination = pageDown search.pagination } }, Cmd.none )
+                OpenInImmich ->
+                    let
+                        immichUrl = model.baseUrl ++ "/photos/" ++ asset.asset.id
+                    in
+                    ( model, openUrl immichUrl )
                 ShowHelp ->
                     ( { model | userMode = ShowEditAssetHelp inputMode asset search }, Cmd.none )
                 UserActionGeneralEdit generalAction ->

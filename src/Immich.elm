@@ -6,6 +6,8 @@ import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
 import String exposing (split)
+import Url exposing (percentEncode)
+import Url.Builder exposing (absolute, crossOrigin, string)
 
 
 type ImageOrder
@@ -40,17 +42,27 @@ type alias ImmichApiPaths =
     , apiKey : String
     }
 
+-- Helper function to properly join URL paths using crossOrigin
+joinUrl : String -> List String -> String
+joinUrl baseUrl pathSegments =
+    crossOrigin baseUrl pathSegments []
+
+-- Helper function to build URL with query parameters using crossOrigin
+buildUrlWithQuery : String -> List String -> List (String, String) -> String
+buildUrlWithQuery baseUrl pathSegments queryParams =
+    crossOrigin baseUrl pathSegments (List.map (\(key, value) -> string key value) queryParams)
+
 getImmichApiPaths : String -> String -> ImmichApiPaths
-getImmichApiPaths immichUrl immichApiKey =
-    { downloadAsset = \id -> immichUrl ++ "/assets/" ++ id ++ "/original"
-    , fetchMembershipForAsset = \assetId -> immichUrl ++ "/albums?assetId=" ++ assetId
-    , searchRandom = immichUrl ++ "/search/random"
-    , searchAssets = immichUrl ++ "/search/metadata"
-    , searchSmart = immichUrl ++ "/search/smart"
-    , getAlbum = \id -> immichUrl ++ "/albums/" ++ id
-    , putAlbumAssets = \id -> immichUrl ++ "/albums/" ++ id ++ "/assets"
-    , createAlbum = immichUrl ++ "/albums"
-    , updateAsset = \id -> immichUrl ++ "/assets/" ++ id
+getImmichApiPaths baseUrl immichApiKey =
+    { downloadAsset = \id -> joinUrl baseUrl ["api", "assets", id, "original"]
+    , fetchMembershipForAsset = \assetId -> buildUrlWithQuery baseUrl ["api", "albums"] [("assetId", assetId)]
+    , searchRandom = joinUrl baseUrl ["api", "search", "random"]
+    , searchAssets = joinUrl baseUrl ["api", "search", "metadata"]
+    , searchSmart = joinUrl baseUrl ["api", "search", "smart"]
+    , getAlbum = \id -> joinUrl baseUrl ["api", "albums", id]
+    , putAlbumAssets = \id -> joinUrl baseUrl ["api", "albums", id, "assets"]
+    , createAlbum = joinUrl baseUrl ["api", "albums"]
+    , updateAsset = \id -> joinUrl baseUrl ["api", "assets", id]
     , apiKey = immichApiKey
     }
 
@@ -84,7 +96,7 @@ type alias ImmichAlbum =
 
 
 type alias ImmichConfig =
-    { apiUrl : String
+    { baseUrl : String
     , apiKey : String
     }
 
@@ -97,11 +109,11 @@ type SearchModifier
 -- type, archived,
 
 getAllAlbums : String -> String -> Cmd Msg
-getAllAlbums url key =
+getAllAlbums baseUrl key =
     Http.request
         { method = "GET"
         , headers = [ Http.header "x-api-key" key ]
-        , url = url ++ "/albums"
+        , url = joinUrl baseUrl ["api", "albums"]
         , body = Http.emptyBody
         , expect = Http.expectJson AlbumsFetched (Decode.list albumDecoder)
         , timeout = Nothing
@@ -361,6 +373,6 @@ type alias Model r =
         , imagesLoadState : ImmichLoadState
         , albums : List ImmichAlbum
         , albumsLoadState : ImmichLoadState
-        , apiUrl : String
+        , baseUrl : String
         , apiKey : String
     }

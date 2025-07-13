@@ -251,8 +251,13 @@
         flags: {
           test: Date.now(),
           immichApiKey: getEnvVar("IMMICH_API_KEY", ""),
-          immichApiUrl: getEnvVar("IMMICH_URL", "https://localhost/api"),
+          immichApiUrl: getEnvVar("IMMICH_URL", "https://localhost"),
         },
+      });
+
+      // Port subscriptions
+      app.ports.openUrl.subscribe(function(url) {
+        window.open(url, '_blank');
       });
     </script>
   </body>
