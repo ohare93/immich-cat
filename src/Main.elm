@@ -1,4 +1,20 @@
-port module Main exposing (main)
+port module Main exposing 
+    ( main
+    , MediaTypeFilter(..)
+    , StatusFilter(..)
+    , SearchContext(..)
+    , TimelineConfig
+    , SearchConfig
+    , AlbumConfig
+    , filterByMediaType
+    , filterByStatus
+    , applyTimelineFilters
+    , applySearchFilters
+    , applyAlbumFilters
+    , defaultTimelineConfig
+    , defaultSearchConfig
+    , defaultAlbumConfig
+    )
 
 import Browser exposing (element)
 import Browser.Events exposing (onKeyDown, onResize)
@@ -12,7 +28,7 @@ import Element.Input exposing (button)
 import Helpers exposing (regexFromString)
 import Html exposing (Html, node)
 import Html.Attributes
-import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..), getAllAlbums, getImmichApiPaths)
+import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..), ImageOrder(..), CategorisationFilter(..), ImageSearchConfig, getAllAlbums, getImmichApiPaths)
 import Json.Decode as Decode
 import KeybindingGenerator exposing (generateAlbumKeybindings)
 import Regex
@@ -29,6 +45,20 @@ type Msg
     | LoadDataAgain
     | SelectAlbum ImmichAlbum
     | WindowResize Int Int
+    | ChangeTimelineMediaType MediaTypeFilter
+    | ChangeTimelineCategorisation CategorisationFilter
+    | ChangeTimelineOrder ImageOrder
+    | ChangeTimelineStatus StatusFilter
+    | ChangeSearchMediaType MediaTypeFilter
+    | ChangeSearchContext SearchContext
+    | ChangeSearchStatus StatusFilter
+    | ChangeSearchQuery String
+    | ChangeAlbumMediaType MediaTypeFilter
+    | ChangeAlbumOrder ImageOrder
+    | ChangeAlbumStatus StatusFilter
+    | LoadTimelineAssets
+    | ExecuteSearch
+    | LoadAlbumAssets ImmichAlbum
 
 type alias Flags =
     { test : Int
@@ -58,18 +88,39 @@ type alias Model =
     , pendingAlbumChange : Maybe (ImmichAlbumId, Bool) -- (albumId, isAddition)
     }
 
-type ImageOrder
-    = Desc
-    | Asc
-    | Random
+type MediaTypeFilter
+    = AllMedia
+    | ImagesOnly
+    | VideosOnly
 
-type CategorisationFilter
-    = All
-    | Uncategorised
+type StatusFilter
+    = AllStatuses
+    | FavoritesOnly
+    | ArchivedOnly
 
-type alias ImageSearchConfig =
-    { order : ImageOrder
+type SearchContext
+    = ContentSearch
+    | FilenameSearch
+    | DescriptionSearch
+
+type alias TimelineConfig =
+    { mediaType : MediaTypeFilter
     , categorisation : CategorisationFilter
+    , order : ImageOrder
+    , status : StatusFilter
+    }
+
+type alias SearchConfig =
+    { mediaType : MediaTypeFilter
+    , searchContext : SearchContext
+    , status : StatusFilter
+    , query : String
+    }
+
+type alias AlbumConfig =
+    { mediaType : MediaTypeFilter
+    , order : ImageOrder
+    , status : StatusFilter
     }
 
 type AssetSource
@@ -92,12 +143,18 @@ type AssetSourceUpdate
 
 type UserMode
     = MainMenu
-    | SearchAssetInput SearchString
-    | SelectAlbumInput AlbumSearch
+    | TimelineView TimelineConfig
+    | SearchView SearchConfig
+    | AlbumBrowse AlbumSearch
+    | AlbumView ImmichAlbum AlbumConfig
+    | Settings
     | LoadingAssets SourceLoadState
     | EditAsset InputMode AssetWithActions AlbumSearch
     | CreateAlbumConfirmation InputMode AssetWithActions AlbumSearch String
     | ShowEditAssetHelp InputMode AssetWithActions AlbumSearch
+    -- Legacy modes for backward compatibility during transition
+    | SearchAssetInput SearchString
+    | SelectAlbumInput AlbumSearch
 
 type alias SearchString =
     String
@@ -503,13 +560,38 @@ viewMainWindow model =
     case model.userMode of
         MainMenu ->
             row [ width fill, height fill ]
-                [ column [ width <| fillPortion 1, height fill, Element.spacingXY 0 20 ]
-                    [ text "Select Asset Source"
-                    , button [] { onPress = Just LoadDataAgain, label = text "Load albums" }
-                    , viewCurrentConfig model.imageSearchConfig
+                [ column [ width <| fillPortion 1, height fill, Element.spacingXY 0 20, paddingXY 20 20 ]
+                    [ el [ Font.size 24, Font.bold ] (text "Image Categorizer")
+                    , column [ Element.spacingXY 0 15 ]
+                        [ el [ Font.size 18, Font.bold ] (text "Choose View Mode")
+                        , viewMainMenuOption "t" "📅 Timeline View" "Browse all assets with timeline filters"
+                        , viewMainMenuOption "s" "🔍 Search Assets" "Smart search with context options"
+                        , viewMainMenuOption "a" "📁 Browse Albums" "Select and view album contents"
+                        , viewMainMenuOption "g" "⚙️ Settings" "Configure preferences and options"
+                        ]
+                    , column [ Element.spacingXY 0 10 ]
+                        [ button [] { onPress = Just LoadDataAgain, label = text "↻ Reload Albums" }
+                        , el [ Font.size 12 ] (text "Press the highlighted key or click to navigate")
+                        ]
                     ]
                 , el [ width <| fillPortion 1, height fill ] <| viewInstructions
                 ]
+        TimelineView config ->
+            viewTimelineView model config
+        SearchView config ->
+            viewSearchView model config
+        AlbumBrowse search ->
+            viewWithSidebar
+                (viewSidebarAlbums search model.albumKeybindings model.knownAlbums)
+                (column []
+                    [ text "Browse Albums"
+                    , text search.searchString
+                    ]
+                )
+        AlbumView album config ->
+            viewAlbumView model album config
+        Settings ->
+            viewSettings model
         SearchAssetInput searchString ->
             column []
                 [ text "Input Search String"
@@ -547,6 +629,16 @@ viewMainWindow model =
             viewWithSidebar (viewSidebar asset search model.albumKeybindings model.knownAlbums Nothing) (viewCreateAlbumConfirmation albumName)
         ShowEditAssetHelp inputMode asset search ->
             viewWithSidebar (viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode)) (viewEditAssetHelp inputMode)
+
+viewMainMenuOption : String -> String -> String -> Element msg
+viewMainMenuOption key title description =
+    row [ width fill, Element.spacingXY 10 0, paddingXY 10 8 ]
+        [ el [ Font.bold, Font.color (Element.rgb 0.2 0.6 1.0), width (px 20) ] (text key)
+        , column [ Element.spacingXY 0 3 ]
+            [ el [ Font.size 16, Font.bold ] (text title)
+            , el [ Font.size 14, Font.color (Element.rgb 0.6 0.6 0.6) ] (text description)
+            ]
+        ]
 
 viewCurrentConfig : ImageSearchConfig -> Element msg
 viewCurrentConfig config =
@@ -652,6 +744,16 @@ viewInputMode userMode =
         inputMode =
             case userMode of
                 MainMenu ->
+                    NormalMode
+                TimelineView _ ->
+                    NormalMode
+                SearchView _ ->
+                    InsertMode
+                AlbumBrowse _ ->
+                    InsertMode
+                AlbumView _ _ ->
+                    NormalMode
+                Settings ->
                     NormalMode
                 SearchAssetInput _ ->
                     InsertMode
@@ -960,6 +1062,96 @@ update msg model =
                         newModel
             in
             ( updatedModel, Cmd.none )
+        ChangeTimelineMediaType newMediaType ->
+            case model.userMode of
+                TimelineView config ->
+                    ( { model | userMode = TimelineView { config | mediaType = newMediaType } }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
+        ChangeTimelineCategorisation newCategorisation ->
+            case model.userMode of
+                TimelineView config ->
+                    ( { model | userMode = TimelineView { config | categorisation = newCategorisation } }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
+        ChangeTimelineOrder newOrder ->
+            case model.userMode of
+                TimelineView config ->
+                    ( { model | userMode = TimelineView { config | order = newOrder } }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
+        ChangeTimelineStatus newStatus ->
+            case model.userMode of
+                TimelineView config ->
+                    ( { model | userMode = TimelineView { config | status = newStatus } }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
+        ChangeSearchMediaType newMediaType ->
+            case model.userMode of
+                SearchView config ->
+                    ( { model | userMode = SearchView { config | mediaType = newMediaType } }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
+        ChangeSearchContext newContext ->
+            case model.userMode of
+                SearchView config ->
+                    ( { model | userMode = SearchView { config | searchContext = newContext } }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
+        ChangeSearchStatus newStatus ->
+            case model.userMode of
+                SearchView config ->
+                    ( { model | userMode = SearchView { config | status = newStatus } }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
+        ChangeSearchQuery newQuery ->
+            case model.userMode of
+                SearchView config ->
+                    ( { model | userMode = SearchView { config | query = newQuery } }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
+        ChangeAlbumMediaType newMediaType ->
+            case model.userMode of
+                AlbumView album config ->
+                    ( { model | userMode = AlbumView album { config | mediaType = newMediaType } }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
+        ChangeAlbumOrder newOrder ->
+            case model.userMode of
+                AlbumView album config ->
+                    ( { model | userMode = AlbumView album { config | order = newOrder } }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
+        ChangeAlbumStatus newStatus ->
+            case model.userMode of
+                AlbumView album config ->
+                    ( { model | userMode = AlbumView album { config | status = newStatus } }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
+        LoadTimelineAssets ->
+            case model.userMode of
+                TimelineView config ->
+                    let
+                        searchConfig = { order = config.order, categorisation = config.categorisation }
+                    in
+                    ( createLoadStateForCurrentAssetSource (ImageSearch searchConfig) model, Immich.fetchImages model.immichApiPaths searchConfig |> Cmd.map ImmichMsg )
+                _ ->
+                    ( model, Cmd.none )
+        ExecuteSearch ->
+            case model.userMode of
+                SearchView config ->
+                    if String.isEmpty config.query then
+                        ( model, Cmd.none )
+                    else
+                        ( createLoadStateForCurrentAssetSource (TextSearch config.query) model, Immich.searchAssets model.immichApiPaths config.query |> Cmd.map ImmichMsg )
+                _ ->
+                    ( model, Cmd.none )
+        LoadAlbumAssets album ->
+            case model.userMode of
+                AlbumView _ config ->
+                    ( createLoadStateForCurrentAssetSource (Album album) model, Immich.getAlbum model.immichApiPaths album.id |> Cmd.map ImmichMsg )
+                _ ->
+                    ( model, Cmd.none )
         ImmichMsg imsg ->
             let
                 newModel =
@@ -1072,6 +1264,153 @@ handleFetchAssets : List ImmichAsset -> Model -> Model
 handleFetchAssets assets model =
     { model | knownAssets = Helpers.listOverrideDict assets (\a -> ( a.id, a )) model.knownAssets, currentAssets = List.map .id assets, imagesLoadState = ImmichLoadSuccess }
 
+-- TOGGLE FUNCTIONS --
+
+toggleMediaType : MediaTypeFilter -> MediaTypeFilter
+toggleMediaType current =
+    case current of
+        AllMedia -> ImagesOnly
+        ImagesOnly -> VideosOnly
+        VideosOnly -> AllMedia
+
+toggleCategorisation : CategorisationFilter -> CategorisationFilter
+toggleCategorisation current =
+    case current of
+        All -> Uncategorised
+        Uncategorised -> All
+
+toggleOrder : ImageOrder -> ImageOrder
+toggleOrder current =
+    case current of
+        Desc -> Asc
+        Asc -> Random
+        Random -> Desc
+
+toggleStatus : StatusFilter -> StatusFilter
+toggleStatus current =
+    case current of
+        AllStatuses -> FavoritesOnly
+        FavoritesOnly -> ArchivedOnly
+        ArchivedOnly -> AllStatuses
+
+-- HELPER FUNCTIONS FOR DISPLAY --
+
+mediaTypeToString : MediaTypeFilter -> String
+mediaTypeToString mediaType =
+    case mediaType of
+        AllMedia -> "All"
+        ImagesOnly -> "Images"
+        VideosOnly -> "Videos"
+
+categorisationToString : CategorisationFilter -> String
+categorisationToString categorisation =
+    case categorisation of
+        All -> "All"
+        Uncategorised -> "Uncategorised"
+
+orderToString : ImageOrder -> String
+orderToString order =
+    case order of
+        Desc -> "Newest"
+        Asc -> "Oldest"
+        Random -> "Random"
+
+statusToString : StatusFilter -> String
+statusToString status =
+    case status of
+        AllStatuses -> "All"
+        FavoritesOnly -> "Favorites"
+        ArchivedOnly -> "Archived"
+
+searchContextToString : SearchContext -> String
+searchContextToString context =
+    case context of
+        ContentSearch -> "Content"
+        FilenameSearch -> "Filename"
+        DescriptionSearch -> "Description"
+
+-- FILTERING FUNCTIONS --
+
+filterByMediaType : MediaTypeFilter -> List ImmichAsset -> List ImmichAsset
+filterByMediaType mediaFilter assets =
+    case mediaFilter of
+        AllMedia ->
+            assets
+        ImagesOnly ->
+            List.filter (\asset -> String.startsWith "image/" asset.mimeType) assets
+        VideosOnly ->
+            List.filter (\asset -> String.startsWith "video/" asset.mimeType) assets
+
+filterByStatus : StatusFilter -> List ImmichAsset -> List ImmichAsset
+filterByStatus statusFilter assets =
+    case statusFilter of
+        AllStatuses ->
+            assets
+        FavoritesOnly ->
+            List.filter (\asset -> asset.isFavourite) assets
+        ArchivedOnly ->
+            List.filter (\asset -> asset.isArchived) assets
+
+filterByFilename : String -> List ImmichAsset -> List ImmichAsset
+filterByFilename query assets =
+    if String.isEmpty query then
+        assets
+    else
+        let
+            lowercaseQuery = String.toLower query
+        in
+        List.filter (\asset -> 
+            String.contains lowercaseQuery (String.toLower asset.title)
+        ) assets
+
+applyTimelineFilters : TimelineConfig -> List ImmichAsset -> List ImmichAsset
+applyTimelineFilters config assets =
+    assets
+        |> filterByMediaType config.mediaType
+        |> filterByStatus config.status
+
+applySearchFilters : SearchConfig -> List ImmichAsset -> List ImmichAsset  
+applySearchFilters config assets =
+    assets
+        |> filterByMediaType config.mediaType
+        |> filterByStatus config.status
+        |> (case config.searchContext of
+            FilenameSearch -> filterByFilename config.query
+            _ -> identity -- Content and description search handled by API
+           )
+
+applyAlbumFilters : AlbumConfig -> List ImmichAsset -> List ImmichAsset
+applyAlbumFilters config assets =
+    assets
+        |> filterByMediaType config.mediaType
+        |> filterByStatus config.status
+
+-- DEFAULT CONFIGURATIONS --
+
+defaultTimelineConfig : TimelineConfig
+defaultTimelineConfig =
+    { mediaType = AllMedia
+    , categorisation = Uncategorised
+    , order = Desc
+    , status = AllStatuses
+    }
+
+defaultSearchConfig : SearchConfig
+defaultSearchConfig =
+    { mediaType = AllMedia
+    , searchContext = ContentSearch
+    , status = AllStatuses
+    , query = ""
+    }
+
+defaultAlbumConfig : AlbumConfig
+defaultAlbumConfig =
+    { mediaType = AllMedia
+    , order = Desc
+    , status = AllStatuses
+    }
+
+
 -- KEYBINDING GENERATION --
 -- All keybinding functions are now imported from KeybindingGenerator module
 
@@ -1147,56 +1486,132 @@ handleUserInput model key =
     case model.userMode of
         MainMenu ->
             case key of
-                "l" ->
-                    let
-                        immichOrder =
-                            case model.imageSearchConfig.order of
-                                Desc ->
-                                    Immich.Desc
-                                Asc ->
-                                    Immich.Asc
-                                Random ->
-                                    Immich.Random
-                        immichCategorisation =
-                            case model.imageSearchConfig.categorisation of
-                                All ->
-                                    Immich.All
-                                Uncategorised ->
-                                    Immich.Uncategorised
-                        config =
-                            { order = immichOrder, categorisation = immichCategorisation }
-                    in
-                    ( applyGeneralAction model (ChangeUserModeToLoading (ImageSearch model.imageSearchConfig)), Immich.fetchImages model.immichApiPaths config |> Cmd.map ImmichMsg )
-                "o" ->
-                    let
-                        newOrder =
-                            case model.imageSearchConfig.order of
-                                Desc ->
-                                    Asc
-                                Asc ->
-                                    Random
-                                Random ->
-                                    Desc
-                        newConfig =
-                            { order = newOrder, categorisation = model.imageSearchConfig.categorisation }
-                    in
-                    ( { model | imageSearchConfig = newConfig }, Cmd.none )
-                "c" ->
-                    let
-                        newCategorisation =
-                            case model.imageSearchConfig.categorisation of
-                                All ->
-                                    Uncategorised
-                                Uncategorised ->
-                                    All
-                        newConfig =
-                            { order = model.imageSearchConfig.order, categorisation = newCategorisation }
-                    in
-                    ( { model | imageSearchConfig = newConfig }, Cmd.none )
-                "a" ->
-                    ( applyGeneralAction model ChangeUserModeToSelectAlbum, Cmd.none )
+                "t" ->
+                    ( { model | userMode = TimelineView defaultTimelineConfig }, Cmd.none )
                 "s" ->
-                    ( applyGeneralAction model ChangeUserModeToSearchAsset, Cmd.none )
+                    ( { model | userMode = SearchView defaultSearchConfig }, Cmd.none )
+                "a" ->
+                    ( { model | userMode = AlbumBrowse <| getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight }, Cmd.none )
+                "g" ->
+                    ( { model | userMode = Settings }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
+        TimelineView config ->
+            case key of
+                "Escape" ->
+                    ( { model | userMode = MainMenu }, Cmd.none )
+                "m" ->
+                    ( { model | userMode = TimelineView { config | mediaType = toggleMediaType config.mediaType } }, Cmd.none )
+                "c" ->
+                    ( { model | userMode = TimelineView { config | categorisation = toggleCategorisation config.categorisation } }, Cmd.none )
+                "o" ->
+                    ( { model | userMode = TimelineView { config | order = toggleOrder config.order } }, Cmd.none )
+                "s" ->
+                    ( { model | userMode = TimelineView { config | status = toggleStatus config.status } }, Cmd.none )
+                "Enter" ->
+                    let
+                        searchConfig = { order = config.order, categorisation = config.categorisation }
+                        loadModel = createLoadStateForCurrentAssetSource (ImageSearch searchConfig) model
+                        loadCmd = Immich.fetchImages model.immichApiPaths searchConfig |> Cmd.map ImmichMsg
+                    in
+                    ( loadModel, loadCmd )
+                " " -> -- Space key
+                    let
+                        searchConfig = { order = config.order, categorisation = config.categorisation }
+                        loadModel = createLoadStateForCurrentAssetSource (ImageSearch searchConfig) model
+                        loadCmd = Immich.fetchImages model.immichApiPaths searchConfig |> Cmd.map ImmichMsg
+                    in
+                    ( loadModel, loadCmd )
+                _ ->
+                    ( model, Cmd.none )
+        SearchView config ->
+            case key of
+                "Escape" ->
+                    ( { model | userMode = MainMenu }, Cmd.none )
+                "m" ->
+                    ( { model | userMode = SearchView { config | mediaType = toggleMediaType config.mediaType } }, Cmd.none )
+                "c" ->
+                    ( { model | userMode = SearchView { config | searchContext = case config.searchContext of
+                        ContentSearch -> FilenameSearch
+                        FilenameSearch -> DescriptionSearch
+                        DescriptionSearch -> ContentSearch } }, Cmd.none )
+                "s" ->
+                    ( { model | userMode = SearchView { config | status = toggleStatus config.status } }, Cmd.none )
+                "Enter" ->
+                    if String.isEmpty config.query then
+                        ( model, Cmd.none )
+                    else
+                        let
+                            loadModel = createLoadStateForCurrentAssetSource (TextSearch config.query) model
+                            loadCmd = Immich.searchAssets model.immichApiPaths config.query |> Cmd.map ImmichMsg
+                        in
+                        ( loadModel, loadCmd )
+                " " -> -- Space key
+                    if String.isEmpty config.query then
+                        ( model, Cmd.none )
+                    else
+                        let
+                            loadModel = createLoadStateForCurrentAssetSource (TextSearch config.query) model
+                            loadCmd = Immich.searchAssets model.immichApiPaths config.query |> Cmd.map ImmichMsg
+                        in
+                        ( loadModel, loadCmd )
+                _ ->
+                    ( model, Cmd.none )
+        AlbumBrowse search ->
+            case key of
+                "Escape" ->
+                    ( { model | userMode = MainMenu }, Cmd.none )
+                "Enter" ->
+                    let
+                        maybeMatch = getTopMatchToSearch search model.albumKeybindings model.knownAlbums
+                    in
+                    case maybeMatch of
+                        Just album ->
+                            ( { model | userMode = AlbumView album defaultAlbumConfig }, Cmd.none )
+                        Nothing ->
+                            ( model, Cmd.none )
+                _ ->
+                    if isSupportedSearchLetter key then
+                        let
+                            newSearch = { search | searchString = search.searchString ++ key }
+                        in
+                        ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
+                    else if key == "Backspace" then
+                        let
+                            newSearchString = String.slice 0 (String.length search.searchString - 1) search.searchString
+                            newSearch = { search | searchString = newSearchString }
+                        in
+                        ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
+                    else
+                        ( model, Cmd.none )
+        AlbumView album config ->
+            case key of
+                "Escape" ->
+                    ( { model | userMode = AlbumBrowse <| getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight }, Cmd.none )
+                "m" ->
+                    ( { model | userMode = AlbumView album { config | mediaType = toggleMediaType config.mediaType } }, Cmd.none )
+                "o" ->
+                    ( { model | userMode = AlbumView album { config | order = toggleOrder config.order } }, Cmd.none )
+                "s" ->
+                    ( { model | userMode = AlbumView album { config | status = toggleStatus config.status } }, Cmd.none )
+                "Enter" ->
+                    let
+                        loadModel = createLoadStateForCurrentAssetSource (Album album) model
+                        loadCmd = Immich.getAlbum model.immichApiPaths album.id |> Cmd.map ImmichMsg
+                    in
+                    ( loadModel, loadCmd )
+                " " -> -- Space key
+                    let
+                        loadModel = createLoadStateForCurrentAssetSource (Album album) model
+                        loadCmd = Immich.getAlbum model.immichApiPaths album.id |> Cmd.map ImmichMsg
+                    in
+                    ( loadModel, loadCmd )
+                _ ->
+                    ( model, Cmd.none )
+        Settings ->
+            case key of
+                "Escape" ->
+                    ( { model | userMode = MainMenu }, Cmd.none )
                 _ ->
                     ( model, Cmd.none )
         SearchAssetInput searchString ->
@@ -2001,6 +2416,124 @@ subscriptions _ =
         , onResize WindowResize
         ]
 
+
+-- NEW SUBPAGE VIEWS --
+
+viewTimelineView : Model -> TimelineConfig -> Element Msg
+viewTimelineView model config =
+    row [ width fill, height fill ]
+        [ column [ width (px 300), height fill, paddingXY 15 15, Element.spacingXY 0 15 ]
+            [ el [ Font.size 20, Font.bold ] (text "📅 Timeline View")
+            , viewTimelineFilters config
+            , button [] { onPress = Just LoadTimelineAssets, label = text "[Enter/Space] Load & View Assets" }
+            , column [ Element.spacingXY 0 5 ]
+                [ el [ Font.size 12, Font.bold ] (text "Filters:")
+                , el [ Font.size 11 ] (text "[m] Media Type  [c] Categorisation  [o] Order  [s] Status")
+                , el [ Font.size 12, Font.bold ] (text "Actions:")
+                , el [ Font.size 11 ] (text "[Enter/Space] Load & View Assets  [Escape] Back to Menu")
+                ]
+            ]
+        , column [ width fill, height fill ]
+            [ text "Timeline assets will appear here" -- TODO: implement asset display
+            ]
+        ]
+
+viewSearchView : Model -> SearchConfig -> Element Msg
+viewSearchView model config =
+    row [ width fill, height fill ]
+        [ column [ width (px 300), height fill, paddingXY 15 15, Element.spacingXY 0 15 ]
+            [ el [ Font.size 20, Font.bold ] (text "🔍 Search Assets")
+            , viewSearchFilters config
+            , Element.Input.text []
+                { onChange = ChangeSearchQuery
+                , text = config.query
+                , placeholder = Just (Element.Input.placeholder [] (text "Enter search query..."))
+                , label = Element.Input.labelAbove [] (text "Search Query")
+                }
+            , button [] { onPress = Just ExecuteSearch, label = text "[Enter/Space] Search & View Results" }
+            , column [ Element.spacingXY 0 5 ]
+                [ el [ Font.size 12, Font.bold ] (text "Filters:")
+                , el [ Font.size 11 ] (text "[m] Media Type  [c] Search Context  [s] Status")
+                , el [ Font.size 12, Font.bold ] (text "Actions:")
+                , el [ Font.size 11 ] (text "[Enter/Space] Search & View Results  [Escape] Back to Menu")
+                ]
+            ]
+        , column [ width fill, height fill ]
+            [ text "Search results will appear here" -- TODO: implement search results
+            ]
+        ]
+
+viewAlbumView : Model -> ImmichAlbum -> AlbumConfig -> Element Msg
+viewAlbumView model album config =
+    row [ width fill, height fill ]
+        [ column [ width (px 300), height fill, paddingXY 15 15, Element.spacingXY 0 15 ]
+            [ el [ Font.size 20, Font.bold ] (text ("📁 " ++ album.albumName))
+            , el [ Font.size 14 ] (text (String.fromInt album.assetCount ++ " assets"))
+            , viewAlbumFilters config
+            , button [] { onPress = Just (LoadAlbumAssets album), label = text "[Enter/Space] Load & View Assets" }
+            , column [ Element.spacingXY 0 5 ]
+                [ el [ Font.size 12, Font.bold ] (text "Filters:")
+                , el [ Font.size 11 ] (text "[m] Media Type  [o] Order  [s] Status")
+                , el [ Font.size 12, Font.bold ] (text "Actions:")
+                , el [ Font.size 11 ] (text "[Enter/Space] Load & View Assets  [Escape] Back to Albums")
+                ]
+            ]
+        , column [ width fill, height fill ]
+            [ text "Album assets will appear here" -- TODO: implement filtered album assets
+            ]
+        ]
+
+viewSettings : Model -> Element Msg
+viewSettings model =
+    column [ width fill, height fill, paddingXY 20 20, Element.spacingXY 0 20 ]
+        [ el [ Font.size 24, Font.bold ] (text "⚙️ Settings")
+        , column [ Element.spacingXY 0 15 ]
+            [ el [ Font.size 18, Font.bold ] (text "Default Preferences")
+            , text "• Timeline default filters"
+            , text "• Search default context"
+            , text "• Album default sorting"
+            , text "• Keybinding customization"
+            ]
+        , el [ Font.size 14 ] (text "Settings configuration coming soon...")
+        , el [ Font.size 12 ] (text "Press Escape to return to main menu")
+        ]
+
+-- FILTER PANEL VIEWS --
+
+viewTimelineFilters : TimelineConfig -> Element Msg
+viewTimelineFilters config =
+    column [ Element.spacingXY 0 12 ]
+        [ el [ Font.size 16, Font.bold ] (text "Current Filters")
+        , viewFilterValue "Media Type" (mediaTypeToString config.mediaType)
+        , viewFilterValue "Categorisation" (categorisationToString config.categorisation)
+        , viewFilterValue "Order" (orderToString config.order)
+        , viewFilterValue "Status" (statusToString config.status)
+        ]
+
+viewSearchFilters : SearchConfig -> Element Msg
+viewSearchFilters config =
+    column [ Element.spacingXY 0 12 ]
+        [ el [ Font.size 16, Font.bold ] (text "Current Filters")
+        , viewFilterValue "Media Type" (mediaTypeToString config.mediaType)
+        , viewFilterValue "Search Context" (searchContextToString config.searchContext)
+        , viewFilterValue "Status" (statusToString config.status)
+        ]
+
+viewAlbumFilters : AlbumConfig -> Element Msg
+viewAlbumFilters config =
+    column [ Element.spacingXY 0 12 ]
+        [ el [ Font.size 16, Font.bold ] (text "Current Filters")
+        , viewFilterValue "Media Type" (mediaTypeToString config.mediaType)
+        , viewFilterValue "Order" (orderToString config.order)
+        , viewFilterValue "Status" (statusToString config.status)
+        ]
+
+viewFilterValue : String -> String -> Element Msg
+viewFilterValue label value =
+    row [ Element.spacingXY 10 0 ]
+        [ el [ Font.size 14, Font.bold, width (px 100) ] (text (label ++ ":"))
+        , el [ Font.size 14, Font.color (Element.rgb 0.2 0.6 1.0) ] (text value)
+        ]
 
 main : Program Flags Model Msg
 main =
