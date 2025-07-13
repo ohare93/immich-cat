@@ -1063,10 +1063,12 @@ handleFetchAssets assets model =
 handleFetchAlbums : List ImmichAlbum -> Model -> Model
 handleFetchAlbums albums model =
     let
-        albumKeybindings = generateAlbumKeybindings albums
+        updatedKnownAlbums = Helpers.listOverrideDict albums (\a -> ( a.id, a )) model.knownAlbums
+        allAlbums = Dict.values updatedKnownAlbums
+        albumKeybindings = generateAlbumKeybindings allAlbums
     in
     { model 
-    | knownAlbums = Helpers.listOverrideDict albums (\a -> ( a.id, a )) model.knownAlbums
+    | knownAlbums = updatedKnownAlbums
     , albumsLoadState = ImmichLoadSuccess
     , albumKeybindings = albumKeybindings
     }
