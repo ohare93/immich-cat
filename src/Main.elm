@@ -1,7 +1,7 @@
 module Main exposing (main)
 
 import Browser exposing (element)
-import Browser.Events exposing (onKeyDown)
+import Browser.Events exposing (onKeyDown, onResize)
 import Date
 import Dict exposing (Dict)
 import Element exposing (Element, alignBottom, alignRight, alignTop, centerX, centerY, clipY, column, el, fill, fillPortion, height, minimum, paddingXY, px, row, text, width)
@@ -23,6 +23,7 @@ type Msg
     | ImmichMsg Immich.Msg
     | LoadDataAgain
     | SelectAlbum ImmichAlbum
+    | WindowResize Int Int
 
 type alias Flags =
     { test : Int
@@ -48,6 +49,7 @@ type alias Model =
     , apiUrl : String
     , apiKey : String
     , immichApiPaths : ImmichApiPaths
+    , screenHeight : Int
     }
 
 type ImageOrder
@@ -109,6 +111,13 @@ type alias AlbumSearch =
     , albumScores : Dict ImmichAlbumId Int
     , selectedIndex : Int
     , partialKeybinding : String
+    , pagination : AlbumPagination
+    }
+
+type alias AlbumPagination =
+    { currentPage : Int
+    , itemsPerPage : Int
+    , totalItems : Int
     }
 
 type InputMode
@@ -143,6 +152,12 @@ type UserActionAlbumSelectMode
     | SelectAlbumIfMatching
     | MoveSelectionUp
     | MoveSelectionDown
+    | PageUp
+    | PageDown
+    | HalfPageUp
+    | HalfPageDown
+    | FullPageUp
+    | FullPageDown
     | UserActionGeneralAlbumSelect UserActionGeneral
 
 type UserActionEditMode
@@ -156,6 +171,12 @@ type UserActionEditMode
     | MoveAlbumSelectionDown
     | ShowHelp
     | AssetChange AssetChange
+    | EditPageUp
+    | EditPageDown
+    | EditHalfPageUp
+    | EditHalfPageDown
+    | EditFullPageUp
+    | EditFullPageDown
     | UserActionGeneralEdit UserActionGeneral
 
 type PropertyChange
@@ -211,6 +232,7 @@ init flags =
       , apiUrl = flags.immichApiUrl
       , apiKey = flags.immichApiKey
       , immichApiPaths = getImmichApiPaths flags.immichApiUrl flags.immichApiKey
+      , screenHeight = 800  -- Default, will be updated by window resize
       }
       -- , Cmd.none
     , getAllAlbums flags.immichApiUrl flags.immichApiKey |> Cmd.map ImmichMsg
@@ -688,8 +710,41 @@ viewSidebar asset search albumKeybindings albums maybeInputMode =
 
 viewSidebarAlbums : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAssetId ImmichAlbum -> Element Msg
 viewSidebarAlbums search albumKeybindings albums =
-    column [ height fill ]
-        (List.map
+    let
+        allFilteredAlbums = Dict.values <| filterToOnlySearchedForAlbums search albumKeybindings albums
+        totalItems = List.length allFilteredAlbums
+        
+        -- Calculate pagination
+        startIndex = search.pagination.currentPage * search.pagination.itemsPerPage
+        endIndex = startIndex + search.pagination.itemsPerPage
+        paginatedAlbums = allFilteredAlbums |> List.drop startIndex |> List.take search.pagination.itemsPerPage
+        
+        -- Calculate remaining items info
+        totalPages = calculateTotalPages totalItems search.pagination.itemsPerPage
+        itemsAfter = max 0 (totalItems - endIndex)
+        itemsBefore = startIndex
+        
+        -- Create pagination status row
+        paginationStatus = 
+            if totalPages > 1 then
+                let
+                    pageInfo = "Page " ++ String.fromInt (search.pagination.currentPage + 1) ++ " of " ++ String.fromInt totalPages
+                    remainingInfo = 
+                        if itemsAfter > 0 && itemsBefore > 0 then
+                            " (" ++ String.fromInt itemsBefore ++ " above, " ++ String.fromInt itemsAfter ++ " below)"
+                        else if itemsAfter > 0 then
+                            " (" ++ String.fromInt itemsAfter ++ " more below)"
+                        else if itemsBefore > 0 then
+                            " (" ++ String.fromInt itemsBefore ++ " above)"
+                        else
+                            ""
+                in
+                [ el [ Font.size 12, Font.color <| Element.fromRgb { red = 0.5, green = 0.5, blue = 0.5, alpha = 1 } ] <| 
+                    text (pageInfo ++ remainingInfo) ]
+            else
+                []
+        
+        albumRows = List.map
             (\album ->
                 let
                     keybinding = Dict.get album.id albumKeybindings |> Maybe.withDefault ""
@@ -711,25 +766,52 @@ viewSidebarAlbums search albumKeybindings albums =
                     [ el [ paddingXY 5 0 ] <| text (String.fromInt album.assetCount)
                     , el attrs <| text albumDisplayName
                     ]
-            )
-         <|
-            List.take 40 <|
-                Dict.values <|
-                    filterToOnlySearchedForAlbums search albumKeybindings albums
-        )
+            ) paginatedAlbums
+    in
+    column [ height fill ] (paginationStatus ++ albumRows)
 
 viewSidebarAlbumsForCurrentAsset : AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Maybe InputMode -> Element Msg
 viewSidebarAlbumsForCurrentAsset asset search albumKeybindings albums maybeInputMode =
     let
-        filteredAlbums = List.take 40 (getFilteredAlbumsListForAsset search albumKeybindings albums asset)
-    in
-    column [ height fill ]
-        (List.indexedMap
+        allFilteredAlbums = getFilteredAlbumsListForAsset search albumKeybindings albums asset
+        totalItems = List.length allFilteredAlbums
+        
+        -- Calculate pagination
+        startIndex = search.pagination.currentPage * search.pagination.itemsPerPage
+        endIndex = startIndex + search.pagination.itemsPerPage
+        paginatedAlbums = allFilteredAlbums |> List.drop startIndex |> List.take search.pagination.itemsPerPage
+        
+        -- Calculate remaining items info
+        totalPages = calculateTotalPages totalItems search.pagination.itemsPerPage
+        itemsAfter = max 0 (totalItems - endIndex)
+        itemsBefore = startIndex
+        
+        -- Create pagination status row
+        paginationStatus = 
+            if totalPages > 1 then
+                let
+                    pageInfo = "Page " ++ String.fromInt (search.pagination.currentPage + 1) ++ " of " ++ String.fromInt totalPages
+                    remainingInfo = 
+                        if itemsAfter > 0 && itemsBefore > 0 then
+                            " (" ++ String.fromInt itemsBefore ++ " above, " ++ String.fromInt itemsAfter ++ " below)"
+                        else if itemsAfter > 0 then
+                            " (" ++ String.fromInt itemsAfter ++ " more below)"
+                        else if itemsBefore > 0 then
+                            " (" ++ String.fromInt itemsBefore ++ " above)"
+                        else
+                            ""
+                in
+                [ el [ Font.size 12, Font.color <| Element.fromRgb { red = 0.5, green = 0.5, blue = 0.5, alpha = 1 } ] <| 
+                    text (pageInfo ++ remainingInfo) ]
+            else
+                []
+        
+        albumRows = List.indexedMap
             (\index album ->
                 let
                     assetInAlbum =
                         Maybe.withDefault RemainFalse <| Dict.get album.id asset.albumMembership
-                    isSelected = index == search.selectedIndex && maybeInputMode == Just InsertMode
+                    isSelected = (index + startIndex) == search.selectedIndex && maybeInputMode == Just InsertMode
                     baseAttrs =
                         case assetInAlbum of
                             RemainTrue ->
@@ -765,9 +847,9 @@ viewSidebarAlbumsForCurrentAsset asset search albumKeybindings albums maybeInput
                     [ el [ paddingXY 5 0 ] <| text (String.fromInt album.assetCount)
                     , el finalAttrs <| text (if isSelected then "► " ++ albumDisplayName else albumDisplayName)
                     ]
-            )
-            filteredAlbums
-        )
+            ) paginatedAlbums
+    in
+    column [ height fill ] (paginationStatus ++ albumRows)
 
 filterToOnlySearchedForAlbums : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Dict ImmichAlbumId ImmichAlbum
 filterToOnlySearchedForAlbums search albumKeybindings albums =
@@ -853,6 +935,22 @@ update msg model =
                     ( model, Cmd.none )
         KeyPress key ->
             handleUserInput model key
+        WindowResize width height ->
+            let
+                newModel = { model | screenHeight = height }
+                updatedModel = case model.userMode of
+                    SelectAlbumInput search ->
+                        { newModel | userMode = SelectAlbumInput { search | pagination = updatePagination height search.pagination } }
+                    EditAsset inputMode asset search ->
+                        { newModel | userMode = EditAsset inputMode asset { search | pagination = updatePagination height search.pagination } }
+                    CreateAlbumConfirmation inputMode asset search albumName ->
+                        { newModel | userMode = CreateAlbumConfirmation inputMode asset { search | pagination = updatePagination height search.pagination } albumName }
+                    ShowEditAssetHelp inputMode asset search ->
+                        { newModel | userMode = ShowEditAssetHelp inputMode asset { search | pagination = updatePagination height search.pagination } }
+                    _ ->
+                        newModel
+            in
+            ( updatedModel, Cmd.none )
         ImmichMsg imsg ->
             let
                 newModel =
@@ -1128,22 +1226,43 @@ handleUserInput model key =
                                 MoveSelectionUp
                             "ArrowDown" ->
                                 MoveSelectionDown
+                            "PageUp" ->
+                                PageUp
+                            "PageDown" ->
+                                PageDown
                             _ ->
-                                UserActionGeneralAlbumSelect UnknownAction
+                                if String.contains "Control" key then
+                                    case String.replace "Control+" "" key of
+                                        "d" -> HalfPageDown
+                                        "u" -> HalfPageUp
+                                        "f" -> FullPageDown
+                                        "b" -> FullPageUp
+                                        _ -> UserActionGeneralAlbumSelect UnknownAction
+                                else
+                                    UserActionGeneralAlbumSelect UnknownAction
             in
             case userAction of
                 TextSelectInputUpdate (TextInputAddition newKey) ->
                     let
-                        newSearchString =
-                            searchResults.searchString ++ newKey
+                        newPartialKeybinding =
+                            searchResults.partialKeybinding ++ newKey
+                        updatedSearch = { searchResults | partialKeybinding = newPartialKeybinding, pagination = resetPagination searchResults.pagination }
+                        
+                        -- Check for exact keybinding match and auto-apply
+                        maybeExactMatch = getAlbumByExactKeybinding newPartialKeybinding model.albumKeybindings model.knownAlbums
                     in
-                    ( { model | userMode = SelectAlbumInput <| updateAlbumSearchString newSearchString searchResults model.knownAlbums }, Cmd.none )
+                    case maybeExactMatch of
+                        Just album ->
+                            ( createLoadStateForCurrentAssetSource (Album album) model, Immich.getAlbum model.immichApiPaths album.id |> Cmd.map ImmichMsg )
+                        Nothing ->
+                            ( { model | userMode = SelectAlbumInput updatedSearch }, Cmd.none )
                 TextSelectInputUpdate TextInputBackspace ->
                     let
-                        newSearchString =
-                            String.slice 0 (String.length searchResults.searchString - 1) searchResults.searchString
+                        newPartialKeybinding =
+                            String.slice 0 (String.length searchResults.partialKeybinding - 1) searchResults.partialKeybinding
+                        updatedSearch = { searchResults | partialKeybinding = newPartialKeybinding, pagination = resetPagination searchResults.pagination }
                     in
-                    ( { model | userMode = SelectAlbumInput <| updateAlbumSearchString newSearchString searchResults model.knownAlbums }, Cmd.none )
+                    ( { model | userMode = SelectAlbumInput updatedSearch }, Cmd.none )
                 SelectAlbumIfMatching ->
                     let
                         maybeMatch =
@@ -1158,6 +1277,18 @@ handleUserInput model key =
                     ( { model | userMode = SelectAlbumInput <| moveSelectionUp searchResults model.albumKeybindings model.knownAlbums }, Cmd.none )
                 MoveSelectionDown ->
                     ( { model | userMode = SelectAlbumInput <| moveSelectionDown searchResults model.albumKeybindings model.knownAlbums }, Cmd.none )
+                PageUp ->
+                    ( { model | userMode = SelectAlbumInput { searchResults | pagination = pageUp searchResults.pagination } }, Cmd.none )
+                PageDown ->
+                    ( { model | userMode = SelectAlbumInput { searchResults | pagination = pageDown searchResults.pagination } }, Cmd.none )
+                HalfPageUp ->
+                    ( { model | userMode = SelectAlbumInput { searchResults | pagination = halfPageUp searchResults.pagination } }, Cmd.none )
+                HalfPageDown ->
+                    ( { model | userMode = SelectAlbumInput { searchResults | pagination = halfPageDown searchResults.pagination } }, Cmd.none )
+                FullPageUp ->
+                    ( { model | userMode = SelectAlbumInput { searchResults | pagination = pageUp searchResults.pagination } }, Cmd.none )
+                FullPageDown ->
+                    ( { model | userMode = SelectAlbumInput { searchResults | pagination = pageDown searchResults.pagination } }, Cmd.none )
                 UserActionGeneralAlbumSelect action ->
                     ( applyGeneralAction model action, Cmd.none )
         LoadingAssets _ ->
@@ -1182,10 +1313,22 @@ handleUserInput model key =
                                     MoveAlbumSelectionUp
                                 "ArrowDown" ->
                                     MoveAlbumSelectionDown
+                                "PageUp" ->
+                                    EditPageUp
+                                "PageDown" ->
+                                    EditPageDown
                                 "?" ->
                                     ShowHelp
                                 _ ->
-                                    UserActionGeneralEdit UnknownAction
+                                    if String.contains "Control" key then
+                                        case String.replace "Control+" "" key of
+                                            "d" -> EditHalfPageDown
+                                            "u" -> EditHalfPageUp
+                                            "f" -> EditFullPageDown
+                                            "b" -> EditFullPageUp
+                                            _ -> UserActionGeneralEdit UnknownAction
+                                    else
+                                        UserActionGeneralEdit UnknownAction
                     else if inputMode == KeybindingMode then
                         if isKeybindingLetter key then
                             TextEditModeInputUpdate (TextInputAddition key)
@@ -1197,10 +1340,22 @@ handleUserInput model key =
                                     TextEditModeInputUpdate TextInputBackspace
                                 "Enter" ->
                                     ApplyAlbumIfMatching
+                                "PageUp" ->
+                                    EditPageUp
+                                "PageDown" ->
+                                    EditPageDown
                                 "?" ->
                                     ShowHelp
                                 _ ->
-                                    UserActionGeneralEdit UnknownAction
+                                    if String.contains "Control" key then
+                                        case String.replace "Control+" "" key of
+                                            "d" -> EditHalfPageDown
+                                            "u" -> EditHalfPageUp
+                                            "f" -> EditFullPageDown
+                                            "b" -> EditFullPageUp
+                                            _ -> UserActionGeneralEdit UnknownAction
+                                    else
+                                        UserActionGeneralEdit UnknownAction
                     else
                         if isKeybindingLetter key then
                             StartKeybindingMode key
@@ -1222,10 +1377,22 @@ handleUserInput model key =
                                     AssetChange ToggleDelete
                                 "F" ->
                                     AssetChange ToggleFavourite
+                                "PageUp" ->
+                                    EditPageUp
+                                "PageDown" ->
+                                    EditPageDown
                                 "?" ->
                                     ShowHelp
                                 _ ->
-                                    UserActionGeneralEdit UnknownAction
+                                    if String.contains "Control" key then
+                                        case String.replace "Control+" "" key of
+                                            "d" -> EditHalfPageDown
+                                            "u" -> EditHalfPageUp
+                                            "f" -> EditFullPageDown
+                                            "b" -> EditFullPageUp
+                                            _ -> UserActionGeneralEdit UnknownAction
+                                    else
+                                        UserActionGeneralEdit UnknownAction
             in
             case userAction of
                 AssetChange ToggleFavourite ->
@@ -1274,9 +1441,9 @@ handleUserInput model key =
                                 
                                 resetSearch = 
                                     if inputMode == KeybindingMode then
-                                        { search | partialKeybinding = "" }
+                                        { search | partialKeybinding = "", pagination = resetPagination search.pagination }
                                     else
-                                        getAlbumSearch "" model.knownAlbums
+                                        getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight
                             in
                             ( { model | userMode = EditAsset NormalMode (toggleAssetAlbum asset album) resetSearch }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
                         Nothing ->
@@ -1292,7 +1459,7 @@ handleUserInput model key =
                     else
                         ( model, Cmd.none )
                 ChangeInputMode newInputMode ->
-                    ( { model | userMode = EditAsset newInputMode asset <| getAlbumSearch "" model.knownAlbums }, Cmd.none )
+                    ( { model | userMode = EditAsset newInputMode asset <| getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight }, Cmd.none )
                 ChangeImageIndex indexChange ->
                     let
                         newIndex =
@@ -1304,7 +1471,7 @@ handleUserInput model key =
                         let
                             newPartialKeybinding =
                                 search.partialKeybinding ++ newKey
-                            updatedSearch = { search | partialKeybinding = newPartialKeybinding }
+                            updatedSearch = { search | partialKeybinding = newPartialKeybinding, pagination = resetPagination search.pagination }
                             
                             -- Check for exact keybinding match and auto-apply
                             maybeExactMatch = getAlbumByExactKeybinding newPartialKeybinding model.albumKeybindings model.knownAlbums
@@ -1319,7 +1486,7 @@ handleUserInput model key =
                                             Just _ ->
                                                 False
                                     
-                                    resetSearch = { search | partialKeybinding = "" }
+                                    resetSearch = { search | partialKeybinding = "", pagination = resetPagination search.pagination }
                                 in
                                 ( { model | userMode = EditAsset NormalMode (toggleAssetAlbum asset album) resetSearch }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
                             
@@ -1351,7 +1518,7 @@ handleUserInput model key =
 
                 StartKeybindingMode partialKey ->
                     let
-                        updatedSearch = { search | partialKeybinding = partialKey }
+                        updatedSearch = { search | partialKeybinding = partialKey, pagination = resetPagination search.pagination }
                         
                         -- Check for exact keybinding match and auto-apply
                         maybeExactMatch = getAlbumByExactKeybinding partialKey model.albumKeybindings model.knownAlbums
@@ -1366,7 +1533,7 @@ handleUserInput model key =
                                         Just _ ->
                                             False
                                 
-                                resetSearch = { search | partialKeybinding = "" }
+                                resetSearch = { search | partialKeybinding = "", pagination = resetPagination search.pagination }
                             in
                             ( { model | userMode = EditAsset NormalMode (toggleAssetAlbum asset album) resetSearch }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
                         
@@ -1377,6 +1544,18 @@ handleUserInput model key =
                     ( { model | userMode = EditAsset inputMode asset <| moveSelectionUpForAsset search model.albumKeybindings model.knownAlbums asset }, Cmd.none )
                 MoveAlbumSelectionDown ->
                     ( { model | userMode = EditAsset inputMode asset <| moveSelectionDownForAsset search model.albumKeybindings model.knownAlbums asset }, Cmd.none )
+                EditPageUp ->
+                    ( { model | userMode = EditAsset inputMode asset { search | pagination = pageUp search.pagination } }, Cmd.none )
+                EditPageDown ->
+                    ( { model | userMode = EditAsset inputMode asset { search | pagination = pageDown search.pagination } }, Cmd.none )
+                EditHalfPageUp ->
+                    ( { model | userMode = EditAsset inputMode asset { search | pagination = halfPageUp search.pagination } }, Cmd.none )
+                EditHalfPageDown ->
+                    ( { model | userMode = EditAsset inputMode asset { search | pagination = halfPageDown search.pagination } }, Cmd.none )
+                EditFullPageUp ->
+                    ( { model | userMode = EditAsset inputMode asset { search | pagination = pageUp search.pagination } }, Cmd.none )
+                EditFullPageDown ->
+                    ( { model | userMode = EditAsset inputMode asset { search | pagination = pageDown search.pagination } }, Cmd.none )
                 ShowHelp ->
                     ( { model | userMode = ShowEditAssetHelp inputMode asset search }, Cmd.none )
                 UserActionGeneralEdit generalAction ->
@@ -1525,7 +1704,7 @@ applyGeneralAction model action =
         ChangeUserModeToSearchAsset ->
             { model | userMode = SearchAssetInput "" }
         ChangeUserModeToSelectAlbum ->
-            { model | userMode = SelectAlbumInput <| getAlbumSearch "" model.knownAlbums }
+            { model | userMode = SelectAlbumInput <| getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight }
         ChangeUserModeToEditAsset ->
             Tuple.first <| switchToEditIfAssetFound model 0
         ChangeUserModeToLoading assetSource ->
@@ -1553,7 +1732,7 @@ switchToEditIfAssetFound model index =
                     -- else
                     --     Cmd.none
                 in
-                ( { model | imageIndex = index, userMode = EditAsset NormalMode (getAssetWithActions asset) (getAlbumSearch "" model.knownAlbums) }, cmdToSend )
+                ( { model | imageIndex = index, userMode = EditAsset NormalMode (getAssetWithActions asset) (getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight) }, cmdToSend )
             )
         |> Maybe.withDefault ( createLoadStateForCurrentAssetSource model.currentAssetsSource model, Cmd.none )
 
@@ -1564,7 +1743,7 @@ getCurrentAssetWithActions model =
         |> List.drop model.imageIndex
         |> List.head
         |> Maybe.andThen (\id -> Dict.get id model.knownAssets)
-        |> Maybe.map (\asset -> ( getAssetWithActions asset, getAlbumSearch "" model.knownAlbums ))
+        |> Maybe.map (\asset -> ( getAssetWithActions asset, getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight ))
 
 getAssetWithActions : ImmichAsset -> AssetWithActions
 getAssetWithActions asset =
@@ -1586,22 +1765,115 @@ getAssetWithActions asset =
 
 getAlbumSearch : String -> Dict ImmichAssetId ImmichAlbum -> AlbumSearch
 getAlbumSearch searchString albums =
+    let
+        totalItems = Dict.size albums
+        itemsPerPage = calculateItemsPerPage 800  -- Default screen height
+    in
     { searchString = searchString
     , albumScores =
         Dict.map (\id album -> shittyFuzzyAlgorithmTest searchString album.albumName) albums
     , selectedIndex = 0
     , partialKeybinding = ""
+    , pagination = 
+        { currentPage = 0
+        , itemsPerPage = itemsPerPage
+        , totalItems = totalItems
+        }
+    }
+
+getAlbumSearchWithHeight : String -> Dict ImmichAssetId ImmichAlbum -> Int -> AlbumSearch
+getAlbumSearchWithHeight searchString albums screenHeight =
+    let
+        totalItems = Dict.size albums
+        itemsPerPage = calculateItemsPerPage screenHeight
+    in
+    { searchString = searchString
+    , albumScores =
+        Dict.map (\id album -> shittyFuzzyAlgorithmTest searchString album.albumName) albums
+    , selectedIndex = 0
+    , partialKeybinding = ""
+    , pagination = 
+        { currentPage = 0
+        , itemsPerPage = itemsPerPage
+        , totalItems = totalItems
+        }
     }
 
 getAlbumSearchWithIndex : String -> Int -> Dict ImmichAssetId ImmichAlbum -> AlbumSearch
 getAlbumSearchWithIndex searchString selectedIndex albums =
+    let
+        totalItems = Dict.size albums
+        itemsPerPage = calculateItemsPerPage 800  -- Default screen height
+    in
     { searchString = searchString
     , albumScores =
         Dict.map (\id album -> shittyFuzzyAlgorithmTest searchString album.albumName) albums
     , selectedIndex = selectedIndex
     , partialKeybinding = ""
+    , pagination = 
+        { currentPage = 0
+        , itemsPerPage = itemsPerPage
+        , totalItems = totalItems
+        }
     }
 
+
+-- Pagination helper functions
+calculateItemsPerPage : Int -> Int
+calculateItemsPerPage screenHeight =
+    -- Assuming each album item is about 25px tall, with some padding for header/footer
+    max 5 ((screenHeight - 100) // 25)
+
+calculateTotalPages : Int -> Int -> Int
+calculateTotalPages totalItems itemsPerPage =
+    if itemsPerPage == 0 then
+        1
+    else
+        (totalItems + itemsPerPage - 1) // itemsPerPage
+
+updatePagination : Int -> AlbumPagination -> AlbumPagination
+updatePagination screenHeight pagination =
+    let
+        newItemsPerPage = calculateItemsPerPage screenHeight
+    in
+    { pagination 
+    | itemsPerPage = newItemsPerPage
+    }
+
+resetPagination : AlbumPagination -> AlbumPagination
+resetPagination pagination =
+    { pagination | currentPage = 0 }
+
+pageUp : AlbumPagination -> AlbumPagination
+pageUp pagination =
+    { pagination | currentPage = max 0 (pagination.currentPage - 1) }
+
+pageDown : AlbumPagination -> AlbumPagination
+pageDown pagination =
+    let
+        maxPage = calculateTotalPages pagination.totalItems pagination.itemsPerPage - 1
+    in
+    { pagination | currentPage = min maxPage (pagination.currentPage + 1) }
+
+halfPageUp : AlbumPagination -> AlbumPagination
+halfPageUp pagination =
+    let
+        halfPage = pagination.itemsPerPage // 2
+        newCurrentItem = max 0 (pagination.currentPage * pagination.itemsPerPage - halfPage)
+        newPage = newCurrentItem // pagination.itemsPerPage
+    in
+    { pagination | currentPage = newPage }
+
+halfPageDown : AlbumPagination -> AlbumPagination
+halfPageDown pagination =
+    let
+        halfPage = pagination.itemsPerPage // 2
+        maxItems = pagination.totalItems
+        newCurrentItem = min (maxItems - 1) (pagination.currentPage * pagination.itemsPerPage + pagination.itemsPerPage + halfPage)
+        newPage = newCurrentItem // pagination.itemsPerPage
+        maxPage = calculateTotalPages pagination.totalItems pagination.itemsPerPage - 1
+    in
+    { pagination | currentPage = min maxPage newPage }
 
 
 -- { searchString = searchString
@@ -1634,7 +1906,10 @@ shittyFuzzyAlgorithmTest searchString textToBeSearched =
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
-    onKeyDown (Decode.map KeyPress (Decode.field "key" Decode.string))
+    Sub.batch
+        [ onKeyDown (Decode.map KeyPress (Decode.field "key" Decode.string))
+        , onResize WindowResize
+        ]
 
 
 main : Program Flags Model Msg
