@@ -55,6 +55,7 @@ type alias Model =
     , apiKey : String
     , immichApiPaths : ImmichApiPaths
     , screenHeight : Int
+    , pendingAlbumChange : Maybe (ImmichAlbumId, Bool) -- (albumId, isAddition)
     }
 
 type ImageOrder
@@ -239,6 +240,7 @@ init flags =
       , apiKey = flags.immichApiKey
       , immichApiPaths = getImmichApiPaths flags.immichApiUrl flags.immichApiKey
       , screenHeight = 800  -- Default, will be updated by window resize
+      , pendingAlbumChange = Nothing
       }
       -- , Cmd.none
     , getAllAlbums flags.immichApiUrl flags.immichApiKey |> Cmd.map ImmichMsg
@@ -930,14 +932,14 @@ update msg model =
                     ( createLoadStateForCurrentAssetSource (Album album) model, Immich.getAlbum model.immichApiPaths album.id |> Cmd.map ImmichMsg )
                 EditAsset inputMode asset search ->
                     let
-                        isNotInAlbum =
-                            case Dict.get album.id asset.albumMembership of
-                                Nothing ->
-                                    True
-                                Just _ ->
-                                    False
+                        currentPropertyChange = Maybe.withDefault RemainFalse (Dict.get album.id asset.albumMembership)
+                        currentlyInAlbum = isCurrentlyInAlbum currentPropertyChange
+                        isNotInAlbum = not currentlyInAlbum
+                        toggledAsset = toggleAssetAlbum asset album
+                        newPropertyChange = Maybe.withDefault RemainFalse (Dict.get album.id toggledAsset.albumMembership)
+                        isAddition = isAddingToAlbum newPropertyChange
                     in
-                    ( { model | userMode = EditAsset inputMode (toggleAssetAlbum asset album) (getAlbumSearch "" model.knownAlbums) }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
+                    ( { model | userMode = EditAsset inputMode toggledAsset (getAlbumSearch "" model.knownAlbums), pendingAlbumChange = Just (album.id, isAddition) }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
                 _ ->
                     ( model, Cmd.none )
         KeyPress key ->
@@ -1013,11 +1015,25 @@ update msg model =
             in
             case imsg of
                 Immich.AlbumAssetsChanged (Ok _) ->
-                    -- Album membership change succeeded, keep current UI state
-                    ( newModel, Cmd.none )
+                    -- Album membership change succeeded, update album asset count and normalize asset states
+                    let
+                        updatedModel = 
+                            case newModel.pendingAlbumChange of
+                                Just (albumId, isAddition) ->
+                                    let
+                                        countChange = if isAddition then 1 else -1
+                                        modelWithUpdatedCount = updateAlbumAssetCount albumId countChange { newModel | pendingAlbumChange = Nothing }
+                                        -- Normalize the asset's PropertyChange state to stable state
+                                        finalModel = normalizeAssetMembershipStates modelWithUpdatedCount albumId isAddition
+                                    in
+                                    finalModel
+                                Nothing ->
+                                    { newModel | pendingAlbumChange = Nothing }
+                    in
+                    ( updatedModel, Cmd.none )
                 Immich.AlbumAssetsChanged (Err _) ->
-                    -- Album membership change failed, re-fetch to get correct state
-                    switchToEditIfAssetFound model model.imageIndex
+                    -- Album membership change failed, clear pending change and re-fetch to get correct state
+                    switchToEditIfAssetFound { model | pendingAlbumChange = Nothing } model.imageIndex
                 Immich.AlbumCreated (Ok album) ->
                     case model.userMode of
                         LoadingAssets _ ->
@@ -1030,7 +1046,7 @@ update msg model =
                                             updatedModel =
                                                 { newModel | userMode = EditAsset InsertMode updatedAsset (getAlbumSearch "" newModel.knownAlbums) }
                                         in
-                                        ( updatedModel, Immich.albumChangeAssetMembership newModel.immichApiPaths album.id [ assetWithActions.asset.id ] True |> Cmd.map ImmichMsg )
+                                        ( { updatedModel | pendingAlbumChange = Just (album.id, True) }, Immich.albumChangeAssetMembership newModel.immichApiPaths album.id [ assetWithActions.asset.id ] True |> Cmd.map ImmichMsg )
                                     )
                                 |> Maybe.withDefault ( newModel, Cmd.none )
                         _ ->
@@ -1443,12 +1459,12 @@ handleUserInput model key =
                     case maybeMatch of
                         Just album ->
                             let
-                                isNotInAlbum =
-                                    case Dict.get album.id asset.albumMembership of
-                                        Nothing ->
-                                            True
-                                        Just _ ->
-                                            False
+                                currentPropertyChange = Maybe.withDefault RemainFalse (Dict.get album.id asset.albumMembership)
+                                currentlyInAlbum = isCurrentlyInAlbum currentPropertyChange
+                                isNotInAlbum = not currentlyInAlbum
+                                toggledAsset = toggleAssetAlbum asset album
+                                newPropertyChange = Maybe.withDefault RemainFalse (Dict.get album.id toggledAsset.albumMembership)
+                                isAddition = isAddingToAlbum newPropertyChange
                                 
                                 resetSearch = 
                                     if inputMode == KeybindingMode then
@@ -1456,7 +1472,7 @@ handleUserInput model key =
                                     else
                                         getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight
                             in
-                            ( { model | userMode = EditAsset NormalMode (toggleAssetAlbum asset album) resetSearch }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
+                            ( { model | userMode = EditAsset NormalMode toggledAsset resetSearch, pendingAlbumChange = Just (album.id, isAddition) }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
                         Nothing ->
                             if inputMode == KeybindingMode then
                                 ( model, Cmd.none )  -- No exact keybinding match, do nothing
@@ -1490,16 +1506,16 @@ handleUserInput model key =
                         case maybeExactMatch of
                             Just album ->
                                 let
-                                    isNotInAlbum =
-                                        case Dict.get album.id asset.albumMembership of
-                                            Nothing ->
-                                                True
-                                            Just _ ->
-                                                False
+                                    currentPropertyChange = Maybe.withDefault RemainFalse (Dict.get album.id asset.albumMembership)
+                                    currentlyInAlbum = isCurrentlyInAlbum currentPropertyChange
+                                    isNotInAlbum = not currentlyInAlbum
+                                    toggledAsset = toggleAssetAlbum asset album
+                                    newPropertyChange = Maybe.withDefault RemainFalse (Dict.get album.id toggledAsset.albumMembership)
+                                    isAddition = isAddingToAlbum newPropertyChange
                                     
                                     resetSearch = { search | partialKeybinding = "", pagination = resetPagination search.pagination }
                                 in
-                                ( { model | userMode = EditAsset NormalMode (toggleAssetAlbum asset album) resetSearch }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
+                                ( { model | userMode = EditAsset NormalMode toggledAsset resetSearch, pendingAlbumChange = Just (album.id, isAddition) }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
                             
                             Nothing ->
                                 ( { model | userMode = EditAsset inputMode asset updatedSearch }, Cmd.none )
@@ -1537,16 +1553,16 @@ handleUserInput model key =
                     case maybeExactMatch of
                         Just album ->
                             let
-                                isNotInAlbum =
-                                    case Dict.get album.id asset.albumMembership of
-                                        Nothing ->
-                                            True
-                                        Just _ ->
-                                            False
+                                currentPropertyChange = Maybe.withDefault RemainFalse (Dict.get album.id asset.albumMembership)
+                                currentlyInAlbum = isCurrentlyInAlbum currentPropertyChange
+                                isNotInAlbum = not currentlyInAlbum
+                                toggledAsset = toggleAssetAlbum asset album
+                                newPropertyChange = Maybe.withDefault RemainFalse (Dict.get album.id toggledAsset.albumMembership)
+                                isAddition = isAddingToAlbum newPropertyChange
                                 
                                 resetSearch = { search | partialKeybinding = "", pagination = resetPagination search.pagination }
                             in
-                            ( { model | userMode = EditAsset NormalMode (toggleAssetAlbum asset album) resetSearch }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
+                            ( { model | userMode = EditAsset NormalMode toggledAsset resetSearch, pendingAlbumChange = Just (album.id, isAddition) }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
                         
                         Nothing ->
                             ( { model | userMode = EditAsset KeybindingMode asset updatedSearch }, Cmd.none )
@@ -1710,6 +1726,64 @@ updateAlbumSearchString newSearchString oldSearch albums =
 toggleAssetAlbum : AssetWithActions -> ImmichAlbum -> AssetWithActions
 toggleAssetAlbum asset album =
     { asset | albumMembership = Dict.insert album.id (flipPropertyChange <| Maybe.withDefault RemainFalse <| Dict.get album.id asset.albumMembership) asset.albumMembership }
+
+-- Helper to determine if a PropertyChange represents adding to album
+isAddingToAlbum : PropertyChange -> Bool
+isAddingToAlbum propertyChange =
+    case propertyChange of
+        ChangeToTrue -> True
+        RemainTrue -> False  -- already in album, not adding
+        ChangeToFalse -> False
+        RemainFalse -> False
+
+-- Helper to determine current effective membership state
+isCurrentlyInAlbum : PropertyChange -> Bool
+isCurrentlyInAlbum propertyChange =
+    case propertyChange of
+        RemainTrue -> True      -- currently in, staying in
+        ChangeToFalse -> True   -- currently in, changing to not in  
+        RemainFalse -> False    -- currently not in, staying not in
+        ChangeToTrue -> False   -- currently not in, changing to in
+
+updateAlbumAssetCount : ImmichAlbumId -> Int -> Model -> Model
+updateAlbumAssetCount albumId countChange model =
+    let
+        updatedAlbums = 
+            Dict.update albumId 
+                (\maybeAlbum ->
+                    case maybeAlbum of
+                        Just album ->
+                            Just { album | assetCount = max 0 (album.assetCount + countChange) }
+                        Nothing ->
+                            Nothing
+                ) model.knownAlbums
+    in
+    { model | knownAlbums = updatedAlbums }
+
+-- Normalize asset PropertyChange states after successful API call
+normalizeAssetMembershipStates : Model -> ImmichAlbumId -> Bool -> Model
+normalizeAssetMembershipStates model albumId isAddition =
+    let
+        newStableState = if isAddition then RemainTrue else RemainFalse
+        
+        -- Update the current asset in userMode if it's EditAsset
+        updatedUserMode = 
+            case model.userMode of
+                EditAsset inputMode asset search ->
+                    let
+                        updatedAsset = 
+                            { asset 
+                            | albumMembership = 
+                                Dict.update albumId 
+                                    (\_ -> Just newStableState) 
+                                    asset.albumMembership
+                            }
+                    in
+                    EditAsset inputMode updatedAsset search
+                _ ->
+                    model.userMode
+    in
+    { model | userMode = updatedUserMode }
 
 
 applyGeneralAction : Model -> UserActionGeneral -> Model
