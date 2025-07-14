@@ -200,6 +200,10 @@ makeAssetIdsBody assetIds =
 
 makeSearchBody : ImageSearchConfig -> Encode.Value
 makeSearchBody config =
+    makeSearchBodyWithAlbum config Nothing
+
+makeSearchBodyWithAlbum : ImageSearchConfig -> Maybe ImmichAlbumId -> Encode.Value
+makeSearchBodyWithAlbum config maybeAlbumId =
     let
         orderField = 
             case config.order of
@@ -223,8 +227,13 @@ makeSearchBody config =
                 AllStatuses -> []
                 FavoritesOnly -> [ ( "isFavorite", Encode.bool True ) ]
                 ArchivedOnly -> [ ( "isArchived", Encode.bool True ) ]
+
+        albumField =
+            case maybeAlbumId of
+                Nothing -> []
+                Just albumId -> [ ( "albumIds", Encode.list Encode.string [albumId] ) ]
     in
-    Encode.object (orderField ++ categorisationField ++ mediaTypeField ++ statusField)
+    Encode.object (orderField ++ categorisationField ++ mediaTypeField ++ statusField ++ albumField)
 
 -- API FUNCTIONS (REFACTORED)
 
@@ -306,6 +315,15 @@ searchAssets apiPaths searchText mediaType status =
         (makeSimpleJsonBody (queryField ++ mediaTypeField ++ statusField))
         nestedAssetsDecoder
         ImagesFetched
+
+fetchAlbumAssetsWithFilters : ImmichApiPaths -> ImmichAlbumId -> ImageOrder -> MediaTypeFilter -> StatusFilter -> Cmd Msg
+fetchAlbumAssetsWithFilters apiPaths albumId order mediaType status =
+    -- Fetch the album and we'll filter client-side in the handler
+    makeGetRequest
+        apiPaths.apiKey
+        (apiPaths.getAlbum albumId)
+        albumDecoder
+        (AlbumFetchedForFiltering order mediaType status)
 
 fetchMembershipForAsset : ImmichApiPaths -> ImmichAssetId -> Cmd Msg
 fetchMembershipForAsset apiPaths assetId =
@@ -446,6 +464,7 @@ type Msg
     | AlbumAssetsChanged (Result Http.Error ())
     | AlbumCreated (Result Http.Error ImmichAlbum)
     | AssetUpdated (Result Http.Error ImmichAsset)
+    | AlbumFetchedForFiltering ImageOrder MediaTypeFilter StatusFilter (Result Http.Error ImmichAlbum)
 
 
 type alias Model r =

@@ -21,7 +21,7 @@ import Element.Input exposing (button)
 import Helpers exposing (regexFromString)
 import Html exposing (Html, node)
 import Html.Attributes
-import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..), ImageOrder(..), CategorisationFilter(..), ImageSearchConfig, MediaTypeFilter(..), StatusFilter(..), getAllAlbums, getImmichApiPaths)
+import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..), ImageOrder(..), CategorisationFilter(..), ImageSearchConfig, MediaTypeFilter(..), StatusFilter(..), getAllAlbums, getImmichApiPaths, fetchAlbumAssetsWithFilters)
 import Json.Decode as Decode
 import KeybindingGenerator exposing (generateAlbumKeybindings)
 import Regex
@@ -1135,7 +1135,7 @@ update msg model =
         LoadAlbumAssets album ->
             case model.userMode of
                 AlbumView _ config ->
-                    ( createLoadStateForCurrentAssetSource (Album album) model, Immich.getAlbum model.immichApiPaths album.id |> Cmd.map ImmichMsg )
+                    ( createLoadStateForCurrentAssetSource (Album album) model, Immich.fetchAlbumAssetsWithFilters model.immichApiPaths album.id config.order config.mediaType config.status |> Cmd.map ImmichMsg )
                 _ ->
                     ( model, Cmd.none )
         SearchInputFocused ->
@@ -1180,6 +1180,29 @@ update msg model =
                                         |> handleUpdateLoadingState FetchedAssetList
                             in
                             updatedModel
+
+                        Immich.AlbumFetchedForFiltering order mediaType status (Ok album) ->
+                            let
+                                -- Filter album assets client-side
+                                filteredAssets = 
+                                    album.assets
+                                        |> filterByMediaType mediaType
+                                        |> filterByStatus status
+                                        |> (case order of
+                                            Asc -> List.reverse
+                                            Desc -> identity
+                                            Random -> identity -- Keep original order for now
+                                           )
+                                updatedModel =
+                                    model
+                                        |> handleFetchAlbums [ album ]
+                                        |> handleFetchAssets filteredAssets
+                                        |> handleUpdateLoadingState FetchedAssetList
+                            in
+                            updatedModel
+
+                        Immich.AlbumFetchedForFiltering _ _ _ (Err error) ->
+                            { model | imagesLoadState = ImmichLoadError error }
 
                         Immich.AssetMembershipFetched (Ok assetWithMembership) ->
                             model
@@ -1326,6 +1349,28 @@ searchContextToString context =
         ContentSearch -> "Content"
         FilenameSearch -> "Filename"
         DescriptionSearch -> "Description"
+
+-- CLIENT-SIDE ALBUM FILTERING FUNCTIONS --
+
+filterByMediaType : MediaTypeFilter -> List ImmichAsset -> List ImmichAsset
+filterByMediaType mediaFilter assets =
+    case mediaFilter of
+        AllMedia ->
+            assets
+        ImagesOnly ->
+            List.filter (\asset -> String.startsWith "image/" asset.mimeType) assets
+        VideosOnly ->
+            List.filter (\asset -> String.startsWith "video/" asset.mimeType) assets
+
+filterByStatus : StatusFilter -> List ImmichAsset -> List ImmichAsset
+filterByStatus statusFilter assets =
+    case statusFilter of
+        AllStatuses ->
+            assets
+        FavoritesOnly ->
+            List.filter (\asset -> asset.isFavourite) assets
+        ArchivedOnly ->
+            List.filter (\asset -> asset.isArchived) assets
 
 -- DEFAULT CONFIGURATIONS --
 
@@ -1594,17 +1639,9 @@ handleUserInput model key =
                 "s" ->
                     ( { model | userMode = AlbumView album { config | status = toggleStatus config.status } }, Cmd.none )
                 "Enter" ->
-                    let
-                        loadModel = createLoadStateForCurrentAssetSource (Album album) model
-                        loadCmd = Immich.getAlbum model.immichApiPaths album.id |> Cmd.map ImmichMsg
-                    in
-                    ( loadModel, loadCmd )
+                    update (LoadAlbumAssets album) model
                 " " -> -- Space key
-                    let
-                        loadModel = createLoadStateForCurrentAssetSource (Album album) model
-                        loadCmd = Immich.getAlbum model.immichApiPaths album.id |> Cmd.map ImmichMsg
-                    in
-                    ( loadModel, loadCmd )
+                    update (LoadAlbumAssets album) model
                 _ ->
                     ( model, Cmd.none )
         Settings ->
