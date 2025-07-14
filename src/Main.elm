@@ -135,6 +135,7 @@ type UserActionGeneral
     | ChangeUserModeToLoading AssetSource
     | ChangeUserModeToMainMenu
     | ChangeUserModeToSearchAsset
+    | ChangeUserModeToSearchView String
     | ChangeUserModeToSelectAlbum
     | ReloadData
     | UnknownAction
@@ -430,7 +431,7 @@ viewMainWindow model =
             Menus.viewSettings model
         SearchAssetInput searchString ->
             column []
-                [ text "Input Search String"
+                [ text "Search Assets"
                 , text searchString
                 ]
         SelectAlbumInput search ->
@@ -1281,17 +1282,17 @@ handleUserInput model key =
                         ( { model | userMode = MainMenu }, Cmd.none )
                 "i" ->
                     if not config.inputFocused then
-                        ( { model | userMode = SearchView { config | inputFocused = True } }, Cmd.none )
+                        update SearchInputFocused model
                     else
                         ( model, Cmd.none )
                 "m" ->
                     if config.inputFocused then
-                        ( model, Cmd.none )
+                        ( { model | userMode = SearchView { config | query = config.query ++ key } }, Cmd.none )
                     else
                         ( { model | userMode = SearchView { config | mediaType = toggleMediaType config.mediaType } }, Cmd.none )
                 "c" ->
                     if config.inputFocused then
-                        ( model, Cmd.none )
+                        ( { model | userMode = SearchView { config | query = config.query ++ key } }, Cmd.none )
                     else
                         ( { model | userMode = SearchView { config | searchContext = case config.searchContext of
                             ContentSearch -> FilenameSearch
@@ -1299,7 +1300,7 @@ handleUserInput model key =
                             DescriptionSearch -> ContentSearch } }, Cmd.none )
                 "s" ->
                     if config.inputFocused then
-                        ( model, Cmd.none )
+                        ( { model | userMode = SearchView { config | query = config.query ++ key } }, Cmd.none )
                     else
                         ( { model | userMode = SearchView { config | status = toggleStatus config.status } }, Cmd.none )
                 "Enter" ->
@@ -1321,7 +1322,15 @@ handleUserInput model key =
                         in
                         ( loadModel, loadCmd )
                 _ ->
-                    ( model, Cmd.none )
+                    if config.inputFocused then
+                        if key == "Backspace" then
+                            ( { model | userMode = SearchView { config | query = String.slice 0 (String.length config.query - 1) config.query } }, Cmd.none )
+                        else if isSupportedSearchLetter key then
+                            ( { model | userMode = SearchView { config | query = config.query ++ key } }, Cmd.none )
+                        else
+                            ( model, Cmd.none )
+                    else
+                        ( model, Cmd.none )
         AlbumBrowse search ->
             case key of
                 "Escape" ->
@@ -1460,7 +1469,7 @@ handleUserInput model key =
                             "Backspace" ->
                                 TextInputUpdate TextInputBackspace
                             "Escape" ->
-                                UserActionGeneralSearch <| ChangeUserModeToMainMenu
+                                UserActionGeneralSearch <| ChangeUserModeToSearchView searchString
                             "Enter" ->
                                 UserActionGeneralSearch <| ChangeUserModeToLoading (TextSearch searchString)
                             _ ->
@@ -2044,6 +2053,8 @@ applyGeneralAction model action =
             { model | userMode = MainMenu }
         ChangeUserModeToSearchAsset ->
             { model | userMode = SearchAssetInput "" }
+        ChangeUserModeToSearchView query ->
+            { model | userMode = SearchView { defaultSearchConfig | query = query } }
         ChangeUserModeToSelectAlbum ->
             { model | userMode = SelectAlbumInput <| getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight }
         ChangeUserModeToEditAsset ->
