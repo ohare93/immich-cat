@@ -56,7 +56,7 @@ suite =
             , test "makeSearchBody with Desc order and All categorisation" <|
                 \_ ->
                     let
-                        config = { order = Desc, categorisation = All }
+                        config = { order = Desc, categorisation = All, mediaType = AllMedia, status = AllStatuses }
                         result = makeSearchBody config
                         expected = Encode.object [ ( "order", Encode.string "desc" ) ]
                     in
@@ -65,7 +65,7 @@ suite =
             , test "makeSearchBody with Asc order and Uncategorised" <|
                 \_ ->
                     let
-                        config = { order = Asc, categorisation = Uncategorised }
+                        config = { order = Asc, categorisation = Uncategorised, mediaType = AllMedia, status = AllStatuses }
                         result = makeSearchBody config
                         expected = Encode.object 
                             [ ( "order", Encode.string "asc" )
@@ -77,7 +77,7 @@ suite =
             , test "makeSearchBody with Random order (no order field)" <|
                 \_ ->
                     let
-                        config = { order = Random, categorisation = All }
+                        config = { order = Random, categorisation = All, mediaType = AllMedia, status = AllStatuses }
                         result = makeSearchBody config
                         expected = Encode.object []
                     in

@@ -1,16 +1,9 @@
 port module Main exposing 
     ( main
-    , MediaTypeFilter(..)
-    , StatusFilter(..)
     , SearchContext(..)
     , TimelineConfig
     , SearchConfig
     , AlbumConfig
-    , filterByMediaType
-    , filterByStatus
-    , applyTimelineFilters
-    , applySearchFilters
-    , applyAlbumFilters
     , defaultTimelineConfig
     , defaultSearchConfig
     , defaultAlbumConfig
@@ -28,7 +21,7 @@ import Element.Input exposing (button)
 import Helpers exposing (regexFromString)
 import Html exposing (Html, node)
 import Html.Attributes
-import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..), ImageOrder(..), CategorisationFilter(..), ImageSearchConfig, getAllAlbums, getImmichApiPaths)
+import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..), ImageOrder(..), CategorisationFilter(..), ImageSearchConfig, MediaTypeFilter(..), StatusFilter(..), getAllAlbums, getImmichApiPaths)
 import Json.Decode as Decode
 import KeybindingGenerator exposing (generateAlbumKeybindings)
 import Regex
@@ -59,6 +52,8 @@ type Msg
     | LoadTimelineAssets
     | ExecuteSearch
     | LoadAlbumAssets ImmichAlbum
+    | SearchInputFocused
+    | SearchInputBlurred
 
 type alias Flags =
     { test : Int
@@ -88,16 +83,6 @@ type alias Model =
     , pendingAlbumChange : Maybe (ImmichAlbumId, Bool) -- (albumId, isAddition)
     }
 
-type MediaTypeFilter
-    = AllMedia
-    | ImagesOnly
-    | VideosOnly
-
-type StatusFilter
-    = AllStatuses
-    | FavoritesOnly
-    | ArchivedOnly
-
 type SearchContext
     = ContentSearch
     | FilenameSearch
@@ -115,6 +100,7 @@ type alias SearchConfig =
     , searchContext : SearchContext
     , status : StatusFilter
     , query : String
+    , inputFocused : Bool
     }
 
 type alias AlbumConfig =
@@ -285,7 +271,7 @@ init flags =
       , test = flags.test
       , imageIndex = 0
       , debugging = False
-      , imageSearchConfig = { order = Desc, categorisation = Uncategorised }
+      , imageSearchConfig = { order = Desc, categorisation = Uncategorised, mediaType = AllMedia, status = AllStatuses }
       -- Immich fields
       , currentAssets = []
       , knownAssets = Dict.empty
@@ -747,8 +733,8 @@ viewInputMode userMode =
                     NormalMode
                 TimelineView _ ->
                     NormalMode
-                SearchView _ ->
-                    InsertMode
+                SearchView config ->
+                    if config.inputFocused then InsertMode else NormalMode
                 AlbumBrowse _ ->
                     InsertMode
                 AlbumView _ _ ->
@@ -1132,7 +1118,7 @@ update msg model =
             case model.userMode of
                 TimelineView config ->
                     let
-                        searchConfig = { order = config.order, categorisation = config.categorisation }
+                        searchConfig = { order = config.order, categorisation = config.categorisation, mediaType = config.mediaType, status = config.status }
                     in
                     ( createLoadStateForCurrentAssetSource (ImageSearch searchConfig) model, Immich.fetchImages model.immichApiPaths searchConfig |> Cmd.map ImmichMsg )
                 _ ->
@@ -1143,13 +1129,25 @@ update msg model =
                     if String.isEmpty config.query then
                         ( model, Cmd.none )
                     else
-                        ( createLoadStateForCurrentAssetSource (TextSearch config.query) model, Immich.searchAssets model.immichApiPaths config.query |> Cmd.map ImmichMsg )
+                        ( createLoadStateForCurrentAssetSource (TextSearch config.query) model, Immich.searchAssets model.immichApiPaths config.query config.mediaType config.status |> Cmd.map ImmichMsg )
                 _ ->
                     ( model, Cmd.none )
         LoadAlbumAssets album ->
             case model.userMode of
                 AlbumView _ config ->
                     ( createLoadStateForCurrentAssetSource (Album album) model, Immich.getAlbum model.immichApiPaths album.id |> Cmd.map ImmichMsg )
+                _ ->
+                    ( model, Cmd.none )
+        SearchInputFocused ->
+            case model.userMode of
+                SearchView config ->
+                    ( { model | userMode = SearchView { config | inputFocused = True } }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
+        SearchInputBlurred ->
+            case model.userMode of
+                SearchView config ->
+                    ( { model | userMode = SearchView { config | inputFocused = False } }, Cmd.none )
                 _ ->
                     ( model, Cmd.none )
         ImmichMsg imsg ->
@@ -1329,62 +1327,6 @@ searchContextToString context =
         FilenameSearch -> "Filename"
         DescriptionSearch -> "Description"
 
--- FILTERING FUNCTIONS --
-
-filterByMediaType : MediaTypeFilter -> List ImmichAsset -> List ImmichAsset
-filterByMediaType mediaFilter assets =
-    case mediaFilter of
-        AllMedia ->
-            assets
-        ImagesOnly ->
-            List.filter (\asset -> String.startsWith "image/" asset.mimeType) assets
-        VideosOnly ->
-            List.filter (\asset -> String.startsWith "video/" asset.mimeType) assets
-
-filterByStatus : StatusFilter -> List ImmichAsset -> List ImmichAsset
-filterByStatus statusFilter assets =
-    case statusFilter of
-        AllStatuses ->
-            assets
-        FavoritesOnly ->
-            List.filter (\asset -> asset.isFavourite) assets
-        ArchivedOnly ->
-            List.filter (\asset -> asset.isArchived) assets
-
-filterByFilename : String -> List ImmichAsset -> List ImmichAsset
-filterByFilename query assets =
-    if String.isEmpty query then
-        assets
-    else
-        let
-            lowercaseQuery = String.toLower query
-        in
-        List.filter (\asset -> 
-            String.contains lowercaseQuery (String.toLower asset.title)
-        ) assets
-
-applyTimelineFilters : TimelineConfig -> List ImmichAsset -> List ImmichAsset
-applyTimelineFilters config assets =
-    assets
-        |> filterByMediaType config.mediaType
-        |> filterByStatus config.status
-
-applySearchFilters : SearchConfig -> List ImmichAsset -> List ImmichAsset  
-applySearchFilters config assets =
-    assets
-        |> filterByMediaType config.mediaType
-        |> filterByStatus config.status
-        |> (case config.searchContext of
-            FilenameSearch -> filterByFilename config.query
-            _ -> identity -- Content and description search handled by API
-           )
-
-applyAlbumFilters : AlbumConfig -> List ImmichAsset -> List ImmichAsset
-applyAlbumFilters config assets =
-    assets
-        |> filterByMediaType config.mediaType
-        |> filterByStatus config.status
-
 -- DEFAULT CONFIGURATIONS --
 
 defaultTimelineConfig : TimelineConfig
@@ -1401,6 +1343,7 @@ defaultSearchConfig =
     , searchContext = ContentSearch
     , status = AllStatuses
     , query = ""
+    , inputFocused = False
     }
 
 defaultAlbumConfig : AlbumConfig
@@ -1510,14 +1453,14 @@ handleUserInput model key =
                     ( { model | userMode = TimelineView { config | status = toggleStatus config.status } }, Cmd.none )
                 "Enter" ->
                     let
-                        searchConfig = { order = config.order, categorisation = config.categorisation }
+                        searchConfig = { order = config.order, categorisation = config.categorisation, mediaType = config.mediaType, status = config.status }
                         loadModel = createLoadStateForCurrentAssetSource (ImageSearch searchConfig) model
                         loadCmd = Immich.fetchImages model.immichApiPaths searchConfig |> Cmd.map ImmichMsg
                     in
                     ( loadModel, loadCmd )
                 " " -> -- Space key
                     let
-                        searchConfig = { order = config.order, categorisation = config.categorisation }
+                        searchConfig = { order = config.order, categorisation = config.categorisation, mediaType = config.mediaType, status = config.status }
                         loadModel = createLoadStateForCurrentAssetSource (ImageSearch searchConfig) model
                         loadCmd = Immich.fetchImages model.immichApiPaths searchConfig |> Cmd.map ImmichMsg
                     in
@@ -1527,23 +1470,40 @@ handleUserInput model key =
         SearchView config ->
             case key of
                 "Escape" ->
-                    ( { model | userMode = MainMenu }, Cmd.none )
+                    if config.inputFocused then
+                        ( { model | userMode = SearchView { config | inputFocused = False } }, Cmd.none )
+                    else
+                        ( { model | userMode = MainMenu }, Cmd.none )
+                "i" ->
+                    if not config.inputFocused then
+                        ( { model | userMode = SearchView { config | inputFocused = True } }, Cmd.none )
+                    else
+                        ( model, Cmd.none )
                 "m" ->
-                    ( { model | userMode = SearchView { config | mediaType = toggleMediaType config.mediaType } }, Cmd.none )
+                    if config.inputFocused then
+                        ( model, Cmd.none )
+                    else
+                        ( { model | userMode = SearchView { config | mediaType = toggleMediaType config.mediaType } }, Cmd.none )
                 "c" ->
-                    ( { model | userMode = SearchView { config | searchContext = case config.searchContext of
-                        ContentSearch -> FilenameSearch
-                        FilenameSearch -> DescriptionSearch
-                        DescriptionSearch -> ContentSearch } }, Cmd.none )
+                    if config.inputFocused then
+                        ( model, Cmd.none )
+                    else
+                        ( { model | userMode = SearchView { config | searchContext = case config.searchContext of
+                            ContentSearch -> FilenameSearch
+                            FilenameSearch -> DescriptionSearch
+                            DescriptionSearch -> ContentSearch } }, Cmd.none )
                 "s" ->
-                    ( { model | userMode = SearchView { config | status = toggleStatus config.status } }, Cmd.none )
+                    if config.inputFocused then
+                        ( model, Cmd.none )
+                    else
+                        ( { model | userMode = SearchView { config | status = toggleStatus config.status } }, Cmd.none )
                 "Enter" ->
                     if String.isEmpty config.query then
                         ( model, Cmd.none )
                     else
                         let
                             loadModel = createLoadStateForCurrentAssetSource (TextSearch config.query) model
-                            loadCmd = Immich.searchAssets model.immichApiPaths config.query |> Cmd.map ImmichMsg
+                            loadCmd = Immich.searchAssets model.immichApiPaths config.query config.mediaType config.status |> Cmd.map ImmichMsg
                         in
                         ( loadModel, loadCmd )
                 " " -> -- Space key
@@ -1552,7 +1512,7 @@ handleUserInput model key =
                     else
                         let
                             loadModel = createLoadStateForCurrentAssetSource (TextSearch config.query) model
-                            loadCmd = Immich.searchAssets model.immichApiPaths config.query |> Cmd.map ImmichMsg
+                            loadCmd = Immich.searchAssets model.immichApiPaths config.query config.mediaType config.status |> Cmd.map ImmichMsg
                         in
                         ( loadModel, loadCmd )
                 _ ->
@@ -1570,16 +1530,55 @@ handleUserInput model key =
                             ( { model | userMode = AlbumView album defaultAlbumConfig }, Cmd.none )
                         Nothing ->
                             ( model, Cmd.none )
+                "PageDown" ->
+                    let
+                        newSearch = { search | pagination = pageDown search.pagination }
+                    in
+                    ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
+                "PageUp" ->
+                    let
+                        newSearch = { search | pagination = pageUp search.pagination }
+                    in
+                    ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
                 _ ->
-                    if isSupportedSearchLetter key then
+                    if String.contains "Control" key then
+                        case String.replace "Control+" "" key of
+                            "d" ->
+                                let
+                                    newSearch = { search | pagination = halfPageDown search.pagination }
+                                in
+                                ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
+                            "u" ->
+                                let
+                                    newSearch = { search | pagination = halfPageUp search.pagination }
+                                in
+                                ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
+                            "f" ->
+                                let
+                                    newSearch = { search | pagination = pageDown search.pagination }
+                                in
+                                ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
+                            "b" ->
+                                let
+                                    newSearch = { search | pagination = pageUp search.pagination }
+                                in
+                                ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
+                            _ ->
+                                ( model, Cmd.none )
+                    else if key == " " then
                         let
-                            newSearch = { search | searchString = search.searchString ++ key }
+                            newSearch = { search | pagination = pageDown search.pagination }
+                        in
+                        ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
+                    else if isSupportedSearchLetter key then
+                        let
+                            newSearch = updateAlbumSearchString (search.searchString ++ key) search model.knownAlbums
                         in
                         ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
                     else if key == "Backspace" then
                         let
                             newSearchString = String.slice 0 (String.length search.searchString - 1) search.searchString
-                            newSearch = { search | searchString = newSearchString }
+                            newSearch = updateAlbumSearchString newSearchString search model.knownAlbums
                         in
                         ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
                     else
@@ -1646,7 +1645,7 @@ handleUserInput model key =
                 UserActionGeneralSearch action ->
                     case action of
                         ChangeUserModeToLoading (TextSearch searchText) ->
-                            ( applyGeneralAction model action, Immich.searchAssets model.immichApiPaths searchText |> Cmd.map ImmichMsg )
+                            ( applyGeneralAction model action, Immich.searchAssets model.immichApiPaths searchText AllMedia AllStatuses |> Cmd.map ImmichMsg )
                         _ ->
                             ( applyGeneralAction model action, Cmd.none )
         SelectAlbumInput searchResults ->
@@ -2454,6 +2453,8 @@ viewSearchView model config =
             , column [ Element.spacingXY 0 5 ]
                 [ el [ Font.size 12, Font.bold ] (text "Filters:")
                 , el [ Font.size 11 ] (text "[m] Media Type  [c] Search Context  [s] Status")
+                , el [ Font.size 12, Font.bold ] (text "Input Mode:")
+                , el [ Font.size 11 ] (text (if config.inputFocused then "[Escape] Exit input mode" else "[i] Enter input mode to type"))
                 , el [ Font.size 12, Font.bold ] (text "Actions:")
                 , el [ Font.size 11 ] (text "[Enter/Space] Search & View Results  [Escape] Back to Menu")
                 ]

@@ -230,13 +230,13 @@ suite =
                 \_ ->
                     let
                         testCases =
-                            [ ( { order = Desc, categorisation = All }
+                            [ ( { order = Desc, categorisation = All, mediaType = AllMedia, status = AllStatuses }
                               , """{"order":"desc"}"""
                               )
-                            , ( { order = Asc, categorisation = Uncategorised }
+                            , ( { order = Asc, categorisation = Uncategorised, mediaType = AllMedia, status = AllStatuses }
                               , """{"order":"asc","isNotInAlbum":true}"""
                               )
-                            , ( { order = Random, categorisation = All }
+                            , ( { order = Random, categorisation = All, mediaType = AllMedia, status = AllStatuses }
                               , """{}"""
                               )
                             ]

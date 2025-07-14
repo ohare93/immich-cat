@@ -22,7 +22,19 @@ type CategorisationFilter
 type alias ImageSearchConfig =
     { order : ImageOrder
     , categorisation : CategorisationFilter
+    , mediaType : MediaTypeFilter
+    , status : StatusFilter
     }
+
+type MediaTypeFilter
+    = AllMedia
+    | ImagesOnly 
+    | VideosOnly
+
+type StatusFilter
+    = AllStatuses
+    | FavoritesOnly
+    | ArchivedOnly
 
 type ImmichLoadState
     = ImmichLoading
@@ -199,8 +211,20 @@ makeSearchBody config =
             case config.categorisation of
                 Uncategorised -> [ ( "isNotInAlbum", Encode.bool True ) ]
                 All -> []
+
+        mediaTypeField =
+            case config.mediaType of
+                AllMedia -> []
+                ImagesOnly -> [ ( "type", Encode.string "IMAGE" ) ]
+                VideosOnly -> [ ( "type", Encode.string "VIDEO" ) ]
+
+        statusField =
+            case config.status of
+                AllStatuses -> []
+                FavoritesOnly -> [ ( "isFavorite", Encode.bool True ) ]
+                ArchivedOnly -> [ ( "isArchived", Encode.bool True ) ]
     in
-    Encode.object (orderField ++ categorisationField)
+    Encode.object (orderField ++ categorisationField ++ mediaTypeField ++ statusField)
 
 -- API FUNCTIONS (REFACTORED)
 
@@ -225,10 +249,24 @@ fetchImages apiPaths config =
     case config.order of
         Random ->
             let
-                randomBody = 
+                categorisationField = 
                     case config.categorisation of
-                        Uncategorised -> Encode.object [ ( "isNotInAlbum", Encode.bool True ) ]
-                        All -> Encode.object []
+                        Uncategorised -> [ ( "isNotInAlbum", Encode.bool True ) ]
+                        All -> []
+
+                mediaTypeField =
+                    case config.mediaType of
+                        AllMedia -> []
+                        ImagesOnly -> [ ( "type", Encode.string "IMAGE" ) ]
+                        VideosOnly -> [ ( "type", Encode.string "VIDEO" ) ]
+
+                statusField =
+                    case config.status of
+                        AllStatuses -> []
+                        FavoritesOnly -> [ ( "isFavorite", Encode.bool True ) ]
+                        ArchivedOnly -> [ ( "isArchived", Encode.bool True ) ]
+
+                randomBody = Encode.object (categorisationField ++ mediaTypeField ++ statusField)
             in
             makePostRequest
                 apiPaths.apiKey
@@ -245,12 +283,27 @@ fetchImages apiPaths config =
                 nestedAssetsDecoder
                 ImagesFetched
 
-searchAssets : ImmichApiPaths -> String -> Cmd Msg
-searchAssets apiPaths searchText =
+searchAssets : ImmichApiPaths -> String -> MediaTypeFilter -> StatusFilter -> Cmd Msg
+searchAssets apiPaths searchText mediaType status =
+    let
+        queryField = [ ( "query", Encode.string searchText ) ]
+        
+        mediaTypeField =
+            case mediaType of
+                AllMedia -> []
+                ImagesOnly -> [ ( "type", Encode.string "IMAGE" ) ]
+                VideosOnly -> [ ( "type", Encode.string "VIDEO" ) ]
+
+        statusField =
+            case status of
+                AllStatuses -> []
+                FavoritesOnly -> [ ( "isFavorite", Encode.bool True ) ]
+                ArchivedOnly -> [ ( "isArchived", Encode.bool True ) ]
+    in
     makePostRequest
         apiPaths.apiKey
         apiPaths.searchSmart
-        (makeSimpleJsonBody [ ( "query", Encode.string searchText ) ])
+        (makeSimpleJsonBody (queryField ++ mediaTypeField ++ statusField))
         nestedAssetsDecoder
         ImagesFetched
 
