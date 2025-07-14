@@ -90,151 +90,133 @@
         }
       }
 
-      customElements.define(
-        "image-from-api",
-        class extends HTMLElement {
-          constructor() {
-            super();
-            //this.attachShadow({mode: 'open'});
+      // Shared base class for media elements
+      class MediaElementBase extends HTMLElement {
+        constructor(config) {
+          super();
+          this.config = config;
+          this.assetBlob = null;
+        }
+
+        connectedCallback() {
+          // Initialize properties but don't start loading yet
+          // We'll wait for attributes to be set via attributeChangedCallback
+          this.assetUrl = this.getAttribute("asset-url");
+          this.apiKey = this.getAttribute("api-key");
+          this.preloadList = this.getAttribute("preload-urls");
+          
+          // Show initial loading state
+          this.render();
+        }
+
+        async attributeChangedCallback(name, oldValue, newValue) {
+          if (name === 'api-key') {
+            this.apiKey = newValue;
+          } else if (name === 'asset-url') {
+            this.assetUrl = newValue;
+            // Clear existing blob when URL changes so new asset can load
+            this.assetBlob = null;
+          } else if (name === 'preload-urls') {
+            this.preloadList = newValue;
           }
-          connectedCallback() {
-            // Initialize properties but don't start loading yet
-            // We'll wait for attributes to be set via attributeChangedCallback
-            this.assetUrl = this.getAttribute("asset-url");
-            this.apiKey = this.getAttribute("api-key");
-            this.preloadList = this.getAttribute("preload-urls");
+          
+          // Start loading when we have both asset URL and API key
+          if (this.assetUrl && this.apiKey && this.apiKey !== 'undefined' && !this.assetBlob) {
+            this.render(); // Show loading state
             
-            // Show initial loading state
-            this.render();
-          }
-          async attributeChangedCallback(name, oldValue, newValue) {
-            if (name === 'api-key') {
-              this.apiKey = newValue;
-            } else if (name === 'asset-url') {
-              this.assetUrl = newValue;
-              // Clear existing blob when URL changes so new asset can load
-              this.assetBlob = null;
-            } else if (name === 'preload-urls') {
-              this.preloadList = newValue;
-            }
-            
-            // Start loading when we have both asset URL and API key
-            if (this.assetUrl && this.apiKey && this.apiKey !== 'undefined' && !this.assetBlob) {
-              this.render(); // Show loading state
+            try {
+              this.assetBlob = await getProtectedAssetUrl(this.assetUrl, this.apiKey);
               
-              try {
-                this.assetBlob = await getProtectedAssetUrl(this.assetUrl, this.apiKey);
+              // Preload adjacent assets using config
+              if (this.preloadList) {
+                const urls = this.preloadList.split(",");
+                const urlsToPreload = this.config.preloadCount ? urls.slice(0, this.config.preloadCount) : urls;
                 
-                // Preload adjacent images
-                if (this.preloadList) {
-                  const urls = this.preloadList.split(",");
-                  urls.forEach((url) => {
-                    if (url.trim()) {
+                urlsToPreload.forEach((url) => {
+                  if (url.trim()) {
+                    if (this.config.preloadDelay) {
+                      setTimeout(() => preloadAsset(url.trim(), this.apiKey), this.config.preloadDelay);
+                    } else {
                       preloadAsset(url.trim(), this.apiKey);
                     }
-                  });
-                }
-                
-                this.render(); // Show actual image
-              } catch (error) {
-                console.error('Error loading image:', error);
-                this.innerHTML = `
-                  <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #f66;">
-                    Error loading image
-                  </div>
-                `;
+                  }
+                });
               }
+              
+              this.render(); // Show actual asset
+              
+              // Execute post-render callback if provided
+              if (this.config.postRender) {
+                this.config.postRender(this);
+              }
+            } catch (error) {
+              console.error(`Error loading ${this.config.mediaType}:`, error);
+              this.innerHTML = `
+                <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #f66;">
+                  Error loading ${this.config.mediaType}
+                </div>
+              `;
             }
           }
-          static get observedAttributes() {
-            return ["asset-url", "api-key", "preload-urls"];
-          }
+        }
 
-          render() {
-            if (this.assetBlob) {
-              this.innerHTML = `
-			<img src="${this.assetBlob}" alt="Asset" />
-		    `;
-            } else {
-              this.innerHTML = `
-			<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #666;">
-			    Loading...
-			</div>
-		    `;
-            }
+        static get observedAttributes() {
+          return ["asset-url", "api-key", "preload-urls"];
+        }
+
+        render() {
+          if (this.assetBlob) {
+            this.innerHTML = this.config.renderElement(this.assetBlob);
+          } else {
+            this.innerHTML = this.config.renderLoading();
+          }
+        }
+      }
+
+      customElements.define(
+        "image-from-api",
+        class extends MediaElementBase {
+          constructor() {
+            super({
+              mediaType: 'image',
+              preloadCount: null, // Preload all
+              preloadDelay: null, // Immediate
+              renderElement: (blobUrl) => `<img src="${blobUrl}" alt="Asset" />`,
+              renderLoading: () => `
+                <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #666;">
+                  Loading...
+                </div>
+              `,
+              postRender: null
+            });
           }
         },
       );
 
       customElements.define(
         "video-from-api",
-        class extends HTMLElement {
+        class extends MediaElementBase {
           constructor() {
-            super();
-            //this.attachShadow({mode: 'open'});
-          }
-          async connectedCallback() {
-            this.assetUrl = this.getAttribute("asset-url");
-            this.apiKey = this.getAttribute("api-key");
-            this.preloadList = this.getAttribute("preload-urls");
-
-            // Show loading state first
-            this.render();
-
-            this.assetBlob = await getProtectedAssetUrl(
-              this.assetUrl,
-              this.apiKey,
-            );
-
-            // Preload adjacent videos (smaller priority than images)
-            if (this.preloadList) {
-              const urls = this.preloadList.split(",");
-              urls.slice(0, 2).forEach((url) => {
-                // Only preload 2 adjacent videos
-                if (url.trim()) {
-                  setTimeout(() => preloadAsset(url.trim(), this.apiKey), 1000); // Delay video preloading
-                }
-              });
-            }
-
-            // Now render with the actual asset
-            this.render();
-          }
-          async attributeChangedCallback() {
-            const newAssetUrl = this.getAttribute("asset-url");
-            if (this.assetUrl !== newAssetUrl) {
-              this.assetUrl = newAssetUrl;
-              this.assetBlob = await getProtectedAssetUrl(
-                this.assetUrl,
-                this.apiKey,
-              );
-              this.render();
-            }
-            this.render();
-          }
-          static get observedAttributes() {
-            return ["asset-url", "api-key", "preload-urls"];
-          }
-
-          render() {
-            if (this.assetBlob) {
-              this.innerHTML = `
-		  <video src="${this.assetBlob}" controls="controls" autoplay loop style="max-width: 100%; max-height: 100%;" />
-		`;
-              // Force autoplay after render
-              setTimeout(() => {
-                const video = this.querySelector('video');
-                if (video) {
-                  video.play().catch(console.error);
-                }
-              }, 100);
-            } else {
-              this.innerHTML = `
-		  <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #666;">
-		    Loading video...
-		  </div>
-		`;
-            }
+            super({
+              mediaType: 'video',
+              preloadCount: 2, // Only preload 2 adjacent videos
+              preloadDelay: 1000, // Delay video preloading by 1 second
+              renderElement: (blobUrl) => `<video src="${blobUrl}" controls="controls" autoplay loop style="max-width: 100%; max-height: 100%;" />`,
+              renderLoading: () => `
+                <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #666;">
+                  Loading video...
+                </div>
+              `,
+              postRender: (element) => {
+                // Force autoplay after render
+                setTimeout(() => {
+                  const video = element.querySelector('video');
+                  if (video) {
+                    video.play().catch(console.error);
+                  }
+                }, 100);
+              }
+            });
           }
         },
       );
