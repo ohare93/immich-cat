@@ -23,3 +23,26 @@ listOverrideDict newList comparer currentDict =
             List.map comparer newList |> Dict.fromList
     in
     Dict.union newDict currentDict
+
+
+loopImageIndexOverArray : Int -> Int -> Int -> Int
+loopImageIndexOverArray index step length =
+    modBy length (index + step)
+
+
+isSupportedSearchLetter : String -> Bool
+isSupportedSearchLetter testString =
+    let
+        regex =
+            regexFromString "^[a-zA-Z0-9 ]$"
+    in
+    Regex.contains regex testString
+
+
+isKeybindingLetter : String -> Bool
+isKeybindingLetter testString =
+    let
+        regex =
+            regexFromString "^[a-z0-9]$"
+    in
+    Regex.contains regex testString
