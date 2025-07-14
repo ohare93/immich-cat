@@ -27,6 +27,7 @@ generateTestAsset id fileName mimeType isFavorite isArchived =
     , isFavourite = isFavorite
     , isArchived = isArchived
     , albumMembership = []
+    , fileCreatedAt = Date.fromRataDie 737790 -- January 1, 2020
     }
 
 generateTestAlbum : String -> String -> Int -> ImmichAlbum

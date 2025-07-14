@@ -29,6 +29,7 @@ generateTestAsset id fileName =
     , isFavourite = False
     , isArchived = False
     , albumMembership = []
+    , fileCreatedAt = Date.fromRataDie 737790 -- January 1, 2020
     }
 
 -- JSON encoding/decoding tests
@@ -121,7 +122,8 @@ suite =
                             "originalFileName": "test.jpg",
                             "originalMimeType": "image/jpeg",
                             "isFavorite": true,
-                            "isArchived": false
+                            "isArchived": false,
+                            "fileCreatedAt": "2020-01-01"
                         }
                         """
                         result = Decode.decodeString imageDecoder assetJson
@@ -153,7 +155,8 @@ suite =
                                         "originalFileName": "file1.jpg",
                                         "originalMimeType": "image/jpeg",
                                         "isFavorite": false,
-                                        "isArchived": false
+                                        "isArchived": false,
+                                        "fileCreatedAt": "2020-01-01"
                                     }
                                 ]
                             }

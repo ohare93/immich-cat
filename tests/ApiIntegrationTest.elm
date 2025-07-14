@@ -26,7 +26,8 @@ mockAlbumResponse = """
                 "originalFileName": "beach.jpg",
                 "originalMimeType": "image/jpeg",
                 "isFavorite": false,
-                "isArchived": false
+                "isArchived": false,
+                "fileCreatedAt": "2023-07-15"
             }
         ],
         "createdAt": "2023-07-15"
@@ -52,7 +53,8 @@ mockNestedAssetsResponse = """
                 "originalFileName": "landscape.jpg", 
                 "originalMimeType": "image/jpeg",
                 "isFavorite": true,
-                "isArchived": false
+                "isArchived": false,
+                "fileCreatedAt": "2023-07-15"
             },
             {
                 "id": "nested-asset-2",
@@ -60,7 +62,8 @@ mockNestedAssetsResponse = """
                 "originalFileName": "portrait.jpg",
                 "originalMimeType": "image/jpeg", 
                 "isFavorite": false,
-                "isArchived": true
+                "isArchived": true,
+                "fileCreatedAt": "2023-07-16"
             }
         ]
     }
@@ -80,7 +83,8 @@ mockSingleAlbumResponse = """
             "originalFileName": "photo1.jpg",
             "originalMimeType": "image/jpeg",
             "isFavorite": false,
-            "isArchived": false
+            "isArchived": false,
+            "fileCreatedAt": "2023-08-01"
         }
     ],
     "createdAt": "2023-08-01"

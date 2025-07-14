@@ -11,7 +11,7 @@ port module Main exposing
 
 import Browser exposing (element)
 import Browser.Events exposing (onKeyDown, onResize)
-import Date
+import Date exposing (Date)
 import Dict exposing (Dict)
 import Element exposing (Element, alignBottom, alignRight, alignTop, centerX, centerY, clipY, column, el, fill, fillPortion, height, minimum, paddingXY, px, row, text, width)
 import Element.Background as Background
@@ -291,10 +291,10 @@ init flags =
 
 getDebugAssets : ( List ImmichAsset, List ImmichAlbum )
 getDebugAssets =
-    ( [ ImmichAsset "0001" "images/imafight.jpg" "Imafight" "image/jpg" False False []
-      , ImmichAsset "0002" "images/dcemployees.jpg" "dcemployees" "image/jpg" False False []
-      , ImmichAsset "0003" "images/jordan.jpg" "Jordan" "image/jpg" False False []
-      , ImmichAsset "0004" "images/router-password.mp4" "router password" "video/mp4" False False []
+    ( [ ImmichAsset "0001" "images/imafight.jpg" "Imafight" "image/jpg" False False [] (Date.fromOrdinalDate 2025 1)
+      , ImmichAsset "0002" "images/dcemployees.jpg" "dcemployees" "image/jpg" False False [] (Date.fromOrdinalDate 2025 2)
+      , ImmichAsset "0003" "images/jordan.jpg" "Jordan" "image/jpg" False False [] (Date.fromOrdinalDate 2025 3)
+      , ImmichAsset "0004" "images/router-password.mp4" "router password" "video/mp4" False False [] (Date.fromOrdinalDate 2025 4)
       ]
     , [ ImmichAlbum "a" "J" 200 [] (Date.fromOrdinalDate 2025 1)
       , ImmichAlbum "b" "ToBeSorted" 3000 [] (Date.fromOrdinalDate 2025 1)
@@ -571,7 +571,16 @@ viewMainWindow model =
                 (viewSidebarAlbums search model.albumKeybindings model.knownAlbums)
                 (column []
                     [ text "Browse Albums"
-                    , text search.searchString
+                    , if search.searchString /= "" then
+                        text ("Search: \"" ++ search.searchString ++ "\"")
+                      else
+                        text ""
+                    , if search.partialKeybinding /= "" then
+                        el [ Font.color <| Element.fromRgb { red = 1, green = 0.6, blue = 0, alpha = 1 } ] <|
+                            text ("Keybind: \"" ++ search.partialKeybinding ++ "\"")
+                      else
+                        text ""
+                    , text "Type album name or keybinding to filter"
                     ]
                 )
         AlbumView album config ->
@@ -1189,15 +1198,23 @@ update msg model =
                                         |> filterByMediaType mediaType
                                         |> filterByStatus status
                                         |> (case order of
-                                            Asc -> List.reverse
-                                            Desc -> identity
-                                            Random -> identity -- Keep original order for now
+                                            Asc -> List.sortBy (.fileCreatedAt >> Date.toRataDie) -- Sort by date ascending
+                                            Desc -> List.sortBy (.fileCreatedAt >> Date.toRataDie) >> List.reverse -- Sort by date descending
+                                            Random -> identity -- Keep original album order for now
                                            )
+                                
                                 updatedModel =
-                                    model
-                                        |> handleFetchAlbums [ album ]
-                                        |> handleFetchAssets filteredAssets
-                                        |> handleUpdateLoadingState FetchedAssetList
+                                    if List.isEmpty filteredAssets then
+                                        -- Handle empty results - show a message instead of going to EditAssets
+                                        { model 
+                                        | userMode = AlbumView album defaultAlbumConfig
+                                        , imagesLoadState = ImmichLoadSuccess 
+                                        }
+                                    else
+                                        model
+                                            |> handleFetchAlbums [ album ]
+                                            |> handleFetchAssets filteredAssets
+                                            |> handleUpdateLoadingState FetchedAssetList
                             in
                             updatedModel
 
@@ -1615,17 +1632,57 @@ handleUserInput model key =
                             newSearch = { search | pagination = pageDown search.pagination }
                         in
                         ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
+                    else if isKeybindingLetter key then
+                        -- Check if this could be a keybinding first
+                        let
+                            newPartialKeybinding = search.partialKeybinding ++ key
+                            maybeExactMatch = getAlbumByExactKeybinding newPartialKeybinding model.albumKeybindings model.knownAlbums
+                        in
+                        case maybeExactMatch of
+                            Just album ->
+                                -- Exact keybinding match found - select the album
+                                ( { model | userMode = AlbumView album defaultAlbumConfig }, Cmd.none )
+                            Nothing ->
+                                -- Check if any albums start with this partial keybinding
+                                let
+                                    hasMatchingKeybindings = 
+                                        model.albumKeybindings
+                                            |> Dict.values
+                                            |> List.any (\keybinding -> String.startsWith newPartialKeybinding keybinding)
+                                in
+                                if hasMatchingKeybindings then
+                                    -- Update partial keybinding and show matching albums
+                                    let
+                                        newSearch = { search | partialKeybinding = newPartialKeybinding, pagination = resetPagination search.pagination }
+                                    in
+                                    ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
+                                else
+                                    -- No keybinding match, treat as text search
+                                    let
+                                        newSearch = updateAlbumSearchString (search.searchString ++ key) search model.knownAlbums
+                                    in
+                                    ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
                     else if isSupportedSearchLetter key then
                         let
                             newSearch = updateAlbumSearchString (search.searchString ++ key) search model.knownAlbums
                         in
                         ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
                     else if key == "Backspace" then
-                        let
-                            newSearchString = String.slice 0 (String.length search.searchString - 1) search.searchString
-                            newSearch = updateAlbumSearchString newSearchString search model.knownAlbums
-                        in
-                        ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
+                        -- Handle backspace for both keybinding and text search
+                        if String.length search.partialKeybinding > 0 then
+                            -- Clear partial keybinding first
+                            let
+                                newPartialKeybinding = String.slice 0 (String.length search.partialKeybinding - 1) search.partialKeybinding
+                                newSearch = { search | partialKeybinding = newPartialKeybinding, pagination = resetPagination search.pagination }
+                            in
+                            ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
+                        else
+                            -- Clear text search
+                            let
+                                newSearchString = String.slice 0 (String.length search.searchString - 1) search.searchString
+                                newSearch = updateAlbumSearchString newSearchString search model.knownAlbums
+                            in
+                            ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
                     else
                         ( model, Cmd.none )
         AlbumView album config ->
@@ -2517,9 +2574,29 @@ viewAlbumView model album config =
                 ]
             ]
         , column [ width fill, height fill ]
-            [ text "Album assets will appear here" -- TODO: implement filtered album assets
+            [ checkForEmptyFilterResults model config album
             ]
         ]
+
+checkForEmptyFilterResults : Model -> AlbumConfig -> ImmichAlbum -> Element Msg
+checkForEmptyFilterResults model config album =
+    case model.imagesLoadState of
+        ImmichLoadSuccess ->
+            if List.isEmpty model.currentAssets then
+                column [ centerX, centerY, Element.spacingXY 0 20 ]
+                    [ el [ Font.size 18, Font.bold, Font.color <| Element.rgb 0.7 0.7 0.7 ] (text "No assets found")
+                    , el [ Font.size 14, Font.color <| Element.rgb 0.5 0.5 0.5 ] (text "Try adjusting your filters:")
+                    , column [ Element.spacingXY 0 8 ]
+                        [ viewFilterValue "Media Type" (mediaTypeToString config.mediaType)
+                        , viewFilterValue "Order" (orderToString config.order)
+                        , viewFilterValue "Status" (statusToString config.status)
+                        ]
+                    , el [ Font.size 12, Font.color <| Element.rgb 0.5 0.5 0.5 ] (text "Press [m], [o], or [s] to change filters")
+                    ]
+            else
+                text "Album assets will appear here" -- TODO: implement filtered album assets
+        _ ->
+            text "Loading album assets..."
 
 viewSettings : Model -> Element Msg
 viewSettings model =

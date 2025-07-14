@@ -94,6 +94,7 @@ type alias ImmichAsset =
     , isFavourite : Bool
     , isArchived : Bool
     , albumMembership : List ImmichAlbumId
+    , fileCreatedAt : Date
     }
 
 
@@ -421,7 +422,7 @@ dateDecoder =
 
 imageDecoder : Decode.Decoder ImmichAsset
 imageDecoder =
-    Decode.map7 ImmichAsset
+    Decode.map8 ImmichAsset
         (Decode.field "id" Decode.string)
         (Decode.field "originalPath" Decode.string)
         (Decode.field "originalFileName" Decode.string)
@@ -429,6 +430,7 @@ imageDecoder =
         (Decode.field "isFavorite" Decode.bool)
         (Decode.field "isArchived" Decode.bool)
         (Decode.succeed [])
+        (Decode.field "fileCreatedAt" dateDecoder)
 
 errorToString : Http.Error -> String
 errorToString error =
