@@ -114,6 +114,7 @@ type AssetSource
     | ImageSearch ImageSearchConfig
     | TextSearch String
     | Album ImmichAlbum
+    | FilteredAlbum ImmichAlbum AlbumConfig
 
 type alias SourceLoadState =
     { fetchedAssetList : Maybe Bool
@@ -503,6 +504,59 @@ viewVideo asset apiPaths currentAssets knownAssets imageIndex =
 --                     []
 --                 ]
 
+createDetailedViewTitle : AssetSource -> String
+createDetailedViewTitle assetSource =
+    case assetSource of
+        ImageSearch config ->
+            let
+                orderText = case config.order of
+                    Desc -> "[desc]"
+                    Asc -> "[asc]" 
+                    Random -> "[random]"
+                mediaText = case config.mediaType of
+                    AllMedia -> ""
+                    ImagesOnly -> " [images]"
+                    VideosOnly -> " [videos]"
+                statusText = case config.status of
+                    AllStatuses -> ""
+                    FavoritesOnly -> " [favourites]"
+                    ArchivedOnly -> " [archived]"
+                categText = case config.categorisation of
+                    All -> "Timeline"
+                    Uncategorised -> "Timeline [uncategorised]"
+            in
+            categText ++ statusText ++ mediaText ++ " " ++ orderText
+        
+        TextSearch searchText ->
+            "Search \"" ++ searchText ++ "\""
+        
+        Album album ->
+            "Album \"" ++ album.albumName ++ "\""
+        
+        FilteredAlbum album config ->
+            let
+                orderText = case config.order of
+                    Desc -> "[desc]"
+                    Asc -> "[asc]" 
+                    Random -> "[random]"
+                mediaText = case config.mediaType of
+                    AllMedia -> ""
+                    ImagesOnly -> " [images]"
+                    VideosOnly -> " [videos]"
+                statusText = case config.status of
+                    AllStatuses -> ""
+                    FavoritesOnly -> " [favourites]"
+                    ArchivedOnly -> " [archived]"
+                hasFilters = config.mediaType /= AllMedia || config.status /= AllStatuses || config.order /= Desc
+            in
+            if hasFilters then
+                "Album \"" ++ album.albumName ++ "\"" ++ statusText ++ mediaText ++ " " ++ orderText
+            else
+                "Album \"" ++ album.albumName ++ "\""
+        
+        NoAssets ->
+            ""
+
 viewEditAsset : ImmichApiPaths -> ImageIndex -> Int -> String -> AssetWithActions -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Element Msg
 viewEditAsset apiPaths imageIndex totalAssets viewTitle currentAsset currentAssets knownAssets =
     column [ width fill, height fill ]
@@ -604,22 +658,9 @@ viewMainWindow model =
             viewLoadingAssets model.imagesLoadState
         EditAsset inputMode asset search ->
             let
-                viewTitle =
-                    case model.currentAssetsSource of
-                        ImageSearch config ->
-                            case config.categorisation of
-                                Uncategorised ->
-                                    "Uncategorised"
-                                All ->
-                                    "All Images"
-                        TextSearch searchText ->
-                            "Search : '" ++ searchText ++ "'"
-                        Album album ->
-                            album.albumName
-                        NoAssets ->
-                            ""
+                viewTitle = createDetailedViewTitle model.currentAssetsSource
             in
-            viewWithSidebar (viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode)) (viewEditAsset model.immichApiPaths model.imageIndex (Dict.size model.knownAssets) viewTitle asset model.currentAssets model.knownAssets)
+            viewWithSidebar (viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode)) (viewEditAsset model.immichApiPaths model.imageIndex (List.length model.currentAssets) viewTitle asset model.currentAssets model.knownAssets)
         CreateAlbumConfirmation _ asset search albumName ->
             viewWithSidebar (viewSidebar asset search model.albumKeybindings model.knownAlbums Nothing) (viewCreateAlbumConfirmation albumName)
         ShowEditAssetHelp inputMode asset search ->
@@ -1144,7 +1185,7 @@ update msg model =
         LoadAlbumAssets album ->
             case model.userMode of
                 AlbumView _ config ->
-                    ( createLoadStateForCurrentAssetSource (Album album) model, Immich.fetchAlbumAssetsWithFilters model.immichApiPaths album.id config.order config.mediaType config.status |> Cmd.map ImmichMsg )
+                    ( createLoadStateForCurrentAssetSource (FilteredAlbum album config) model, Immich.fetchAlbumAssetsWithFilters model.immichApiPaths album.id config.order config.mediaType config.status |> Cmd.map ImmichMsg )
                 _ ->
                     ( model, Cmd.none )
         SearchInputFocused ->
@@ -1481,6 +1522,8 @@ createLoadStateForCurrentAssetSource assetSource model =
         ImageSearch _ ->
             { model | currentAssetsSource = assetSource, userMode = LoadingAssets { fetchedAssetList = Just False, fetchedAssetMembership = Nothing } }
         Album _ ->
+            { model | currentAssetsSource = assetSource, userMode = LoadingAssets { fetchedAssetList = Just False, fetchedAssetMembership = Nothing } }
+        FilteredAlbum _ _ ->
             { model | currentAssetsSource = assetSource, userMode = LoadingAssets { fetchedAssetList = Just False, fetchedAssetMembership = Nothing } }
         TextSearch _ ->
             { model | currentAssetsSource = assetSource, userMode = LoadingAssets { fetchedAssetList = Just False, fetchedAssetMembership = Nothing } }
