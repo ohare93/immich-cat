@@ -19,6 +19,8 @@ import Menus exposing (AlbumConfig, SearchConfig, SearchContext(..), TimelineCon
 import Regex
 import ViewAlbums exposing (AlbumPagination, AlbumSearch, AssetWithActions, InputMode(..), PropertyChange(..), calculateItemsPerPage, calculateTotalPages, filterToOnlySearchedForAlbums, flipPropertyChange, getAlbumByExactKeybinding, getAlbumSearch, getAlbumSearchWithHeight, getAlbumSearchWithIndex, getAssetWithActions, getFilteredAlbumsList, getFilteredAlbumsListForAsset, getSelectedAlbum, getSelectedAlbumForAsset, halfPageDown, halfPageUp, isAddingToAlbum, isCurrentlyInAlbum, moveSelectionDown, moveSelectionDownForAsset, moveSelectionUp, moveSelectionUpForAsset, pageDown, pageUp, shittyFuzzyAlgorithmTest, toggleAssetAlbum, updateAlbumSearchString, updatePagination, usefulColours, viewSidebar, viewSidebarAlbums, viewSidebarAlbumsForCurrentAsset, viewWithSidebar)
 import ViewAsset exposing (viewAsset, viewCreateAlbumConfirmation, viewEditAsset, viewEditAssetHelp, viewImage, viewKeybinding, viewLoadingAssets, viewVideo)
+import UpdateMenus exposing (MenuAction(..), handleMainMenuInput, handleTimelineViewInput, handleSearchViewInput, handleAlbumViewInput, handleSettingsInput)
+import UpdateAlbums exposing (AlbumAction(..), handleAlbumBrowseInput)
 
 
 -- PORTS
@@ -1160,277 +1162,91 @@ createLoadStateForCurrentAssetSource assetSource model =
             { model | currentAssetsSource = assetSource, userMode = LoadingAssets { fetchedAssetList = Just False, fetchedAssetMembership = Nothing } }
 
 
+-- Helper to convert UpdateMenus.AssetSource to Main.AssetSource
+convertAssetSource : UpdateMenus.AssetSource -> AssetSource
+convertAssetSource menuAssetSource =
+    case menuAssetSource of
+        UpdateMenus.ImageSearch config ->
+            ImageSearch config
+        UpdateMenus.TextSearch query ->
+            TextSearch query
+        UpdateMenus.FilteredAlbum album config ->
+            FilteredAlbum album config
+
+-- Helper to apply menu actions
+applyMenuAction : MenuAction -> Model -> ( Model, Cmd Msg )
+applyMenuAction action model =
+    case action of
+        ChangeMode newMode ->
+            -- Convert UpdateMenus.UserMode to Main.UserMode
+            case newMode of
+                UpdateMenus.MainMenu ->
+                    ( { model | userMode = MainMenu }, Cmd.none )
+                UpdateMenus.TimelineView config ->
+                    ( { model | userMode = TimelineView config }, Cmd.none )
+                UpdateMenus.SearchView config ->
+                    ( { model | userMode = SearchView config }, Cmd.none )
+                UpdateMenus.AlbumView album config ->
+                    ( { model | userMode = AlbumView album config }, Cmd.none )
+                UpdateMenus.AlbumBrowse search ->
+                    ( { model | userMode = AlbumBrowse search }, Cmd.none )
+                UpdateMenus.Settings ->
+                    ( { model | userMode = Settings }, Cmd.none )
+        LoadAssets assetSource ->
+            let
+                mainAssetSource = convertAssetSource assetSource
+                loadModel = createLoadStateForCurrentAssetSource mainAssetSource model
+                loadCmd = case assetSource of
+                    UpdateMenus.ImageSearch searchConfig ->
+                        Immich.fetchImages model.immichApiPaths searchConfig |> Cmd.map ImmichMsg
+                    UpdateMenus.TextSearch query ->
+                        case model.userMode of
+                            SearchView config ->
+                                Immich.searchAssets model.immichApiPaths query config.mediaType config.status |> Cmd.map ImmichMsg
+                            _ ->
+                                Immich.searchAssets model.immichApiPaths query AllMedia AllStatuses |> Cmd.map ImmichMsg
+                    UpdateMenus.FilteredAlbum album config ->
+                        Immich.fetchAlbumAssetsWithFilters model.immichApiPaths album.id config.order config.mediaType config.status |> Cmd.map ImmichMsg
+            in
+            ( loadModel, loadCmd )
+        UpdateSearchInput focused ->
+            case model.userMode of
+                SearchView config ->
+                    update SearchInputFocused model
+                _ ->
+                    ( model, Cmd.none )
+        NoMenuAction ->
+            ( model, Cmd.none )
+
+-- Helper to apply album actions
+applyAlbumAction : AlbumAction -> Model -> ( Model, Cmd Msg )
+applyAlbumAction action model =
+    case action of
+        ChangeToMainMenu ->
+            ( { model | userMode = MainMenu }, Cmd.none )
+        SelectAlbumForView album ->
+            ( { model | userMode = AlbumView album defaultAlbumConfig }, Cmd.none )
+        UpdateAlbumSearch newSearch ->
+            ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
+        NoAlbumAction ->
+            ( model, Cmd.none )
+
+
 handleUserInput : Model -> String -> ( Model, Cmd Msg )
 handleUserInput model key =
     case model.userMode of
         MainMenu ->
-            case key of
-                "t" ->
-                    ( { model | userMode = TimelineView defaultTimelineConfig }, Cmd.none )
-                "s" ->
-                    ( { model | userMode = SearchView defaultSearchConfig }, Cmd.none )
-                "a" ->
-                    ( { model | userMode = AlbumBrowse <| getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight }, Cmd.none )
-                "g" ->
-                    ( { model | userMode = Settings }, Cmd.none )
-                _ ->
-                    ( model, Cmd.none )
+            applyMenuAction (handleMainMenuInput key model.knownAlbums model.screenHeight) model
         TimelineView config ->
-            case key of
-                "Escape" ->
-                    ( { model | userMode = MainMenu }, Cmd.none )
-                "m" ->
-                    ( { model | userMode = TimelineView { config | mediaType = toggleMediaType config.mediaType } }, Cmd.none )
-                "c" ->
-                    ( { model | userMode = TimelineView { config | categorisation = toggleCategorisation config.categorisation } }, Cmd.none )
-                "o" ->
-                    ( { model | userMode = TimelineView { config | order = toggleOrder config.order } }, Cmd.none )
-                "s" ->
-                    ( { model | userMode = TimelineView { config | status = toggleStatus config.status } }, Cmd.none )
-                "Enter" ->
-                    let
-                        searchConfig =
-                            { order = config.order, categorisation = config.categorisation, mediaType = config.mediaType, status = config.status }
-                        loadModel =
-                            createLoadStateForCurrentAssetSource (ImageSearch searchConfig) model
-                        loadCmd =
-                            Immich.fetchImages model.immichApiPaths searchConfig |> Cmd.map ImmichMsg
-                    in
-                    ( loadModel, loadCmd )
-                " " ->
-                    -- Space key
-                    let
-                        searchConfig =
-                            { order = config.order, categorisation = config.categorisation, mediaType = config.mediaType, status = config.status }
-                        loadModel =
-                            createLoadStateForCurrentAssetSource (ImageSearch searchConfig) model
-                        loadCmd =
-                            Immich.fetchImages model.immichApiPaths searchConfig |> Cmd.map ImmichMsg
-                    in
-                    ( loadModel, loadCmd )
-                _ ->
-                    ( model, Cmd.none )
+            applyMenuAction (handleTimelineViewInput key config) model
         SearchView config ->
-            case key of
-                "Escape" ->
-                    if config.inputFocused then
-                        ( { model | userMode = SearchView { config | inputFocused = False } }, Cmd.none )
-                    else
-                        ( { model | userMode = MainMenu }, Cmd.none )
-                "i" ->
-                    if not config.inputFocused then
-                        update SearchInputFocused model
-                    else
-                        ( model, Cmd.none )
-                "m" ->
-                    if config.inputFocused then
-                        ( { model | userMode = SearchView { config | query = config.query ++ key } }, Cmd.none )
-                    else
-                        ( { model | userMode = SearchView { config | mediaType = toggleMediaType config.mediaType } }, Cmd.none )
-                "c" ->
-                    if config.inputFocused then
-                        ( { model | userMode = SearchView { config | query = config.query ++ key } }, Cmd.none )
-                    else
-                        ( { model
-                            | userMode =
-                                SearchView
-                                    { config
-                                        | searchContext =
-                                            case config.searchContext of
-                                                ContentSearch ->
-                                                    FilenameSearch
-                                                FilenameSearch ->
-                                                    DescriptionSearch
-                                                DescriptionSearch ->
-                                                    ContentSearch
-                                    }
-                          }
-                        , Cmd.none
-                        )
-                "s" ->
-                    if config.inputFocused then
-                        ( { model | userMode = SearchView { config | query = config.query ++ key } }, Cmd.none )
-                    else
-                        ( { model | userMode = SearchView { config | status = toggleStatus config.status } }, Cmd.none )
-                "Enter" ->
-                    if String.isEmpty config.query then
-                        ( model, Cmd.none )
-                    else
-                        let
-                            loadModel =
-                                createLoadStateForCurrentAssetSource (TextSearch config.query) model
-                            loadCmd =
-                                Immich.searchAssets model.immichApiPaths config.query config.mediaType config.status |> Cmd.map ImmichMsg
-                        in
-                        ( loadModel, loadCmd )
-                " " ->
-                    -- Space key
-                    if String.isEmpty config.query then
-                        ( model, Cmd.none )
-                    else
-                        let
-                            loadModel =
-                                createLoadStateForCurrentAssetSource (TextSearch config.query) model
-                            loadCmd =
-                                Immich.searchAssets model.immichApiPaths config.query config.mediaType config.status |> Cmd.map ImmichMsg
-                        in
-                        ( loadModel, loadCmd )
-                _ ->
-                    if config.inputFocused then
-                        if key == "Backspace" then
-                            ( { model | userMode = SearchView { config | query = String.slice 0 (String.length config.query - 1) config.query } }, Cmd.none )
-                        else if isSupportedSearchLetter key then
-                            ( { model | userMode = SearchView { config | query = config.query ++ key } }, Cmd.none )
-                        else
-                            ( model, Cmd.none )
-                    else
-                        ( model, Cmd.none )
+            applyMenuAction (handleSearchViewInput key config) model
         AlbumBrowse search ->
-            case key of
-                "Escape" ->
-                    ( { model | userMode = MainMenu }, Cmd.none )
-                "Enter" ->
-                    let
-                        maybeMatch =
-                            getTopMatchToSearch search model.albumKeybindings model.knownAlbums
-                    in
-                    case maybeMatch of
-                        Just album ->
-                            ( { model | userMode = AlbumView album defaultAlbumConfig }, Cmd.none )
-                        Nothing ->
-                            ( model, Cmd.none )
-                "PageDown" ->
-                    let
-                        newSearch =
-                            { search | pagination = pageDown search.pagination }
-                    in
-                    ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
-                "PageUp" ->
-                    let
-                        newSearch =
-                            { search | pagination = pageUp search.pagination }
-                    in
-                    ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
-                _ ->
-                    if String.contains "Control" key then
-                        case String.replace "Control+" "" key of
-                            "d" ->
-                                let
-                                    newSearch =
-                                        { search | pagination = halfPageDown search.pagination }
-                                in
-                                ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
-                            "u" ->
-                                let
-                                    newSearch =
-                                        { search | pagination = halfPageUp search.pagination }
-                                in
-                                ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
-                            "f" ->
-                                let
-                                    newSearch =
-                                        { search | pagination = pageDown search.pagination }
-                                in
-                                ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
-                            "b" ->
-                                let
-                                    newSearch =
-                                        { search | pagination = pageUp search.pagination }
-                                in
-                                ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
-                            _ ->
-                                ( model, Cmd.none )
-                    else if key == " " then
-                        let
-                            newSearch =
-                                { search | pagination = pageDown search.pagination }
-                        in
-                        ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
-                    else if isKeybindingLetter key then
-                        -- Check if this could be a keybinding first
-                        let
-                            newPartialKeybinding =
-                                search.partialKeybinding ++ key
-                            maybeExactMatch =
-                                getAlbumByExactKeybinding newPartialKeybinding model.albumKeybindings model.knownAlbums
-                        in
-                        case maybeExactMatch of
-                            Just album ->
-                                -- Exact keybinding match found - select the album
-                                ( { model | userMode = AlbumView album defaultAlbumConfig }, Cmd.none )
-                            Nothing ->
-                                -- Check if any albums start with this partial keybinding
-                                let
-                                    hasMatchingKeybindings =
-                                        model.albumKeybindings
-                                            |> Dict.values
-                                            |> List.any (\keybinding -> String.startsWith newPartialKeybinding keybinding)
-                                in
-                                if hasMatchingKeybindings then
-                                    -- Update partial keybinding and show matching albums
-                                    let
-                                        newSearch =
-                                            { search | partialKeybinding = newPartialKeybinding, pagination = resetPagination search.pagination }
-                                    in
-                                    ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
-                                else
-                                    -- No keybinding match, treat as text search
-                                    let
-                                        newSearch =
-                                            updateAlbumSearchString (search.searchString ++ key) search model.knownAlbums
-                                    in
-                                    ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
-                    else if isSupportedSearchLetter key then
-                        let
-                            newSearch =
-                                updateAlbumSearchString (search.searchString ++ key) search model.knownAlbums
-                        in
-                        ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
-                    else if key == "Backspace" then
-                        -- Handle backspace for both keybinding and text search
-                        if String.length search.partialKeybinding > 0 then
-                            -- Clear partial keybinding first
-                            let
-                                newPartialKeybinding =
-                                    String.slice 0 (String.length search.partialKeybinding - 1) search.partialKeybinding
-                                newSearch =
-                                    { search | partialKeybinding = newPartialKeybinding, pagination = resetPagination search.pagination }
-                            in
-                            ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
-                        else
-                            -- Clear text search
-                            let
-                                newSearchString =
-                                    String.slice 0 (String.length search.searchString - 1) search.searchString
-                                newSearch =
-                                    updateAlbumSearchString newSearchString search model.knownAlbums
-                            in
-                            ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
-                    else
-                        ( model, Cmd.none )
+            applyAlbumAction (handleAlbumBrowseInput key search model.albumKeybindings model.knownAlbums) model
         AlbumView album config ->
-            case key of
-                "Escape" ->
-                    ( { model | userMode = AlbumBrowse <| getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight }, Cmd.none )
-                "m" ->
-                    ( { model | userMode = AlbumView album { config | mediaType = toggleMediaType config.mediaType } }, Cmd.none )
-                "o" ->
-                    ( { model | userMode = AlbumView album { config | order = toggleOrder config.order } }, Cmd.none )
-                "s" ->
-                    ( { model | userMode = AlbumView album { config | status = toggleStatus config.status } }, Cmd.none )
-                "Enter" ->
-                    update (LoadAlbumAssets album) model
-                " " ->
-                    -- Space key
-                    update (LoadAlbumAssets album) model
-                _ ->
-                    ( model, Cmd.none )
+            applyMenuAction (handleAlbumViewInput key album config model.knownAlbums model.screenHeight) model
         Settings ->
-            case key of
-                "Escape" ->
-                    ( { model | userMode = MainMenu }, Cmd.none )
-                _ ->
-                    ( model, Cmd.none )
+            applyMenuAction (handleSettingsInput key) model
         SearchAssetInput searchString ->
             let
                 userAction =
@@ -1907,23 +1723,6 @@ handleUserInput model key =
                 _ ->
                     ( model, Cmd.none )
 
-getTopMatchToSearch : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Maybe ImmichAlbum
-getTopMatchToSearch search albumKeybindings albums =
-    let
-        matchesDict =
-            filterToOnlySearchedForAlbums search albumKeybindings albums
-    in
-    if Dict.isEmpty matchesDict then
-        Nothing
-    else
-        -- Find the album with the highest score
-        matchesDict
-            |> Dict.toList
-            |> List.map (\( id, album ) -> ( Dict.get id search.albumScores |> Maybe.withDefault 0, album ))
-            |> List.sortBy (\( score, _ ) -> -score)
-            -- Sort by score descending
-            |> List.head
-            |> Maybe.map (\( _, album ) -> album)
 
 
 -- Helper functions for album selection navigation
