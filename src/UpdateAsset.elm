@@ -7,12 +7,40 @@ module UpdateAsset exposing
     , handleShowEditAssetHelpInput
     , updateAsset
     , AssetMsg(..)
+    , LegacyAssetMsg(..)
+    , AssetState(..)
+    , AssetResult(..)
     )
 
 import Dict exposing (Dict)
 import Helpers exposing (isKeybindingLetter, isSupportedSearchLetter, loopImageIndexOverArray)
 import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId)
 import ViewAlbums exposing (AlbumSearch, AssetWithActions, InputMode(..), PropertyChange(..), filterToOnlySearchedForAlbums, flipPropertyChange, getAlbumByExactKeybinding, getAlbumSearchWithHeight, getFilteredAlbumsList, getSelectedAlbumForAsset, halfPageDown, halfPageUp, isAddingToAlbum, isCurrentlyInAlbum, moveSelectionDownForAsset, moveSelectionUpForAsset, pageDown, pageUp, resetPagination, toggleAssetAlbum, updateAlbumSearchString)
+
+-- Define the asset state type that encapsulates all asset viewing/editing modes
+type AssetState
+    = EditAsset InputMode AssetWithActions AlbumSearch
+    | CreateAlbumConfirmation InputMode AssetWithActions AlbumSearch String
+    | ShowEditAssetHelp InputMode AssetWithActions AlbumSearch
+    | SearchAssetInput String
+    | SelectAlbumInput AlbumSearch
+
+-- Simplified message type for asset
+type AssetMsg = AssetKeyPress String
+
+-- Result type that communicates what the asset module wants to do
+type AssetResult msg
+    = StayInAssets AssetState
+    | GoToMainMenu
+    | GoToSearchView String
+    | AssetLoadTextSearch String
+    | AssetLoadAlbum ImmichAlbum
+    | AssetSwitchToAssetIndex Int
+    | AssetToggleFavorite
+    | AssetToggleArchived
+    | AssetToggleAlbumMembership ImmichAlbum
+    | AssetOpenInImmich
+    | AssetCreateAlbum String
 
 
 -- Action type for asset editing
@@ -36,8 +64,8 @@ type AssetAction
     | SwitchToAssetIndex Int
     | NoAssetAction
 
--- Message type for asset-related actions
-type AssetMsg
+-- Legacy message type for asset-related actions
+type LegacyAssetMsg
     = EditAssetKeyPress String InputMode AssetWithActions AlbumSearch
     | SearchAssetKeyPress String String
     | SelectAlbumKeyPress String AlbumSearch
@@ -391,10 +419,136 @@ moveSelectionDownForSearch search albumKeybindings albums =
     { search | selectedIndex = min maxIndex (search.selectedIndex + 1) }
 
 
--- Update function that processes AssetMsg and returns an action
+-- Main update function that handles all asset logic internally
+-- This function now takes an AssetState and returns an AssetResult
+updateAsset : AssetMsg -> AssetState -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Int -> List ImmichAssetId -> AssetResult msg
+updateAsset assetMsg assetState albumKeybindings knownAlbums screenHeight currentAssets =
+    case assetMsg of
+        AssetKeyPress key ->
+            case assetState of
+                EditAsset inputMode asset search ->
+                    handleEditAssetKeyPress key inputMode asset search albumKeybindings knownAlbums screenHeight currentAssets
+                SearchAssetInput searchString ->
+                    handleSearchAssetKeyPress key searchString
+                SelectAlbumInput searchResults ->
+                    handleSelectAlbumKeyPress key searchResults albumKeybindings knownAlbums
+                CreateAlbumConfirmation inputMode asset search albumName ->
+                    handleCreateAlbumConfirmationKeyPress key inputMode asset search albumName
+                ShowEditAssetHelp inputMode asset search ->
+                    handleShowEditAssetHelpKeyPress key inputMode asset search
+
+-- Helper functions that convert asset actions to asset results
+handleEditAssetKeyPress : String -> InputMode -> AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Int -> List ImmichAssetId -> AssetResult msg
+handleEditAssetKeyPress key inputMode asset search albumKeybindings knownAlbums screenHeight currentAssets =
+    let
+        action = handleEditAssetInput key inputMode asset search albumKeybindings knownAlbums screenHeight currentAssets
+    in
+    convertAssetActionToResult action inputMode asset search
+
+handleSearchAssetKeyPress : String -> String -> AssetResult msg
+handleSearchAssetKeyPress key searchString =
+    let
+        action = handleSearchAssetInput key searchString
+    in
+    case action of
+        ChangeAssetToMainMenu ->
+            GoToMainMenu
+        ChangeToSearchView query ->
+            GoToSearchView query
+        ChangeToLoadingTextSearch query ->
+            AssetLoadTextSearch query
+        _ ->
+            StayInAssets (SearchAssetInput searchString)
+
+handleSelectAlbumKeyPress : String -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AssetResult msg
+handleSelectAlbumKeyPress key searchResults albumKeybindings knownAlbums =
+    let
+        action = handleSelectAlbumInput key searchResults albumKeybindings knownAlbums
+    in
+    case action of
+        ChangeAssetToMainMenu ->
+            GoToMainMenu
+        LoadAlbum album ->
+            AssetLoadAlbum album
+        UpdateAssetSearch newSearch ->
+            StayInAssets (SelectAlbumInput newSearch)
+        _ ->
+            StayInAssets (SelectAlbumInput searchResults)
+
+handleCreateAlbumConfirmationKeyPress : String -> InputMode -> AssetWithActions -> AlbumSearch -> String -> AssetResult msg
+handleCreateAlbumConfirmationKeyPress key inputMode asset search albumName =
+    let
+        action = handleCreateAlbumConfirmationInput key
+    in
+    case action of
+        NoAssetAction ->
+            if key == "Enter" then
+                AssetCreateAlbum albumName
+            else if key == "Escape" then
+                StayInAssets (EditAsset inputMode asset search)
+            else
+                StayInAssets (CreateAlbumConfirmation inputMode asset search albumName)
+        _ ->
+            StayInAssets (CreateAlbumConfirmation inputMode asset search albumName)
+
+handleShowEditAssetHelpKeyPress : String -> InputMode -> AssetWithActions -> AlbumSearch -> AssetResult msg
+handleShowEditAssetHelpKeyPress key inputMode asset search =
+    let
+        action = handleShowEditAssetHelpInput key
+    in
+    case action of
+        NoAssetAction ->
+            if key == "Escape" || key == "?" then
+                StayInAssets (EditAsset inputMode asset search)
+            else
+                StayInAssets (ShowEditAssetHelp inputMode asset search)
+        _ ->
+            StayInAssets (ShowEditAssetHelp inputMode asset search)
+
+-- Helper to convert legacy AssetAction to AssetResult
+convertAssetActionToResult : AssetAction -> InputMode -> AssetWithActions -> AlbumSearch -> AssetResult msg
+convertAssetActionToResult action inputMode asset search =
+    case action of
+        ChangeAssetToMainMenu ->
+            GoToMainMenu
+        ChangeToSearchView query ->
+            GoToSearchView query
+        ChangeToLoadingTextSearch query ->
+            AssetLoadTextSearch query
+        ChangeToLoadingAlbum album ->
+            AssetLoadAlbum album
+        ChangeInputMode newInputMode ->
+            StayInAssets (EditAsset newInputMode asset search)
+        ChangeImageIndex _ ->
+            -- Image index change will be handled by SwitchToAssetIndex
+            StayInAssets (EditAsset inputMode asset search)
+        UpdateAsset newAsset ->
+            StayInAssets (EditAsset inputMode newAsset search)
+        UpdateAssetSearch newSearch ->
+            StayInAssets (EditAsset inputMode asset newSearch)
+        ToggleFavorite ->
+            AssetToggleFavorite
+        ToggleArchived ->
+            AssetToggleArchived
+        ToggleAlbumMembership album ->
+            AssetToggleAlbumMembership album
+        OpenInImmich ->
+            AssetOpenInImmich
+        ShowAssetHelp ->
+            StayInAssets (ShowEditAssetHelp inputMode asset search)
+        CreateAlbumWithName albumName ->
+            StayInAssets (CreateAlbumConfirmation inputMode asset search albumName)
+        LoadAlbum album ->
+            AssetLoadAlbum album
+        SwitchToAssetIndex newIndex ->
+            AssetSwitchToAssetIndex newIndex
+        NoAssetAction ->
+            StayInAssets (EditAsset inputMode asset search)
+
+-- Legacy update function that processes LegacyAssetMsg and returns an action (for backward compatibility)
 -- This consolidates the asset input handling logic from Main.elm
-updateAsset : AssetMsg -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Int -> List ImmichAssetId -> AssetAction
-updateAsset assetMsg albumKeybindings knownAlbums screenHeight currentAssets =
+updateAssetLegacy : LegacyAssetMsg -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Int -> List ImmichAssetId -> AssetAction
+updateAssetLegacy assetMsg albumKeybindings knownAlbums screenHeight currentAssets =
     case assetMsg of
         EditAssetKeyPress key inputMode asset search ->
             handleEditAssetInput key inputMode asset search albumKeybindings knownAlbums screenHeight currentAssets
