@@ -15,8 +15,10 @@ module UpdateMenus exposing
 
 import Dict exposing (Dict)
 import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId, ImageOrder(..), CategorisationFilter(..), MediaTypeFilter(..), StatusFilter(..), ImageSearchConfig)
+import KeybindingGenerator exposing (generateAlbumKeybindings)
 import Menus exposing (SearchContext(..), TimelineConfig, SearchConfig, AlbumConfig, defaultTimelineConfig, defaultSearchConfig, defaultAlbumConfig, toggleMediaType, toggleCategorisation, toggleOrder, toggleStatus, toggleSearchContext)
 import Helpers exposing (isSupportedSearchLetter)
+import UpdateAlbums
 import ViewAlbums exposing (AlbumSearch, getAlbumSearchWithHeight)
 
 -- Define the menu state type that encapsulates all menu modes
@@ -248,8 +250,22 @@ handleSearchViewKeyPress key config =
 
 handleAlbumBrowseKeyPress : String -> AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> Int -> MenuResult msg
 handleAlbumBrowseKeyPress key search knownAlbums screenHeight =
-    -- TODO: Implement album browse logic using UpdateAlbums
-    StayInMenu (AlbumBrowse search)
+    let
+        -- Generate keybindings for the album browse functionality
+        albumKeybindings = generateAlbumKeybindings (Dict.values knownAlbums)
+        
+        -- Call the UpdateAlbums functionality
+        action = UpdateAlbums.handleAlbumBrowseInput key search albumKeybindings knownAlbums
+    in
+    case action of
+        UpdateAlbums.ChangeToMainMenu ->
+            StayInMenu MainMenuHome
+        UpdateAlbums.SelectAlbumForView album ->
+            StayInMenu (AlbumView album defaultAlbumConfig)
+        UpdateAlbums.UpdateAlbumSearch newSearch ->
+            StayInMenu (AlbumBrowse newSearch)
+        UpdateAlbums.NoAlbumAction ->
+            StayInMenu (AlbumBrowse search)
 
 handleAlbumViewKeyPress : String -> ImmichAlbum -> AlbumConfig -> Dict ImmichAlbumId ImmichAlbum -> Int -> MenuResult msg
 handleAlbumViewKeyPress key album config knownAlbums screenHeight =
