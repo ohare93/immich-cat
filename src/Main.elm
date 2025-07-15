@@ -21,6 +21,7 @@ import ViewAlbums exposing (AlbumPagination, AlbumSearch, AssetWithActions, Inpu
 import ViewAsset exposing (viewAsset, viewCreateAlbumConfirmation, viewEditAsset, viewEditAssetHelp, viewImage, viewKeybinding, viewLoadingAssets, viewVideo)
 import UpdateMenus exposing (MenuAction(..), handleMainMenuInput, handleTimelineViewInput, handleSearchViewInput, handleAlbumViewInput, handleSettingsInput)
 import UpdateAlbums exposing (AlbumAction(..), handleAlbumBrowseInput)
+import UpdateAsset exposing (AssetAction(..), handleEditAssetInput, handleSearchAssetInput, handleSelectAlbumInput, handleCreateAlbumConfirmationInput, handleShowEditAssetHelpInput)
 
 
 -- PORTS
@@ -120,61 +121,6 @@ type alias ImageIndex =
     Int
 
 
-type AssetChange
-    = ToggleAlbum ImmichAlbum
-    | ToggleDelete
-    | ToggleFavourite
-
-type TextInputUpdate
-    = TextInputAddition String
-    | TextInputBackspace
-
-type UserActionGeneral
-    = ChangeUserModeToEditAsset
-    | ChangeUserModeToLoading AssetSource
-    | ChangeUserModeToMainMenu
-    | ChangeUserModeToSearchAsset
-    | ChangeUserModeToSearchView String
-    | ChangeUserModeToSelectAlbum
-    | ReloadData
-    | UnknownAction
-
-type UserActionSearchMode
-    = TextInputUpdate TextInputUpdate
-    | UserActionGeneralSearch UserActionGeneral
-
-type UserActionAlbumSelectMode
-    = TextSelectInputUpdate TextInputUpdate
-    | SelectAlbumIfMatching
-    | MoveSelectionUp
-    | MoveSelectionDown
-    | PageUp
-    | PageDown
-    | HalfPageUp
-    | HalfPageDown
-    | FullPageUp
-    | FullPageDown
-    | UserActionGeneralAlbumSelect UserActionGeneral
-
-type UserActionEditMode
-    = ChangeInputMode InputMode
-    | ChangeImageIndex Int
-    | TextEditModeInputUpdate TextInputUpdate
-    | StartKeybindingMode String
-    | ApplyAlbumIfMatching
-    | CreateNewAlbum
-    | MoveAlbumSelectionUp
-    | MoveAlbumSelectionDown
-    | ShowHelp
-    | AssetChange AssetChange
-    | EditPageUp
-    | EditPageDown
-    | EditHalfPageUp
-    | EditHalfPageDown
-    | EditFullPageUp
-    | EditFullPageDown
-    | OpenInImmich
-    | UserActionGeneralEdit UserActionGeneral
 
 
 init : Flags -> ( Model, Cmd Msg )
@@ -1222,13 +1168,131 @@ applyMenuAction action model =
 applyAlbumAction : AlbumAction -> Model -> ( Model, Cmd Msg )
 applyAlbumAction action model =
     case action of
-        ChangeToMainMenu ->
+        UpdateAlbums.ChangeToMainMenu ->
             ( { model | userMode = MainMenu }, Cmd.none )
         SelectAlbumForView album ->
             ( { model | userMode = AlbumView album defaultAlbumConfig }, Cmd.none )
         UpdateAlbumSearch newSearch ->
             ( { model | userMode = AlbumBrowse newSearch }, Cmd.none )
         NoAlbumAction ->
+            ( model, Cmd.none )
+
+-- Helper to apply asset actions
+applyAssetAction : AssetAction -> Model -> ( Model, Cmd Msg )
+applyAssetAction action model =
+    case action of
+        ChangeAssetToMainMenu ->
+            ( { model | userMode = MainMenu }, Cmd.none )
+        ChangeToSearchView query ->
+            ( { model | userMode = SearchView { defaultSearchConfig | query = query } }, Cmd.none )
+        ChangeToLoadingTextSearch query ->
+            let
+                mainAssetSource = TextSearch query
+                loadModel = createLoadStateForCurrentAssetSource mainAssetSource model
+                loadCmd = Immich.searchAssets model.immichApiPaths query AllMedia AllStatuses |> Cmd.map ImmichMsg
+            in
+            ( loadModel, loadCmd )
+        ChangeToLoadingAlbum album ->
+            let
+                mainAssetSource = Album album
+                loadModel = createLoadStateForCurrentAssetSource mainAssetSource model
+                loadCmd = Immich.getAlbum model.immichApiPaths album.id |> Cmd.map ImmichMsg
+            in
+            ( loadModel, loadCmd )
+        ChangeInputMode newInputMode ->
+            case model.userMode of
+                EditAsset _ asset _ ->
+                    ( { model | userMode = EditAsset newInputMode asset <| getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
+        ChangeImageIndex indexChange ->
+            let
+                newIndex = loopImageIndexOverArray model.imageIndex indexChange (List.length model.currentAssets)
+            in
+            switchToEditIfAssetFound model newIndex
+        UpdateAsset newAsset ->
+            case model.userMode of
+                EditAsset inputMode _ search ->
+                    ( { model | userMode = EditAsset inputMode newAsset search }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
+        UpdateAssetSearch newSearch ->
+            case model.userMode of
+                EditAsset inputMode asset _ ->
+                    ( { model | userMode = EditAsset inputMode asset newSearch }, Cmd.none )
+                SelectAlbumInput _ ->
+                    ( { model | userMode = SelectAlbumInput newSearch }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
+        ToggleFavorite ->
+            case model.userMode of
+                EditAsset inputMode asset search ->
+                    let
+                        newAsset = { asset | isFavourite = flipPropertyChange asset.isFavourite }
+                        newIsFavorite = case newAsset.isFavourite of
+                            ChangeToTrue -> True
+                            RemainTrue -> True
+                            ChangeToFalse -> False
+                            RemainFalse -> False
+                    in
+                    ( { model | userMode = EditAsset inputMode newAsset search }, Immich.updateAssetFavorite model.immichApiPaths asset.asset.id newIsFavorite |> Cmd.map ImmichMsg )
+                _ ->
+                    ( model, Cmd.none )
+        ToggleArchived ->
+            case model.userMode of
+                EditAsset inputMode asset search ->
+                    let
+                        newAsset = { asset | isArchived = flipPropertyChange asset.isArchived }
+                        newIsArchived = case newAsset.isArchived of
+                            ChangeToTrue -> True
+                            RemainTrue -> True
+                            ChangeToFalse -> False
+                            RemainFalse -> False
+                    in
+                    ( { model | userMode = EditAsset inputMode newAsset search }, Immich.updateAssetArchived model.immichApiPaths asset.asset.id newIsArchived |> Cmd.map ImmichMsg )
+                _ ->
+                    ( model, Cmd.none )
+        ToggleAlbumMembership album ->
+            case model.userMode of
+                EditAsset inputMode asset search ->
+                    let
+                        currentPropertyChange = Maybe.withDefault RemainFalse (Dict.get album.id asset.albumMembership)
+                        currentlyInAlbum = isCurrentlyInAlbum currentPropertyChange
+                        isNotInAlbum = not currentlyInAlbum
+                        toggledAsset = toggleAssetAlbum asset album
+                        newPropertyChange = Maybe.withDefault RemainFalse (Dict.get album.id toggledAsset.albumMembership)
+                        isAddition = isAddingToAlbum newPropertyChange
+                        newSearch = { search | partialKeybinding = "", pagination = resetPagination search.pagination }
+                    in
+                    ( { model | userMode = EditAsset NormalMode toggledAsset newSearch, pendingAlbumChange = Just ( album.id, isAddition ) }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
+                _ ->
+                    ( model, Cmd.none )
+        OpenInImmich ->
+            case model.userMode of
+                EditAsset _ asset _ ->
+                    let
+                        immichUrl = model.baseUrl ++ "/photos/" ++ asset.asset.id
+                    in
+                    ( model, openUrl immichUrl )
+                _ ->
+                    ( model, Cmd.none )
+        ShowAssetHelp ->
+            case model.userMode of
+                EditAsset inputMode asset search ->
+                    ( { model | userMode = ShowEditAssetHelp inputMode asset search }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
+        CreateAlbumWithName albumName ->
+            case model.userMode of
+                EditAsset inputMode asset search ->
+                    ( { model | userMode = CreateAlbumConfirmation inputMode asset search albumName }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
+        LoadAlbum album ->
+            ( createLoadStateForCurrentAssetSource (Album album) model, Immich.getAlbum model.immichApiPaths album.id |> Cmd.map ImmichMsg )
+        SwitchToAssetIndex newIndex ->
+            switchToEditIfAssetFound model newIndex
+        NoAssetAction ->
             ( model, Cmd.none )
 
 
@@ -1249,479 +1313,83 @@ handleUserInput model key =
             applyMenuAction (handleSettingsInput key) model
         SearchAssetInput searchString ->
             let
-                userAction =
+                assetAction = handleSearchAssetInput key searchString
+            in
+            case assetAction of
+                NoAssetAction ->
                     if isSupportedSearchLetter key then
-                        TextInputUpdate (TextInputAddition key)
-                    else
-                        case key of
-                            "Backspace" ->
-                                TextInputUpdate TextInputBackspace
-                            "Escape" ->
-                                UserActionGeneralSearch <| ChangeUserModeToSearchView searchString
-                            "Enter" ->
-                                UserActionGeneralSearch <| ChangeUserModeToLoading (TextSearch searchString)
-                            _ ->
-                                UserActionGeneralSearch UnknownAction
-            in
-            case userAction of
-                TextInputUpdate (TextInputAddition newKey) ->
-                    let
-                        newSearchString =
-                            searchString ++ newKey
-                    in
-                    ( { model | userMode = SearchAssetInput newSearchString }, Cmd.none )
-                TextInputUpdate TextInputBackspace ->
-                    let
-                        newSearchString =
-                            String.slice 0 (String.length searchString - 1) searchString
-                    in
-                    ( { model | userMode = SearchAssetInput newSearchString }, Cmd.none )
-                UserActionGeneralSearch action ->
-                    case action of
-                        ChangeUserModeToLoading (TextSearch searchText) ->
-                            ( applyGeneralAction model action, Immich.searchAssets model.immichApiPaths searchText AllMedia AllStatuses |> Cmd.map ImmichMsg )
-                        _ ->
-                            ( applyGeneralAction model action, Cmd.none )
-        SelectAlbumInput searchResults ->
-            let
-                userAction =
-                    if isSupportedSearchLetter key then
-                        TextSelectInputUpdate (TextInputAddition key)
-                    else
-                        case key of
-                            "Backspace" ->
-                                TextSelectInputUpdate TextInputBackspace
-                            "Escape" ->
-                                UserActionGeneralAlbumSelect ChangeUserModeToMainMenu
-                            "Enter" ->
-                                SelectAlbumIfMatching
-                            "ArrowUp" ->
-                                MoveSelectionUp
-                            "ArrowDown" ->
-                                MoveSelectionDown
-                            "PageUp" ->
-                                PageUp
-                            "PageDown" ->
-                                PageDown
-                            _ ->
-                                if String.contains "Control" key then
-                                    case String.replace "Control+" "" key of
-                                        "d" ->
-                                            HalfPageDown
-                                        "u" ->
-                                            HalfPageUp
-                                        "f" ->
-                                            FullPageDown
-                                        "b" ->
-                                            FullPageUp
-                                        _ ->
-                                            UserActionGeneralAlbumSelect UnknownAction
-                                else
-                                    UserActionGeneralAlbumSelect UnknownAction
-            in
-            case userAction of
-                TextSelectInputUpdate (TextInputAddition newKey) ->
-                    let
-                        newPartialKeybinding =
-                            searchResults.partialKeybinding ++ newKey
-                        updatedSearch =
-                            { searchResults | partialKeybinding = newPartialKeybinding, pagination = resetPagination searchResults.pagination }
-
-                        -- Check for exact keybinding match and auto-apply
-                        maybeExactMatch =
-                            getAlbumByExactKeybinding newPartialKeybinding model.albumKeybindings model.knownAlbums
-                    in
-                    case maybeExactMatch of
-                        Just album ->
-                            ( createLoadStateForCurrentAssetSource (Album album) model, Immich.getAlbum model.immichApiPaths album.id |> Cmd.map ImmichMsg )
-                        Nothing ->
-                            ( { model | userMode = SelectAlbumInput updatedSearch }, Cmd.none )
-                TextSelectInputUpdate TextInputBackspace ->
-                    let
-                        newPartialKeybinding =
-                            String.slice 0 (String.length searchResults.partialKeybinding - 1) searchResults.partialKeybinding
-                        updatedSearch =
-                            { searchResults | partialKeybinding = newPartialKeybinding, pagination = resetPagination searchResults.pagination }
-                    in
-                    ( { model | userMode = SelectAlbumInput updatedSearch }, Cmd.none )
-                SelectAlbumIfMatching ->
-                    let
-                        maybeMatch =
-                            getSelectedAlbum searchResults model.albumKeybindings model.knownAlbums
-                    in
-                    case maybeMatch of
-                        Just album ->
-                            ( createLoadStateForCurrentAssetSource (Album album) model, Immich.getAlbum model.immichApiPaths album.id |> Cmd.map ImmichMsg )
-                        Nothing ->
-                            ( model, Cmd.none )
-                MoveSelectionUp ->
-                    ( { model | userMode = SelectAlbumInput <| moveSelectionUp searchResults model.albumKeybindings model.knownAlbums }, Cmd.none )
-                MoveSelectionDown ->
-                    ( { model | userMode = SelectAlbumInput <| moveSelectionDown searchResults model.albumKeybindings model.knownAlbums }, Cmd.none )
-                PageUp ->
-                    ( { model | userMode = SelectAlbumInput { searchResults | pagination = pageUp searchResults.pagination } }, Cmd.none )
-                PageDown ->
-                    ( { model | userMode = SelectAlbumInput { searchResults | pagination = pageDown searchResults.pagination } }, Cmd.none )
-                HalfPageUp ->
-                    ( { model | userMode = SelectAlbumInput { searchResults | pagination = halfPageUp searchResults.pagination } }, Cmd.none )
-                HalfPageDown ->
-                    ( { model | userMode = SelectAlbumInput { searchResults | pagination = halfPageDown searchResults.pagination } }, Cmd.none )
-                FullPageUp ->
-                    ( { model | userMode = SelectAlbumInput { searchResults | pagination = pageUp searchResults.pagination } }, Cmd.none )
-                FullPageDown ->
-                    ( { model | userMode = SelectAlbumInput { searchResults | pagination = pageDown searchResults.pagination } }, Cmd.none )
-                UserActionGeneralAlbumSelect action ->
-                    ( applyGeneralAction model action, Cmd.none )
-        LoadingAssets _ ->
-            ( model, Cmd.none )
-        EditAsset inputMode asset search ->
-            let
-                userAction =
-                    if inputMode == InsertMode then
-                        if isSupportedSearchLetter key then
-                            TextEditModeInputUpdate (TextInputAddition key)
-                        else
-                            case key of
-                                "Escape" ->
-                                    ChangeInputMode NormalMode
-                                "Backspace" ->
-                                    TextEditModeInputUpdate TextInputBackspace
-                                "Enter" ->
-                                    ApplyAlbumIfMatching
-                                "Tab" ->
-                                    CreateNewAlbum
-                                "ArrowUp" ->
-                                    MoveAlbumSelectionUp
-                                "ArrowDown" ->
-                                    MoveAlbumSelectionDown
-                                "PageUp" ->
-                                    EditPageUp
-                                "PageDown" ->
-                                    EditPageDown
-                                "?" ->
-                                    ShowHelp
-                                _ ->
-                                    if String.contains "Control" key then
-                                        case String.replace "Control+" "" key of
-                                            "d" ->
-                                                EditHalfPageDown
-                                            "u" ->
-                                                EditHalfPageUp
-                                            "f" ->
-                                                EditFullPageDown
-                                            "b" ->
-                                                EditFullPageUp
-                                            _ ->
-                                                UserActionGeneralEdit UnknownAction
-                                    else
-                                        UserActionGeneralEdit UnknownAction
-                    else if inputMode == KeybindingMode then
-                        if isKeybindingLetter key then
-                            TextEditModeInputUpdate (TextInputAddition key)
-                        else
-                            case key of
-                                "Escape" ->
-                                    ChangeInputMode NormalMode
-                                "Backspace" ->
-                                    TextEditModeInputUpdate TextInputBackspace
-                                "Enter" ->
-                                    ApplyAlbumIfMatching
-                                "PageUp" ->
-                                    EditPageUp
-                                "PageDown" ->
-                                    EditPageDown
-                                "?" ->
-                                    ShowHelp
-                                _ ->
-                                    if String.contains "Control" key then
-                                        case String.replace "Control+" "" key of
-                                            "d" ->
-                                                EditHalfPageDown
-                                            "u" ->
-                                                EditHalfPageUp
-                                            "f" ->
-                                                EditFullPageDown
-                                            "b" ->
-                                                EditFullPageUp
-                                            _ ->
-                                                UserActionGeneralEdit UnknownAction
-                                    else
-                                        UserActionGeneralEdit UnknownAction
-                    else if isKeybindingLetter key then
-                        StartKeybindingMode key
-
-                    else
-                        case key of
-                            "ArrowLeft" ->
-                                ChangeImageIndex -1
-                            "ArrowRight" ->
-                                ChangeImageIndex 1
-                            " " ->
-                                ChangeImageIndex 1
-
-                            "Escape" ->
-                                UserActionGeneralEdit <| ChangeUserModeToMainMenu
-                            -- "Backspace" ->
-                            --     RemoveFromAssetChangeList
-                            "I" ->
-                                ChangeInputMode InsertMode
-
-                            "D" ->
-                                AssetChange ToggleDelete
-
-                            "F" ->
-                                AssetChange ToggleFavourite
-
-                            "K" ->
-                                OpenInImmich
-
-                            "PageUp" ->
-                                EditPageUp
-                            "PageDown" ->
-                                EditPageDown
-                            "?" ->
-                                ShowHelp
-                            _ ->
-                                if String.contains "Control" key then
-                                    case String.replace "Control+" "" key of
-                                        "d" ->
-                                            EditHalfPageDown
-
-                                        "u" ->
-                                            EditHalfPageUp
-                                        "f" ->
-                                            EditFullPageDown
-
-                                        "b" ->
-                                            EditFullPageUp
-                                        _ ->
-                                            UserActionGeneralEdit UnknownAction
-
-                                else
-                                    UserActionGeneralEdit UnknownAction
-            in
-            case userAction of
-                AssetChange ToggleFavourite ->
-                    let
-                        newAsset =
-                            { asset | isFavourite = flipPropertyChange asset.isFavourite }
-                        newIsFavorite =
-                            case newAsset.isFavourite of
-                                ChangeToTrue ->
-                                    True
-                                RemainTrue ->
-                                    True
-                                ChangeToFalse ->
-                                    False
-                                RemainFalse ->
-                                    False
-                    in
-                    ( { model | userMode = EditAsset inputMode newAsset search }, Immich.updateAssetFavorite model.immichApiPaths asset.asset.id newIsFavorite |> Cmd.map ImmichMsg )
-                AssetChange ToggleDelete ->
-                    let
-                        newAsset =
-                            { asset | isArchived = flipPropertyChange asset.isArchived }
-                        newIsArchived =
-                            case newAsset.isArchived of
-                                ChangeToTrue ->
-                                    True
-                                RemainTrue ->
-                                    True
-                                ChangeToFalse ->
-                                    False
-                                RemainFalse ->
-                                    False
-                    in
-                    ( { model | userMode = EditAsset inputMode newAsset search }, Immich.updateAssetArchived model.immichApiPaths asset.asset.id newIsArchived |> Cmd.map ImmichMsg )
-                AssetChange (ToggleAlbum album) ->
-                    ( { model | userMode = EditAsset inputMode (toggleAssetAlbum asset album) search }, Cmd.none )
-                ApplyAlbumIfMatching ->
-                    let
-                        maybeMatch =
-                            if inputMode == KeybindingMode then
-                                getAlbumByExactKeybinding search.partialKeybinding model.albumKeybindings model.knownAlbums
-                            else
-                                getSelectedAlbumForAsset search model.albumKeybindings model.knownAlbums asset
-                    in
-                    case maybeMatch of
-                        Just album ->
-                            let
-                                currentPropertyChange =
-                                    Maybe.withDefault RemainFalse (Dict.get album.id asset.albumMembership)
-                                currentlyInAlbum =
-                                    isCurrentlyInAlbum currentPropertyChange
-                                isNotInAlbum =
-                                    not currentlyInAlbum
-                                toggledAsset =
-                                    toggleAssetAlbum asset album
-                                newPropertyChange =
-                                    Maybe.withDefault RemainFalse (Dict.get album.id toggledAsset.albumMembership)
-                                isAddition =
-                                    isAddingToAlbum newPropertyChange
-
-                                newSearch =
-                                    if inputMode == KeybindingMode then
-                                        { search | partialKeybinding = "", pagination = resetPagination search.pagination }
-                                    else
-                                        getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight
-                            in
-                            ( { model | userMode = EditAsset NormalMode toggledAsset newSearch, pendingAlbumChange = Just ( album.id, isAddition ) }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
-                        Nothing ->
-                            if inputMode == KeybindingMode then
-                                ( model, Cmd.none )
-                                -- No exact keybinding match, do nothing
-                            else if String.trim search.searchString /= "" then
-                                ( { model | userMode = CreateAlbumConfirmation inputMode asset search (String.trim search.searchString) }, Cmd.none )
-                            else
-                                ( model, Cmd.none )
-                CreateNewAlbum ->
-                    if String.trim search.searchString /= "" then
-                        ( { model | userMode = CreateAlbumConfirmation inputMode asset search (String.trim search.searchString) }, Cmd.none )
+                        let
+                            newSearchString = searchString ++ key
+                        in
+                        ( { model | userMode = SearchAssetInput newSearchString }, Cmd.none )
+                    else if key == "Backspace" then
+                        let
+                            newSearchString = String.slice 0 (String.length searchString - 1) searchString
+                        in
+                        ( { model | userMode = SearchAssetInput newSearchString }, Cmd.none )
                     else
                         ( model, Cmd.none )
-                ChangeInputMode newInputMode ->
-                    ( { model | userMode = EditAsset newInputMode asset <| getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight }, Cmd.none )
-                ChangeImageIndex indexChange ->
-                    let
-                        newIndex =
-                            loopImageIndexOverArray model.imageIndex indexChange (List.length model.currentAssets)
-                    in
-                    switchToEditIfAssetFound model newIndex
-                TextEditModeInputUpdate (TextInputAddition newKey) ->
-                    if inputMode == KeybindingMode then
+                _ ->
+                    applyAssetAction assetAction model
+        SelectAlbumInput searchResults ->
+            let
+                assetAction = handleSelectAlbumInput key searchResults model.albumKeybindings model.knownAlbums
+            in
+            case assetAction of
+                NoAssetAction ->
+                    if isSupportedSearchLetter key then
                         let
-                            newPartialKeybinding =
-                                search.partialKeybinding ++ newKey
-                            updatedSearch =
-                                { search | partialKeybinding = newPartialKeybinding, pagination = resetPagination search.pagination }
-
-                            -- Check for exact keybinding match and auto-apply
-                            maybeExactMatch =
-                                getAlbumByExactKeybinding newPartialKeybinding model.albumKeybindings model.knownAlbums
+                            newPartialKeybinding = searchResults.partialKeybinding ++ key
+                            updatedSearch = { searchResults | partialKeybinding = newPartialKeybinding, pagination = resetPagination searchResults.pagination }
+                            maybeExactMatch = getAlbumByExactKeybinding newPartialKeybinding model.albumKeybindings model.knownAlbums
                         in
                         case maybeExactMatch of
                             Just album ->
-                                let
-                                    currentPropertyChange =
-                                        Maybe.withDefault RemainFalse (Dict.get album.id asset.albumMembership)
-                                    currentlyInAlbum =
-                                        isCurrentlyInAlbum currentPropertyChange
-                                    isNotInAlbum =
-                                        not currentlyInAlbum
-                                    toggledAsset =
-                                        toggleAssetAlbum asset album
-                                    newPropertyChange =
-                                        Maybe.withDefault RemainFalse (Dict.get album.id toggledAsset.albumMembership)
-                                    isAddition =
-                                        isAddingToAlbum newPropertyChange
-                                    newSearch =
-                                        { search | partialKeybinding = "", pagination = resetPagination search.pagination }
-                                in
-                                ( { model | userMode = EditAsset NormalMode toggledAsset newSearch, pendingAlbumChange = Just ( album.id, isAddition ) }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
-
+                                ( createLoadStateForCurrentAssetSource (Album album) model, Immich.getAlbum model.immichApiPaths album.id |> Cmd.map ImmichMsg )
                             Nothing ->
-                                ( { model | userMode = EditAsset inputMode asset updatedSearch }, Cmd.none )
+                                ( { model | userMode = SelectAlbumInput updatedSearch }, Cmd.none )
+                    else if key == "Backspace" then
+                        let
+                            newPartialKeybinding = String.slice 0 (String.length searchResults.partialKeybinding - 1) searchResults.partialKeybinding
+                            updatedSearch = { searchResults | partialKeybinding = newPartialKeybinding, pagination = resetPagination searchResults.pagination }
+                        in
+                        ( { model | userMode = SelectAlbumInput updatedSearch }, Cmd.none )
                     else
-                        let
-                            newSearchString =
-                                search.searchString ++ newKey
-                        in
-                        ( { model | userMode = EditAsset inputMode asset <| updateAlbumSearchString newSearchString search model.knownAlbums }, Cmd.none )
-                TextEditModeInputUpdate TextInputBackspace ->
-                    if inputMode == KeybindingMode then
-                        let
-                            newPartialKeybinding =
-                                String.slice 0 (String.length search.partialKeybinding - 1) search.partialKeybinding
-                            updatedSearch =
-                                { search | partialKeybinding = newPartialKeybinding }
-                        in
-                        if newPartialKeybinding == "" then
-                            ( { model | userMode = EditAsset NormalMode asset updatedSearch }, Cmd.none )
-                        else
-                            ( { model | userMode = EditAsset inputMode asset updatedSearch }, Cmd.none )
-                    else
-                        let
-                            newSearchString =
-                                String.slice 0 (String.length search.searchString - 1) search.searchString
-                        in
-                        ( { model | userMode = EditAsset inputMode asset <| updateAlbumSearchString newSearchString search model.knownAlbums }, Cmd.none )
-
-                StartKeybindingMode partialKey ->
-                    let
-                        updatedSearch =
-                            { search | partialKeybinding = partialKey, pagination = resetPagination search.pagination }
-
-                        -- Check for exact keybinding match and auto-apply
-                        maybeExactMatch =
-                            getAlbumByExactKeybinding partialKey model.albumKeybindings model.knownAlbums
-                    in
-                    case maybeExactMatch of
-                        Just album ->
-                            let
-                                currentPropertyChange =
-                                    Maybe.withDefault RemainFalse (Dict.get album.id asset.albumMembership)
-                                currentlyInAlbum =
-                                    isCurrentlyInAlbum currentPropertyChange
-                                isNotInAlbum =
-                                    not currentlyInAlbum
-                                toggledAsset =
-                                    toggleAssetAlbum asset album
-                                newPropertyChange =
-                                    Maybe.withDefault RemainFalse (Dict.get album.id toggledAsset.albumMembership)
-                                isAddition =
-                                    isAddingToAlbum newPropertyChange
-                                newSearch =
-                                    { search | partialKeybinding = "", pagination = resetPagination search.pagination }
-                            in
-                            ( { model | userMode = EditAsset NormalMode toggledAsset newSearch, pendingAlbumChange = Just ( album.id, isAddition ) }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
-
-                        Nothing ->
-                            ( { model | userMode = EditAsset KeybindingMode asset updatedSearch }, Cmd.none )
-
-                MoveAlbumSelectionUp ->
-                    ( { model | userMode = EditAsset inputMode asset <| moveSelectionUpForAsset search model.albumKeybindings model.knownAlbums asset }, Cmd.none )
-                MoveAlbumSelectionDown ->
-                    ( { model | userMode = EditAsset inputMode asset <| moveSelectionDownForAsset search model.albumKeybindings model.knownAlbums asset }, Cmd.none )
-                EditPageUp ->
-                    ( { model | userMode = EditAsset inputMode asset { search | pagination = pageUp search.pagination } }, Cmd.none )
-                EditPageDown ->
-                    ( { model | userMode = EditAsset inputMode asset { search | pagination = pageDown search.pagination } }, Cmd.none )
-                EditHalfPageUp ->
-                    ( { model | userMode = EditAsset inputMode asset { search | pagination = halfPageUp search.pagination } }, Cmd.none )
-                EditHalfPageDown ->
-                    ( { model | userMode = EditAsset inputMode asset { search | pagination = halfPageDown search.pagination } }, Cmd.none )
-                EditFullPageUp ->
-                    ( { model | userMode = EditAsset inputMode asset { search | pagination = pageUp search.pagination } }, Cmd.none )
-                EditFullPageDown ->
-                    ( { model | userMode = EditAsset inputMode asset { search | pagination = pageDown search.pagination } }, Cmd.none )
-                OpenInImmich ->
-                    let
-                        immichUrl =
-                            model.baseUrl ++ "/photos/" ++ asset.asset.id
-                    in
-                    ( model, openUrl immichUrl )
-                ShowHelp ->
-                    ( { model | userMode = ShowEditAssetHelp inputMode asset search }, Cmd.none )
-                UserActionGeneralEdit generalAction ->
-                    ( applyGeneralAction model generalAction, Cmd.none )
+                        ( model, Cmd.none )
+                _ ->
+                    applyAssetAction assetAction model
+        LoadingAssets _ ->
+            ( model, Cmd.none )
+        EditAsset inputMode asset search ->
+            applyAssetAction (handleEditAssetInput key inputMode asset search model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets) model
 
         CreateAlbumConfirmation inputMode asset search albumName ->
-            case key of
-                "Enter" ->
-                    ( { model | userMode = LoadingAssets { fetchedAssetList = Nothing, fetchedAssetMembership = Nothing } }, Immich.createAlbum model.immichApiPaths albumName |> Cmd.map ImmichMsg )
-                "Escape" ->
-                    ( { model | userMode = EditAsset inputMode asset search }, Cmd.none )
+            let
+                assetAction = handleCreateAlbumConfirmationInput key
+            in
+            case assetAction of
+                NoAssetAction ->
+                    if key == "Enter" then
+                        ( { model | userMode = LoadingAssets { fetchedAssetList = Nothing, fetchedAssetMembership = Nothing } }, Immich.createAlbum model.immichApiPaths albumName |> Cmd.map ImmichMsg )
+                    else if key == "Escape" then
+                        ( { model | userMode = EditAsset inputMode asset search }, Cmd.none )
+                    else
+                        ( model, Cmd.none )
                 _ ->
-                    ( model, Cmd.none )
+                    applyAssetAction assetAction model
 
         ShowEditAssetHelp inputMode asset search ->
-            case key of
-                "Escape" ->
-                    ( { model | userMode = EditAsset inputMode asset search }, Cmd.none )
-                "?" ->
-                    ( { model | userMode = EditAsset inputMode asset search }, Cmd.none )
+            let
+                assetAction = handleShowEditAssetHelpInput key
+            in
+            case assetAction of
+                NoAssetAction ->
+                    if key == "Escape" || key == "?" then
+                        ( { model | userMode = EditAsset inputMode asset search }, Cmd.none )
+                    else
+                        ( model, Cmd.none )
                 _ ->
-                    ( model, Cmd.none )
+                    applyAssetAction assetAction model
 
 
 
@@ -1950,27 +1618,6 @@ normalizeAssetMembershipStates model albumId isAddition =
     { model | userMode = updatedUserMode }
 
 
-applyGeneralAction : Model -> UserActionGeneral -> Model
-applyGeneralAction model action =
-    case action of
-        ChangeUserModeToMainMenu ->
-            { model | userMode = MainMenu }
-        ChangeUserModeToSearchAsset ->
-            { model | userMode = SearchAssetInput "" }
-        ChangeUserModeToSearchView query ->
-            { model | userMode = SearchView { defaultSearchConfig | query = query } }
-        ChangeUserModeToSelectAlbum ->
-            { model | userMode = SelectAlbumInput <| getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight }
-        ChangeUserModeToEditAsset ->
-            Tuple.first <| switchToEditIfAssetFound model 0
-        ChangeUserModeToLoading assetSource ->
-            createLoadStateForCurrentAssetSource assetSource model
-
-        ReloadData ->
-            { model | imagesLoadState = ImmichLoading, albumsLoadState = ImmichLoading }
-
-        UnknownAction ->
-            model
 
 switchToEditIfAssetFound : Model -> ImageIndex -> ( Model, Cmd Msg )
 switchToEditIfAssetFound model index =
