@@ -1,5 +1,6 @@
 module UpdateAlbums exposing
     ( handleAlbumBrowseInput
+    , updateAlbums
     , AlbumAction(..)
     , AlbumMsg(..)
     )
@@ -146,3 +147,12 @@ handleAlbumBrowseInput key search albumKeybindings knownAlbums =
                     UpdateAlbumSearch newSearch
             else
                 NoAlbumAction
+
+
+-- Update function that processes AlbumMsg and returns an action
+-- This consolidates the album input handling logic from Main.elm
+updateAlbums : AlbumMsg -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AlbumAction
+updateAlbums albumMsg albumKeybindings knownAlbums =
+    case albumMsg of
+        AlbumBrowseKeyPress key search ->
+            handleAlbumBrowseInput key search albumKeybindings knownAlbums

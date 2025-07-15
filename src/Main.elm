@@ -17,9 +17,9 @@ import Json.Decode as Decode
 import KeybindingGenerator exposing (generateAlbumKeybindings)
 import Menus exposing (AlbumConfig, SearchConfig, SearchContext(..), TimelineConfig, defaultAlbumConfig, defaultSearchConfig, defaultTimelineConfig, filterByMediaType, filterByStatus, toggleCategorisation, toggleMediaType, toggleOrder, toggleSearchContext, toggleStatus, viewAlbumView, viewInstructions, viewMainMenu, viewMainMenuOption, viewSearchView, viewSettings, viewTimelineView)
 import Regex
-import UpdateAlbums exposing (AlbumAction(..), AlbumMsg(..), handleAlbumBrowseInput)
-import UpdateAsset exposing (AssetAction(..), AssetMsg(..), handleCreateAlbumConfirmationInput, handleEditAssetInput, handleSearchAssetInput, handleSelectAlbumInput, handleShowEditAssetHelpInput)
-import UpdateMenus exposing (MenuAction(..), MenuMsg(..), handleAlbumViewInput, handleMainMenuInput, handleSearchViewInput, handleSettingsInput, handleTimelineViewInput)
+import UpdateAlbums exposing (AlbumAction(..), AlbumMsg(..), handleAlbumBrowseInput, updateAlbums)
+import UpdateAsset exposing (AssetAction(..), AssetMsg(..), handleCreateAlbumConfirmationInput, handleEditAssetInput, handleSearchAssetInput, handleSelectAlbumInput, handleShowEditAssetHelpInput, updateAsset)
+import UpdateMenus exposing (MenuAction(..), MenuMsg(..), handleAlbumViewInput, handleMainMenuInput, handleSearchViewInput, handleSettingsInput, handleTimelineViewInput, updateMenus)
 import ViewAlbums exposing (AlbumPagination, AlbumSearch, AssetWithActions, InputMode(..), PropertyChange(..), calculateItemsPerPage, calculateTotalPages, filterToOnlySearchedForAlbums, flipPropertyChange, getAlbumByExactKeybinding, getAlbumSearch, getAlbumSearchWithHeight, getAlbumSearchWithIndex, getAssetWithActions, getFilteredAlbumsList, getFilteredAlbumsListForAsset, getSelectedAlbum, getSelectedAlbumForAsset, halfPageDown, halfPageUp, isAddingToAlbum, isCurrentlyInAlbum, moveSelectionDown, moveSelectionDownForAsset, moveSelectionUp, moveSelectionUpForAsset, pageDown, pageUp, shittyFuzzyAlgorithmTest, toggleAssetAlbum, updateAlbumSearchString, updatePagination, usefulColours, viewSidebar, viewSidebarAlbums, viewSidebarAlbumsForCurrentAsset, viewWithSidebar)
 import ViewAsset exposing (viewAsset, viewCreateAlbumConfirmation, viewEditAsset, viewEditAssetHelp, viewImage, viewKeybinding, viewLoadingAssets, viewVideo)
 
@@ -896,33 +896,20 @@ update msg model =
         
         -- Module-specific message handlers
         MenuMsg menuMsg ->
-            case menuMsg of
-                MainMenuKeyPress key ->
-                    applyMenuAction (handleMainMenuInput key model.knownAlbums model.screenHeight) model
-                TimelineKeyPress key config ->
-                    applyMenuAction (handleTimelineViewInput key config) model
-                SearchKeyPress key config ->
-                    applyMenuAction (handleSearchViewInput key config) model
-                AlbumViewKeyPress key album config ->
-                    applyMenuAction (handleAlbumViewInput key album config model.knownAlbums model.screenHeight) model
-                SettingsKeyPress key ->
-                    applyMenuAction (handleSettingsInput key) model
+            applyMenuAction (updateMenus menuMsg model.knownAlbums model.immichApiPaths model.screenHeight) model
         
         AlbumMsg albumMsg ->
-            case albumMsg of
-                AlbumBrowseKeyPress key search ->
-                    applyAlbumAction (handleAlbumBrowseInput key search model.albumKeybindings model.knownAlbums) model
+            applyAlbumAction (updateAlbums albumMsg model.albumKeybindings model.knownAlbums) model
         
         AssetMsg assetMsg ->
-            case assetMsg of
-                EditAssetKeyPress key inputMode asset search ->
-                    applyAssetAction (handleEditAssetInput key inputMode asset search model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets) model
-                SearchAssetKeyPress key searchString ->
-                    let
-                        assetAction = handleSearchAssetInput key searchString
-                    in
-                    case assetAction of
-                        NoAssetAction ->
+            let
+                assetAction = updateAsset assetMsg model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets
+            in
+            case assetAction of
+                NoAssetAction ->
+                    -- Handle the complex inline logic for NoAssetAction cases
+                    case assetMsg of
+                        SearchAssetKeyPress key searchString ->
                             if isSupportedSearchLetter key then
                                 let
                                     newSearchString = searchString ++ key
@@ -935,14 +922,7 @@ update msg model =
                                 ( { model | userMode = SearchAssetInput newSearchString }, Cmd.none )
                             else
                                 ( model, Cmd.none )
-                        _ ->
-                            applyAssetAction assetAction model
-                SelectAlbumKeyPress key searchResults ->
-                    let
-                        assetAction = handleSelectAlbumInput key searchResults model.albumKeybindings model.knownAlbums
-                    in
-                    case assetAction of
-                        NoAssetAction ->
+                        SelectAlbumKeyPress key searchResults ->
                             if isSupportedSearchLetter key then
                                 let
                                     newPartialKeybinding = searchResults.partialKeybinding ++ key
@@ -962,34 +942,22 @@ update msg model =
                                 ( { model | userMode = SelectAlbumInput updatedSearch }, Cmd.none )
                             else
                                 ( model, Cmd.none )
-                        _ ->
-                            applyAssetAction assetAction model
-                CreateAlbumConfirmationKeyPress key inputMode asset search albumName ->
-                    let
-                        assetAction = handleCreateAlbumConfirmationInput key
-                    in
-                    case assetAction of
-                        NoAssetAction ->
+                        CreateAlbumConfirmationKeyPress key inputMode asset search albumName ->
                             if key == "Enter" then
                                 ( { model | userMode = LoadingAssets { fetchedAssetList = Nothing, fetchedAssetMembership = Nothing } }, Immich.createAlbum model.immichApiPaths albumName |> Cmd.map ImmichMsg )
                             else if key == "Escape" then
                                 ( { model | userMode = EditAsset inputMode asset search }, Cmd.none )
                             else
                                 ( model, Cmd.none )
-                        _ ->
-                            applyAssetAction assetAction model
-                ShowEditAssetHelpKeyPress key inputMode asset search ->
-                    let
-                        assetAction = handleShowEditAssetHelpInput key
-                    in
-                    case assetAction of
-                        NoAssetAction ->
+                        ShowEditAssetHelpKeyPress key inputMode asset search ->
                             if key == "Escape" || key == "?" then
                                 ( { model | userMode = EditAsset inputMode asset search }, Cmd.none )
                             else
                                 ( model, Cmd.none )
                         _ ->
-                            applyAssetAction assetAction model
+                            ( model, Cmd.none )
+                _ ->
+                    applyAssetAction assetAction model
         ImmichMsg imsg ->
             let
                 newModel =

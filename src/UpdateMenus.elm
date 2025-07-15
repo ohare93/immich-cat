@@ -4,6 +4,7 @@ module UpdateMenus exposing
     , handleSearchViewInput
     , handleAlbumViewInput
     , handleSettingsInput
+    , updateMenus
     , MenuAction(..)
     , UserMode(..)
     , AssetSource(..)
@@ -15,6 +16,9 @@ import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset,
 import Menus exposing (SearchContext(..), TimelineConfig, SearchConfig, AlbumConfig, defaultTimelineConfig, defaultSearchConfig, defaultAlbumConfig, toggleMediaType, toggleCategorisation, toggleOrder, toggleStatus, toggleSearchContext)
 import Helpers exposing (isSupportedSearchLetter)
 import ViewAlbums exposing (AlbumSearch, getAlbumSearchWithHeight)
+
+-- Import types from Main module - we need to define these here or reference them properly
+-- For now, I'll add the minimal types needed
 
 -- Action type that represents what the menu wants to do
 type MenuAction
@@ -169,3 +173,20 @@ handleSettingsInput key =
             ChangeMode MainMenu
         _ ->
             NoMenuAction
+
+
+-- Update function that processes MenuMsg and returns an action
+-- This consolidates the menu input handling logic from Main.elm
+updateMenus : MenuMsg -> Dict ImmichAlbumId ImmichAlbum -> ImmichApiPaths -> Int -> MenuAction
+updateMenus menuMsg knownAlbums apiPaths screenHeight =
+    case menuMsg of
+        MainMenuKeyPress key ->
+            handleMainMenuInput key knownAlbums screenHeight
+        TimelineKeyPress key config ->
+            handleTimelineViewInput key config
+        SearchKeyPress key config ->
+            handleSearchViewInput key config
+        AlbumViewKeyPress key album config ->
+            handleAlbumViewInput key album config knownAlbums screenHeight
+        SettingsKeyPress key ->
+            handleSettingsInput key

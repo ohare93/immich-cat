@@ -5,6 +5,7 @@ module UpdateAsset exposing
     , handleSearchAssetInput
     , handleSelectAlbumInput
     , handleShowEditAssetHelpInput
+    , updateAsset
     , AssetMsg(..)
     )
 
@@ -388,4 +389,21 @@ moveSelectionDownForSearch search albumKeybindings albums =
             max 0 (filteredCount - 1)
     in
     { search | selectedIndex = min maxIndex (search.selectedIndex + 1) }
+
+
+-- Update function that processes AssetMsg and returns an action
+-- This consolidates the asset input handling logic from Main.elm
+updateAsset : AssetMsg -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Int -> List ImmichAssetId -> AssetAction
+updateAsset assetMsg albumKeybindings knownAlbums screenHeight currentAssets =
+    case assetMsg of
+        EditAssetKeyPress key inputMode asset search ->
+            handleEditAssetInput key inputMode asset search albumKeybindings knownAlbums screenHeight currentAssets
+        SearchAssetKeyPress key searchString ->
+            handleSearchAssetInput key searchString
+        SelectAlbumKeyPress key searchResults ->
+            handleSelectAlbumInput key searchResults albumKeybindings knownAlbums
+        CreateAlbumConfirmationKeyPress key inputMode asset search albumName ->
+            handleCreateAlbumConfirmationInput key
+        ShowEditAssetHelpKeyPress key inputMode asset search ->
+            handleShowEditAssetHelpInput key
 
