@@ -443,7 +443,7 @@ handleEditAssetKeyPress key inputMode asset search albumKeybindings knownAlbums 
     let
         action = handleEditAssetInput key inputMode asset search albumKeybindings knownAlbums screenHeight currentAssets
     in
-    convertAssetActionToResult action inputMode asset search
+    convertAssetActionToResult action inputMode asset search currentAssets
 
 handleSearchAssetKeyPress : String -> String -> AssetResult msg
 handleSearchAssetKeyPress key searchString =
@@ -506,8 +506,8 @@ handleShowEditAssetHelpKeyPress key inputMode asset search =
             StayInAssets (ShowEditAssetHelp inputMode asset search)
 
 -- Helper to convert legacy AssetAction to AssetResult
-convertAssetActionToResult : AssetAction -> InputMode -> AssetWithActions -> AlbumSearch -> AssetResult msg
-convertAssetActionToResult action inputMode asset search =
+convertAssetActionToResult : AssetAction -> InputMode -> AssetWithActions -> AlbumSearch -> List ImmichAssetId -> AssetResult msg
+convertAssetActionToResult action inputMode asset search currentAssets =
     case action of
         ChangeAssetToMainMenu ->
             GoToMainMenu
@@ -519,13 +519,29 @@ convertAssetActionToResult action inputMode asset search =
             AssetLoadAlbum album
         ChangeInputMode newInputMode ->
             StayInAssets (EditAsset newInputMode asset search)
-        ChangeImageIndex _ ->
-            -- Image index change will be handled by SwitchToAssetIndex
-            StayInAssets (EditAsset inputMode asset search)
+        ChangeImageIndex indexChange ->
+            let
+                currentIndex = 
+                    currentAssets
+                        |> List.indexedMap (\index assetId -> if assetId == asset.asset.id then Just index else Nothing)
+                        |> List.filterMap identity
+                        |> List.head
+                        |> Maybe.withDefault 0
+                newIndex = 
+                    loopImageIndexOverArray currentIndex indexChange (List.length currentAssets)
+            in
+            AssetSwitchToAssetIndex newIndex
         UpdateAsset newAsset ->
             StayInAssets (EditAsset inputMode newAsset search)
         UpdateAssetSearch newSearch ->
-            StayInAssets (EditAsset inputMode asset newSearch)
+            let
+                newInputMode =
+                    if String.isEmpty newSearch.partialKeybinding then
+                        NormalMode
+                    else
+                        KeybindingMode
+            in
+            StayInAssets (EditAsset newInputMode asset newSearch)
         ToggleFavorite ->
             AssetToggleFavorite
         ToggleArchived ->
