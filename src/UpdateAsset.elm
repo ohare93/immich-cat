@@ -178,7 +178,11 @@ handleKeybindingModeInput key inputMode asset search albumKeybindings knownAlbum
                         { search | partialKeybinding = newPartialKeybinding }
                 in
                 if newPartialKeybinding == "" then
-                    ChangeInputMode NormalMode
+                    -- Clear the partialKeybinding when returning to NormalMode
+                    let
+                        clearedSearch = { search | partialKeybinding = "" }
+                    in
+                    UpdateAssetSearch clearedSearch
                 else
                     UpdateAssetSearch updatedSearch
             "Enter" ->
@@ -534,12 +538,25 @@ convertAssetActionToResult action inputMode asset search currentAssets =
         UpdateAsset newAsset ->
             StayInAssets (EditAsset inputMode newAsset search)
         UpdateAssetSearch newSearch ->
+            -- Preserve the current InputMode unless there's a specific reason to change it
             let
                 newInputMode =
-                    if String.isEmpty newSearch.partialKeybinding then
-                        NormalMode
-                    else
-                        KeybindingMode
+                    case inputMode of
+                        InsertMode ->
+                            -- Stay in InsertMode unless explicitly changing modes
+                            InsertMode
+                        KeybindingMode ->
+                            -- Stay in KeybindingMode unless partialKeybinding becomes empty
+                            if String.isEmpty newSearch.partialKeybinding then
+                                NormalMode
+                            else
+                                KeybindingMode
+                        NormalMode ->
+                            -- Switch to KeybindingMode only if partialKeybinding is populated
+                            if String.isEmpty newSearch.partialKeybinding then
+                                NormalMode
+                            else
+                                KeybindingMode
             in
             StayInAssets (EditAsset newInputMode asset newSearch)
         ToggleFavorite ->
