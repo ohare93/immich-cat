@@ -1,18 +1,20 @@
 module UpdateAsset exposing
-    ( handleEditAssetInput
-    , handleSearchAssetInput 
-    , handleSelectAlbumInput
+    ( AssetAction(..)
     , handleCreateAlbumConfirmationInput
+    , handleEditAssetInput
+    , handleSearchAssetInput
+    , handleSelectAlbumInput
     , handleShowEditAssetHelpInput
-    , AssetAction(..)
     )
 
 import Dict exposing (Dict)
-import Helpers exposing (isSupportedSearchLetter, isKeybindingLetter, loopImageIndexOverArray)
+import Helpers exposing (isKeybindingLetter, isSupportedSearchLetter, loopImageIndexOverArray)
 import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId)
-import ViewAlbums exposing (AlbumSearch, AssetWithActions, InputMode(..), PropertyChange(..), getAlbumByExactKeybinding, getAlbumSearchWithHeight, getSelectedAlbumForAsset, isAddingToAlbum, isCurrentlyInAlbum, moveSelectionDownForAsset, moveSelectionUpForAsset, flipPropertyChange, toggleAssetAlbum, updateAlbumSearchString, resetPagination, pageUp, pageDown, halfPageUp, halfPageDown, filterToOnlySearchedForAlbums, getFilteredAlbumsList)
+import ViewAlbums exposing (AlbumSearch, AssetWithActions, InputMode(..), PropertyChange(..), filterToOnlySearchedForAlbums, flipPropertyChange, getAlbumByExactKeybinding, getAlbumSearchWithHeight, getFilteredAlbumsList, getSelectedAlbumForAsset, halfPageDown, halfPageUp, isAddingToAlbum, isCurrentlyInAlbum, moveSelectionDownForAsset, moveSelectionUpForAsset, pageDown, pageUp, resetPagination, toggleAssetAlbum, updateAlbumSearchString)
+
 
 -- Action type for asset editing
+
 type AssetAction
     = ChangeAssetToMainMenu
     | ChangeToSearchView String
@@ -23,7 +25,7 @@ type AssetAction
     | UpdateAsset AssetWithActions
     | UpdateAssetSearch AlbumSearch
     | ToggleFavorite
-    | ToggleArchived  
+    | ToggleArchived
     | ToggleAlbumMembership ImmichAlbum
     | OpenInImmich
     | ShowAssetHelp
@@ -34,19 +36,32 @@ type AssetAction
 
 
 -- Handle EditAsset keyboard input
+
 handleEditAssetInput : String -> InputMode -> AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Int -> List ImmichAssetId -> AssetAction
 handleEditAssetInput key inputMode asset search albumKeybindings knownAlbums screenHeight currentAssets =
     if inputMode == InsertMode then
         handleInsertModeInput key inputMode asset search albumKeybindings knownAlbums
     else if inputMode == KeybindingMode then
         handleKeybindingModeInput key inputMode asset search albumKeybindings knownAlbums
-    else if isKeybindingLetter key then
-        -- Start keybinding mode with this key
-        handleStartKeybindingMode key asset search albumKeybindings knownAlbums
     else
-        handleNormalModeInput key inputMode asset search screenHeight currentAssets
+        -- Normal mode: check for normal mode commands first, then keybinding mode
+        case key of
+            "I" -> ChangeInputMode InsertMode
+            "F" -> ToggleFavorite  
+            "D" -> ToggleArchived
+            "K" -> OpenInImmich
+            "?" -> ShowAssetHelp
+            _ ->
+                if isKeybindingLetter key then
+                    -- Start keybinding mode with this lowercase letter
+                    handleStartKeybindingMode key asset search albumKeybindings knownAlbums
+                else
+                    -- Handle other navigation keys (arrows, space, etc.)
+                    handleNormalModeInput key inputMode asset search screenHeight currentAssets
+
 
 -- Handle Insert Mode (album selection) input
+
 handleInsertModeInput : String -> InputMode -> AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AssetAction
 handleInsertModeInput key inputMode asset search albumKeybindings knownAlbums =
     case key of
@@ -65,24 +80,48 @@ handleInsertModeInput key inputMode asset search albumKeybindings knownAlbums =
         "?" ->
             ShowAssetHelp
         _ ->
-            if String.contains "Control" key then
+            if isSupportedSearchLetter key then
+                -- Add letter to search string
+                let
+                    newSearchString = search.searchString ++ key
+                    updatedSearch = updateAlbumSearchString newSearchString search knownAlbums
+                in
+                UpdateAssetSearch updatedSearch
+            else if key == "Backspace" then
+                -- Remove last character from search string
+                let
+                    newSearchString = String.slice 0 (String.length search.searchString - 1) search.searchString
+                    updatedSearch = updateAlbumSearchString newSearchString search knownAlbums
+                in
+                UpdateAssetSearch updatedSearch
+            else if String.contains "Control" key then
                 case String.replace "Control+" "" key of
-                    "d" -> UpdateAssetSearch { search | pagination = halfPageDown search.pagination }
-                    "u" -> UpdateAssetSearch { search | pagination = halfPageUp search.pagination }
-                    "f" -> UpdateAssetSearch { search | pagination = pageDown search.pagination }
-                    "b" -> UpdateAssetSearch { search | pagination = pageUp search.pagination }
-                    _ -> NoAssetAction
+                    "d" ->
+                        UpdateAssetSearch { search | pagination = halfPageDown search.pagination }
+                    "u" ->
+                        UpdateAssetSearch { search | pagination = halfPageUp search.pagination }
+                    "f" ->
+                        UpdateAssetSearch { search | pagination = pageDown search.pagination }
+                    "b" ->
+                        UpdateAssetSearch { search | pagination = pageUp search.pagination }
+                    _ ->
+                        NoAssetAction
             else
                 NoAssetAction
 
+
 -- Handle Keybinding Mode input
+
 handleKeybindingModeInput : String -> InputMode -> AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AssetAction
 handleKeybindingModeInput key inputMode asset search albumKeybindings knownAlbums =
     if isKeybindingLetter key then
         let
-            newPartialKeybinding = search.partialKeybinding ++ key
-            updatedSearch = { search | partialKeybinding = newPartialKeybinding, pagination = resetPagination search.pagination }
-            maybeExactMatch = getAlbumByExactKeybinding newPartialKeybinding albumKeybindings knownAlbums
+            newPartialKeybinding =
+                search.partialKeybinding ++ key
+            updatedSearch =
+                { search | partialKeybinding = newPartialKeybinding, pagination = resetPagination search.pagination }
+            maybeExactMatch =
+                getAlbumByExactKeybinding newPartialKeybinding albumKeybindings knownAlbums
         in
         case maybeExactMatch of
             Just album ->
@@ -95,8 +134,10 @@ handleKeybindingModeInput key inputMode asset search albumKeybindings knownAlbum
                 ChangeInputMode NormalMode
             "Backspace" ->
                 let
-                    newPartialKeybinding = String.slice 0 (String.length search.partialKeybinding - 1) search.partialKeybinding
-                    updatedSearch = { search | partialKeybinding = newPartialKeybinding }
+                    newPartialKeybinding =
+                        String.slice 0 (String.length search.partialKeybinding - 1) search.partialKeybinding
+                    updatedSearch =
+                        { search | partialKeybinding = newPartialKeybinding }
                 in
                 if newPartialKeybinding == "" then
                     ChangeInputMode NormalMode
@@ -113,28 +154,39 @@ handleKeybindingModeInput key inputMode asset search albumKeybindings knownAlbum
             _ ->
                 if String.contains "Control" key then
                     case String.replace "Control+" "" key of
-                        "d" -> UpdateAssetSearch { search | pagination = halfPageDown search.pagination }
-                        "u" -> UpdateAssetSearch { search | pagination = halfPageUp search.pagination }
-                        "f" -> UpdateAssetSearch { search | pagination = pageDown search.pagination }
-                        "b" -> UpdateAssetSearch { search | pagination = pageUp search.pagination }
-                        _ -> NoAssetAction
+                        "d" ->
+                            UpdateAssetSearch { search | pagination = halfPageDown search.pagination }
+                        "u" ->
+                            UpdateAssetSearch { search | pagination = halfPageUp search.pagination }
+                        "f" ->
+                            UpdateAssetSearch { search | pagination = pageDown search.pagination }
+                        "b" ->
+                            UpdateAssetSearch { search | pagination = pageUp search.pagination }
+                        _ ->
+                            NoAssetAction
                 else
                     NoAssetAction
 
+
 -- Handle starting keybinding mode with a key
+
 handleStartKeybindingMode : String -> AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AssetAction
 handleStartKeybindingMode partialKey asset search albumKeybindings knownAlbums =
     let
-        updatedSearch = { search | partialKeybinding = partialKey, pagination = resetPagination search.pagination }
-        maybeExactMatch = getAlbumByExactKeybinding partialKey albumKeybindings knownAlbums
+        updatedSearch =
+            { search | partialKeybinding = partialKey, pagination = resetPagination search.pagination }
+        maybeExactMatch =
+            getAlbumByExactKeybinding partialKey albumKeybindings knownAlbums
     in
     case maybeExactMatch of
         Just album ->
             ToggleAlbumMembership album
         Nothing ->
-            ChangeInputMode KeybindingMode
+            UpdateAssetSearch updatedSearch
+
 
 -- Handle Normal Mode input
+
 handleNormalModeInput : String -> InputMode -> AssetWithActions -> AlbumSearch -> Int -> List ImmichAssetId -> AssetAction
 handleNormalModeInput key inputMode asset search screenHeight currentAssets =
     case key of
@@ -146,32 +198,29 @@ handleNormalModeInput key inputMode asset search screenHeight currentAssets =
             ChangeImageIndex 1
         "Escape" ->
             ChangeAssetToMainMenu
-        "I" ->
-            ChangeInputMode InsertMode
-        "D" ->
-            ToggleArchived
-        "F" ->
-            ToggleFavorite
-        "K" ->
-            OpenInImmich
         "PageUp" ->
             UpdateAssetSearch { search | pagination = pageUp search.pagination }
         "PageDown" ->
             UpdateAssetSearch { search | pagination = pageDown search.pagination }
-        "?" ->
-            ShowAssetHelp
         _ ->
             if String.contains "Control" key then
                 case String.replace "Control+" "" key of
-                    "d" -> UpdateAssetSearch { search | pagination = halfPageDown search.pagination }
-                    "u" -> UpdateAssetSearch { search | pagination = halfPageUp search.pagination }
-                    "f" -> UpdateAssetSearch { search | pagination = pageDown search.pagination }
-                    "b" -> UpdateAssetSearch { search | pagination = pageUp search.pagination }
-                    _ -> NoAssetAction
+                    "d" ->
+                        UpdateAssetSearch { search | pagination = halfPageDown search.pagination }
+                    "u" ->
+                        UpdateAssetSearch { search | pagination = halfPageUp search.pagination }
+                    "f" ->
+                        UpdateAssetSearch { search | pagination = pageDown search.pagination }
+                    "b" ->
+                        UpdateAssetSearch { search | pagination = pageUp search.pagination }
+                    _ ->
+                        NoAssetAction
             else
                 NoAssetAction
 
+
 -- Helper function to apply selected album
+
 applySelectedAlbum : InputMode -> AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AssetAction
 applySelectedAlbum inputMode asset search albumKeybindings knownAlbums =
     let
@@ -192,15 +241,20 @@ applySelectedAlbum inputMode asset search albumKeybindings knownAlbums =
             else
                 NoAssetAction
 
+
 -- Handle SearchAssetInput
+
 handleSearchAssetInput : String -> String -> AssetAction
 handleSearchAssetInput key searchString =
     if isSupportedSearchLetter key then
-        NoAssetAction  -- Will be handled by caller to update search string
+        NoAssetAction
+        -- Will be handled by caller to update search string
     else
         case key of
             "Backspace" ->
-                NoAssetAction  -- Will be handled by caller to update search string
+                NoAssetAction
+
+            -- Will be handled by caller to update search string
             "Escape" ->
                 ChangeToSearchView searchString
             "Enter" ->
@@ -208,7 +262,9 @@ handleSearchAssetInput key searchString =
             _ ->
                 NoAssetAction
 
--- Handle SelectAlbumInput  
+
+-- Handle SelectAlbumInput
+
 handleSelectAlbumInput : String -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AssetAction
 handleSelectAlbumInput key searchResults albumKeybindings knownAlbums =
     if isSupportedSearchLetter key then
@@ -217,13 +273,16 @@ handleSelectAlbumInput key searchResults albumKeybindings knownAlbums =
     else
         case key of
             "Backspace" ->
-                NoAssetAction  -- Will be handled by caller
+                NoAssetAction
+
+            -- Will be handled by caller
             "Escape" ->
                 ChangeAssetToMainMenu
             "Enter" ->
                 -- Select album if matching
                 let
-                    maybeMatch = getTopMatchFromSearch searchResults albumKeybindings knownAlbums
+                    maybeMatch =
+                        getTopMatchFromSearch searchResults albumKeybindings knownAlbums
                 in
                 case maybeMatch of
                     Just album ->
@@ -241,41 +300,61 @@ handleSelectAlbumInput key searchResults albumKeybindings knownAlbums =
             _ ->
                 if String.contains "Control" key then
                     case String.replace "Control+" "" key of
-                        "d" -> UpdateAssetSearch { searchResults | pagination = halfPageDown searchResults.pagination }
-                        "u" -> UpdateAssetSearch { searchResults | pagination = halfPageUp searchResults.pagination }
-                        "f" -> UpdateAssetSearch { searchResults | pagination = pageDown searchResults.pagination }
-                        "b" -> UpdateAssetSearch { searchResults | pagination = pageUp searchResults.pagination }
-                        _ -> NoAssetAction
+                        "d" ->
+                            UpdateAssetSearch { searchResults | pagination = halfPageDown searchResults.pagination }
+                        "u" ->
+                            UpdateAssetSearch { searchResults | pagination = halfPageUp searchResults.pagination }
+                        "f" ->
+                            UpdateAssetSearch { searchResults | pagination = pageDown searchResults.pagination }
+                        "b" ->
+                            UpdateAssetSearch { searchResults | pagination = pageUp searchResults.pagination }
+                        _ ->
+                            NoAssetAction
                 else
                     NoAssetAction
 
+
 -- Handle CreateAlbumConfirmation
+
 handleCreateAlbumConfirmationInput : String -> AssetAction
 handleCreateAlbumConfirmationInput key =
     case key of
         "Enter" ->
-            NoAssetAction  -- Will trigger album creation in caller
+            NoAssetAction
+
+        -- Will trigger album creation in caller
         "Escape" ->
-            NoAssetAction  -- Will return to EditAsset mode in caller
+            NoAssetAction
+
+        -- Will return to EditAsset mode in caller
         _ ->
             NoAssetAction
 
+
 -- Handle ShowEditAssetHelp
-handleShowEditAssetHelpInput : String -> AssetAction 
+
+handleShowEditAssetHelpInput : String -> AssetAction
 handleShowEditAssetHelpInput key =
     case key of
         "Escape" ->
-            NoAssetAction  -- Will return to EditAsset mode in caller
+            NoAssetAction
+
+        -- Will return to EditAsset mode in caller
         "?" ->
-            NoAssetAction  -- Will return to EditAsset mode in caller
+            NoAssetAction
+
+        -- Will return to EditAsset mode in caller
         _ ->
             NoAssetAction
 
+
 -- Helper functions that need to be implemented or imported
+
 getTopMatchFromSearch : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Maybe ImmichAlbum
 getTopMatchFromSearch search albumKeybindings albums =
     let
-        matchesDict = ViewAlbums.filterToOnlySearchedForAlbums search albumKeybindings albums
+        matchesDict =
+            ViewAlbums.filterToOnlySearchedForAlbums search albumKeybindings albums
     in
     if Dict.isEmpty matchesDict then
         Nothing
@@ -294,7 +373,10 @@ moveSelectionUpForSearch search albumKeybindings albums =
 moveSelectionDownForSearch : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AlbumSearch
 moveSelectionDownForSearch search albumKeybindings albums =
     let
-        filteredCount = List.length (ViewAlbums.getFilteredAlbumsList search albumKeybindings albums)
-        maxIndex = max 0 (filteredCount - 1)
+        filteredCount =
+            List.length (ViewAlbums.getFilteredAlbumsList search albumKeybindings albums)
+        maxIndex =
+            max 0 (filteredCount - 1)
     in
     { search | selectedIndex = min maxIndex (search.selectedIndex + 1) }
+
