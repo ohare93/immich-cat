@@ -265,6 +265,7 @@ suite =
                                 , ( "originalMimeType", Encode.string asset.mimeType )
                                 , ( "isFavorite", Encode.bool asset.isFavourite )
                                 , ( "isArchived", Encode.bool asset.isArchived )
+                                , ( "fileCreatedAt", Encode.string "2020-01-01" )
                                 ]
                         decoded = Decode.decodeValue imageDecoder encoded
                     in
