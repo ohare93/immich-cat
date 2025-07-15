@@ -7,6 +7,7 @@ module UpdateMenus exposing
     , MenuAction(..)
     , UserMode(..)
     , AssetSource(..)
+    , MenuMsg(..)
     )
 
 import Dict exposing (Dict)
@@ -35,6 +36,14 @@ type AssetSource
     = ImageSearch ImageSearchConfig
     | TextSearch String
     | FilteredAlbum ImmichAlbum AlbumConfig
+
+-- Message type for menu-related actions
+type MenuMsg
+    = MainMenuKeyPress String
+    | TimelineKeyPress String TimelineConfig
+    | SearchKeyPress String SearchConfig
+    | AlbumViewKeyPress String ImmichAlbum AlbumConfig
+    | SettingsKeyPress String
 
 -- Main Menu keyboard handling
 handleMainMenuInput : String -> Dict ImmichAlbumId ImmichAlbum -> Int -> MenuAction

@@ -5,6 +5,7 @@ module UpdateAsset exposing
     , handleSearchAssetInput
     , handleSelectAlbumInput
     , handleShowEditAssetHelpInput
+    , AssetMsg(..)
     )
 
 import Dict exposing (Dict)
@@ -33,6 +34,14 @@ type AssetAction
     | LoadAlbum ImmichAlbum
     | SwitchToAssetIndex Int
     | NoAssetAction
+
+-- Message type for asset-related actions
+type AssetMsg
+    = EditAssetKeyPress String InputMode AssetWithActions AlbumSearch
+    | SearchAssetKeyPress String String
+    | SelectAlbumKeyPress String AlbumSearch
+    | CreateAlbumConfirmationKeyPress String InputMode AssetWithActions AlbumSearch String
+    | ShowEditAssetHelpKeyPress String InputMode AssetWithActions AlbumSearch
 
 
 -- Handle EditAsset keyboard input

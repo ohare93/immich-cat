@@ -17,9 +17,9 @@ import Json.Decode as Decode
 import KeybindingGenerator exposing (generateAlbumKeybindings)
 import Menus exposing (AlbumConfig, SearchConfig, SearchContext(..), TimelineConfig, defaultAlbumConfig, defaultSearchConfig, defaultTimelineConfig, filterByMediaType, filterByStatus, toggleCategorisation, toggleMediaType, toggleOrder, toggleSearchContext, toggleStatus, viewAlbumView, viewInstructions, viewMainMenu, viewMainMenuOption, viewSearchView, viewSettings, viewTimelineView)
 import Regex
-import UpdateAlbums exposing (AlbumAction(..), handleAlbumBrowseInput)
-import UpdateAsset exposing (AssetAction(..), handleCreateAlbumConfirmationInput, handleEditAssetInput, handleSearchAssetInput, handleSelectAlbumInput, handleShowEditAssetHelpInput)
-import UpdateMenus exposing (MenuAction(..), handleAlbumViewInput, handleMainMenuInput, handleSearchViewInput, handleSettingsInput, handleTimelineViewInput)
+import UpdateAlbums exposing (AlbumAction(..), AlbumMsg(..), handleAlbumBrowseInput)
+import UpdateAsset exposing (AssetAction(..), AssetMsg(..), handleCreateAlbumConfirmationInput, handleEditAssetInput, handleSearchAssetInput, handleSelectAlbumInput, handleShowEditAssetHelpInput)
+import UpdateMenus exposing (MenuAction(..), MenuMsg(..), handleAlbumViewInput, handleMainMenuInput, handleSearchViewInput, handleSettingsInput, handleTimelineViewInput)
 import ViewAlbums exposing (AlbumPagination, AlbumSearch, AssetWithActions, InputMode(..), PropertyChange(..), calculateItemsPerPage, calculateTotalPages, filterToOnlySearchedForAlbums, flipPropertyChange, getAlbumByExactKeybinding, getAlbumSearch, getAlbumSearchWithHeight, getAlbumSearchWithIndex, getAssetWithActions, getFilteredAlbumsList, getFilteredAlbumsListForAsset, getSelectedAlbum, getSelectedAlbumForAsset, halfPageDown, halfPageUp, isAddingToAlbum, isCurrentlyInAlbum, moveSelectionDown, moveSelectionDownForAsset, moveSelectionUp, moveSelectionUpForAsset, pageDown, pageUp, shittyFuzzyAlgorithmTest, toggleAssetAlbum, updateAlbumSearchString, updatePagination, usefulColours, viewSidebar, viewSidebarAlbums, viewSidebarAlbumsForCurrentAsset, viewWithSidebar)
 import ViewAsset exposing (viewAsset, viewCreateAlbumConfirmation, viewEditAsset, viewEditAssetHelp, viewImage, viewKeybinding, viewLoadingAssets, viewVideo)
 
@@ -52,6 +52,10 @@ type Msg
     | LoadAlbumAssets ImmichAlbum
     | SearchInputFocused
     | SearchInputBlurred
+    -- Module-specific messages
+    | MenuMsg MenuMsg
+    | AlbumMsg AlbumMsg
+    | AssetMsg AssetMsg
 
 type alias Flags =
     { test : Int
@@ -743,7 +747,31 @@ update msg model =
                 _ ->
                     ( model, Cmd.none )
         KeyPress key ->
-            handleUserInput model key
+            case model.userMode of
+                MainMenu ->
+                    update (MenuMsg (MainMenuKeyPress key)) model
+                TimelineView config ->
+                    update (MenuMsg (TimelineKeyPress key config)) model
+                SearchView config ->
+                    update (MenuMsg (SearchKeyPress key config)) model
+                AlbumBrowse search ->
+                    update (AlbumMsg (AlbumBrowseKeyPress key search)) model
+                AlbumView album config ->
+                    update (MenuMsg (AlbumViewKeyPress key album config)) model
+                Settings ->
+                    update (MenuMsg (SettingsKeyPress key)) model
+                SearchAssetInput searchString ->
+                    update (AssetMsg (SearchAssetKeyPress key searchString)) model
+                SelectAlbumInput searchResults ->
+                    update (AssetMsg (SelectAlbumKeyPress key searchResults)) model
+                EditAsset inputMode asset search ->
+                    update (AssetMsg (EditAssetKeyPress key inputMode asset search)) model
+                CreateAlbumConfirmation inputMode asset search albumName ->
+                    update (AssetMsg (CreateAlbumConfirmationKeyPress key inputMode asset search albumName)) model
+                ShowEditAssetHelp inputMode asset search ->
+                    update (AssetMsg (ShowEditAssetHelpKeyPress key inputMode asset search)) model
+                LoadingAssets _ ->
+                    ( model, Cmd.none )
         WindowResize width height ->
             let
                 newModel =
@@ -865,6 +893,103 @@ update msg model =
                     ( { model | userMode = SearchView { config | inputFocused = False } }, Cmd.none )
                 _ ->
                     ( model, Cmd.none )
+        
+        -- Module-specific message handlers
+        MenuMsg menuMsg ->
+            case menuMsg of
+                MainMenuKeyPress key ->
+                    applyMenuAction (handleMainMenuInput key model.knownAlbums model.screenHeight) model
+                TimelineKeyPress key config ->
+                    applyMenuAction (handleTimelineViewInput key config) model
+                SearchKeyPress key config ->
+                    applyMenuAction (handleSearchViewInput key config) model
+                AlbumViewKeyPress key album config ->
+                    applyMenuAction (handleAlbumViewInput key album config model.knownAlbums model.screenHeight) model
+                SettingsKeyPress key ->
+                    applyMenuAction (handleSettingsInput key) model
+        
+        AlbumMsg albumMsg ->
+            case albumMsg of
+                AlbumBrowseKeyPress key search ->
+                    applyAlbumAction (handleAlbumBrowseInput key search model.albumKeybindings model.knownAlbums) model
+        
+        AssetMsg assetMsg ->
+            case assetMsg of
+                EditAssetKeyPress key inputMode asset search ->
+                    applyAssetAction (handleEditAssetInput key inputMode asset search model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets) model
+                SearchAssetKeyPress key searchString ->
+                    let
+                        assetAction = handleSearchAssetInput key searchString
+                    in
+                    case assetAction of
+                        NoAssetAction ->
+                            if isSupportedSearchLetter key then
+                                let
+                                    newSearchString = searchString ++ key
+                                in
+                                ( { model | userMode = SearchAssetInput newSearchString }, Cmd.none )
+                            else if key == "Backspace" then
+                                let
+                                    newSearchString = String.slice 0 (String.length searchString - 1) searchString
+                                in
+                                ( { model | userMode = SearchAssetInput newSearchString }, Cmd.none )
+                            else
+                                ( model, Cmd.none )
+                        _ ->
+                            applyAssetAction assetAction model
+                SelectAlbumKeyPress key searchResults ->
+                    let
+                        assetAction = handleSelectAlbumInput key searchResults model.albumKeybindings model.knownAlbums
+                    in
+                    case assetAction of
+                        NoAssetAction ->
+                            if isSupportedSearchLetter key then
+                                let
+                                    newPartialKeybinding = searchResults.partialKeybinding ++ key
+                                    updatedSearch = { searchResults | partialKeybinding = newPartialKeybinding, pagination = resetPagination searchResults.pagination }
+                                    maybeExactMatch = getAlbumByExactKeybinding newPartialKeybinding model.albumKeybindings model.knownAlbums
+                                in
+                                case maybeExactMatch of
+                                    Just album ->
+                                        ( createLoadStateForCurrentAssetSource (Album album) model, Immich.getAlbum model.immichApiPaths album.id |> Cmd.map ImmichMsg )
+                                    Nothing ->
+                                        ( { model | userMode = SelectAlbumInput updatedSearch }, Cmd.none )
+                            else if key == "Backspace" then
+                                let
+                                    newPartialKeybinding = String.slice 0 (String.length searchResults.partialKeybinding - 1) searchResults.partialKeybinding
+                                    updatedSearch = { searchResults | partialKeybinding = newPartialKeybinding, pagination = resetPagination searchResults.pagination }
+                                in
+                                ( { model | userMode = SelectAlbumInput updatedSearch }, Cmd.none )
+                            else
+                                ( model, Cmd.none )
+                        _ ->
+                            applyAssetAction assetAction model
+                CreateAlbumConfirmationKeyPress key inputMode asset search albumName ->
+                    let
+                        assetAction = handleCreateAlbumConfirmationInput key
+                    in
+                    case assetAction of
+                        NoAssetAction ->
+                            if key == "Enter" then
+                                ( { model | userMode = LoadingAssets { fetchedAssetList = Nothing, fetchedAssetMembership = Nothing } }, Immich.createAlbum model.immichApiPaths albumName |> Cmd.map ImmichMsg )
+                            else if key == "Escape" then
+                                ( { model | userMode = EditAsset inputMode asset search }, Cmd.none )
+                            else
+                                ( model, Cmd.none )
+                        _ ->
+                            applyAssetAction assetAction model
+                ShowEditAssetHelpKeyPress key inputMode asset search ->
+                    let
+                        assetAction = handleShowEditAssetHelpInput key
+                    in
+                    case assetAction of
+                        NoAssetAction ->
+                            if key == "Escape" || key == "?" then
+                                ( { model | userMode = EditAsset inputMode asset search }, Cmd.none )
+                            else
+                                ( model, Cmd.none )
+                        _ ->
+                            applyAssetAction assetAction model
         ImmichMsg imsg ->
             let
                 newModel =
@@ -1339,111 +1464,6 @@ applyAssetAction action model =
             ( model, Cmd.none )
 
 
-handleUserInput : Model -> String -> ( Model, Cmd Msg )
-handleUserInput model key =
-    case model.userMode of
-        MainMenu ->
-            applyMenuAction (handleMainMenuInput key model.knownAlbums model.screenHeight) model
-        TimelineView config ->
-            applyMenuAction (handleTimelineViewInput key config) model
-        SearchView config ->
-            applyMenuAction (handleSearchViewInput key config) model
-        AlbumBrowse search ->
-            applyAlbumAction (handleAlbumBrowseInput key search model.albumKeybindings model.knownAlbums) model
-        AlbumView album config ->
-            applyMenuAction (handleAlbumViewInput key album config model.knownAlbums model.screenHeight) model
-        Settings ->
-            applyMenuAction (handleSettingsInput key) model
-        SearchAssetInput searchString ->
-            let
-                assetAction =
-                    handleSearchAssetInput key searchString
-            in
-            case assetAction of
-                NoAssetAction ->
-                    if isSupportedSearchLetter key then
-                        let
-                            newSearchString =
-                                searchString ++ key
-                        in
-                        ( { model | userMode = SearchAssetInput newSearchString }, Cmd.none )
-                    else if key == "Backspace" then
-                        let
-                            newSearchString =
-                                String.slice 0 (String.length searchString - 1) searchString
-                        in
-                        ( { model | userMode = SearchAssetInput newSearchString }, Cmd.none )
-                    else
-                        ( model, Cmd.none )
-                _ ->
-                    applyAssetAction assetAction model
-        SelectAlbumInput searchResults ->
-            let
-                assetAction =
-                    handleSelectAlbumInput key searchResults model.albumKeybindings model.knownAlbums
-            in
-            case assetAction of
-                NoAssetAction ->
-                    if isSupportedSearchLetter key then
-                        let
-                            newPartialKeybinding =
-                                searchResults.partialKeybinding ++ key
-                            updatedSearch =
-                                { searchResults | partialKeybinding = newPartialKeybinding, pagination = resetPagination searchResults.pagination }
-                            maybeExactMatch =
-                                getAlbumByExactKeybinding newPartialKeybinding model.albumKeybindings model.knownAlbums
-                        in
-                        case maybeExactMatch of
-                            Just album ->
-                                ( createLoadStateForCurrentAssetSource (Album album) model, Immich.getAlbum model.immichApiPaths album.id |> Cmd.map ImmichMsg )
-                            Nothing ->
-                                ( { model | userMode = SelectAlbumInput updatedSearch }, Cmd.none )
-                    else if key == "Backspace" then
-                        let
-                            newPartialKeybinding =
-                                String.slice 0 (String.length searchResults.partialKeybinding - 1) searchResults.partialKeybinding
-                            updatedSearch =
-                                { searchResults | partialKeybinding = newPartialKeybinding, pagination = resetPagination searchResults.pagination }
-                        in
-                        ( { model | userMode = SelectAlbumInput updatedSearch }, Cmd.none )
-                    else
-                        ( model, Cmd.none )
-                _ ->
-                    applyAssetAction assetAction model
-        LoadingAssets _ ->
-            ( model, Cmd.none )
-        EditAsset inputMode asset search ->
-            applyAssetAction (handleEditAssetInput key inputMode asset search model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets) model
-
-        CreateAlbumConfirmation inputMode asset search albumName ->
-            let
-                assetAction =
-                    handleCreateAlbumConfirmationInput key
-            in
-            case assetAction of
-                NoAssetAction ->
-                    if key == "Enter" then
-                        ( { model | userMode = LoadingAssets { fetchedAssetList = Nothing, fetchedAssetMembership = Nothing } }, Immich.createAlbum model.immichApiPaths albumName |> Cmd.map ImmichMsg )
-                    else if key == "Escape" then
-                        ( { model | userMode = EditAsset inputMode asset search }, Cmd.none )
-                    else
-                        ( model, Cmd.none )
-                _ ->
-                    applyAssetAction assetAction model
-
-        ShowEditAssetHelp inputMode asset search ->
-            let
-                assetAction =
-                    handleShowEditAssetHelpInput key
-            in
-            case assetAction of
-                NoAssetAction ->
-                    if key == "Escape" || key == "?" then
-                        ( { model | userMode = EditAsset inputMode asset search }, Cmd.none )
-                    else
-                        ( model, Cmd.none )
-                _ ->
-                    applyAssetAction assetAction model
 
 
 

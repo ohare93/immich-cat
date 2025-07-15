@@ -1,6 +1,7 @@
 module UpdateAlbums exposing
     ( handleAlbumBrowseInput
     , AlbumAction(..)
+    , AlbumMsg(..)
     )
 
 import Dict exposing (Dict)
@@ -15,6 +16,10 @@ type AlbumAction
     | SelectAlbumForView ImmichAlbum
     | UpdateAlbumSearch AlbumSearch
     | NoAlbumAction
+
+-- Message type for album-related actions
+type AlbumMsg
+    = AlbumBrowseKeyPress String AlbumSearch
 
 -- Function to get top search match  
 getTopMatchToSearch : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Maybe ImmichAlbum
