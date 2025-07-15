@@ -32,9 +32,11 @@ module Menus exposing
     , filterByStatus
     )
 
+import Date exposing (Date)
 import Dict exposing (Dict)
 import Element exposing (Element, centerX, centerY, column, el, fill, fillPortion, height, paddingXY, px, row, text, width)
 import Element.Background as Background
+import Element.Border as Border
 import Element.Font as Font
 import Element.Input as Input
 import Element.Input exposing (button)
@@ -68,6 +70,8 @@ type alias AlbumConfig =
     , order : ImageOrder
     , status : StatusFilter
     }
+
+
 
 
 -- Main menu view
@@ -127,7 +131,7 @@ viewInstructions =
         ]
 
 -- Timeline view
-viewTimelineView : { a | albumKeybindings : Dict ImmichAssetId String, currentAssets : List ImmichAssetId, imagesLoadState : ImmichLoadState, knownAlbums : Dict ImmichAssetId ImmichAlbum } -> TimelineConfig -> msg -> msg -> Element msg
+viewTimelineView : { a | albumKeybindings : Dict ImmichAssetId String, currentAssets : List ImmichAssetId, imagesLoadState : ImmichLoadState, knownAlbums : Dict ImmichAssetId ImmichAlbum, knownAssets : Dict ImmichAssetId ImmichAsset, imageIndex : Int } -> TimelineConfig -> msg -> msg -> Element msg
 viewTimelineView model config loadDataMsg loadTimelineAssetsMsg =
     row [ width fill, height fill ]
         [ column [ width (px 300), height fill, paddingXY 15 15, Element.spacingXY 0 15 ]
@@ -142,7 +146,7 @@ viewTimelineView model config loadDataMsg loadTimelineAssetsMsg =
                 ]
             ]
         , column [ width fill, height fill ]
-            [ text "Timeline assets will appear here" -- TODO: implement asset display
+            [ el [ paddingXY 10 10 ] (text "Timeline assets will appear here") -- TODO: implement asset display
             ]
         ]
 

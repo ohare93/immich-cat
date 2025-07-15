@@ -58,7 +58,7 @@ type Msg
     | AssetMsg AssetMsg
 
 type alias Flags =
-    { test : Int
+    { currentDateMillis : Int
     , immichApiKey : String
     , immichApiUrl : String
     }
@@ -67,7 +67,7 @@ type alias Model =
     { key : String
     , currentAssetsSource : AssetSource
     , userMode : UserMode
-    , test : Int
+    , currentDateMillis : Int
     , imageIndex : ImageIndex
     , imageSearchConfig : ImageSearchConfig
     -- Immich fields
@@ -121,7 +121,7 @@ init flags =
     ( { key = ""
       , userMode = MainMenu MainMenuHome
       , currentAssetsSource = NoAssets
-      , test = flags.test
+      , currentDateMillis = flags.currentDateMillis
       , imageIndex = 0
       , imageSearchConfig = { order = Desc, categorisation = Uncategorised, mediaType = AllMedia, status = AllStatuses }
       -- Immich fields
@@ -390,10 +390,9 @@ viewAssetState model assetState =
                 )
         EditAsset inputMode asset search ->
             let
-                viewTitle =
-                    createDetailedViewTitle model.currentAssetsSource
+                viewTitle = createDetailedViewTitle model.currentAssetsSource
             in
-            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) SelectAlbum) (ViewAsset.viewEditAsset model.immichApiPaths model.apiKey model.imageIndex (List.length model.currentAssets) viewTitle asset model.currentAssets model.knownAssets)
+            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) SelectAlbum) (ViewAsset.viewEditAsset model.immichApiPaths model.apiKey model.imageIndex (List.length model.currentAssets) viewTitle asset model.currentAssets model.knownAssets model.currentDateMillis)
         CreateAlbumConfirmation _ asset search albumName ->
             ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums Nothing SelectAlbum) (ViewAsset.viewCreateAlbumConfirmation albumName)
         ShowEditAssetHelp inputMode asset search ->

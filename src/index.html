@@ -104,47 +104,60 @@
           this.assetUrl = this.getAttribute("asset-url");
           this.apiKey = this.getAttribute("api-key");
           this.preloadList = this.getAttribute("preload-urls");
-          
+
           // Show initial loading state
           this.render();
         }
 
         async attributeChangedCallback(name, oldValue, newValue) {
-          if (name === 'api-key') {
+          if (name === "api-key") {
             this.apiKey = newValue;
-          } else if (name === 'asset-url') {
+          } else if (name === "asset-url") {
             this.assetUrl = newValue;
             // Clear existing blob when URL changes so new asset can load
             this.assetBlob = null;
-          } else if (name === 'preload-urls') {
+          } else if (name === "preload-urls") {
             this.preloadList = newValue;
           }
-          
+
           // Start loading when we have both asset URL and API key
-          if (this.assetUrl && this.apiKey && this.apiKey !== 'undefined' && !this.assetBlob) {
+          if (
+            this.assetUrl &&
+            this.apiKey &&
+            this.apiKey !== "undefined" &&
+            !this.assetBlob
+          ) {
             this.render(); // Show loading state
-            
+
             try {
-              this.assetBlob = await getProtectedAssetUrl(this.assetUrl, this.apiKey);
-              
+              this.assetBlob = await getProtectedAssetUrl(
+                this.assetUrl,
+                this.apiKey,
+              );
+
               // Preload adjacent assets using config
               if (this.preloadList) {
                 const urls = this.preloadList.split(",");
-                const urlsToPreload = this.config.preloadCount ? urls.slice(0, this.config.preloadCount) : urls;
-                
+                const urlsToPreload = this.config.preloadCount
+                  ? urls.slice(0, this.config.preloadCount)
+                  : urls;
+
                 urlsToPreload.forEach((url) => {
                   if (url.trim()) {
                     if (this.config.preloadDelay) {
-                      setTimeout(() => preloadAsset(url.trim(), this.apiKey), this.config.preloadDelay);
+                      setTimeout(
+                        () => preloadAsset(url.trim(), this.apiKey),
+                        this.config.preloadDelay,
+                      );
                     } else {
                       preloadAsset(url.trim(), this.apiKey);
                     }
                   }
                 });
               }
-              
+
               this.render(); // Show actual asset
-              
+
               // Execute post-render callback if provided
               if (this.config.postRender) {
                 this.config.postRender(this);
@@ -178,16 +191,17 @@
         class extends MediaElementBase {
           constructor() {
             super({
-              mediaType: 'image',
+              mediaType: "image",
               preloadCount: null, // Preload all
               preloadDelay: null, // Immediate
-              renderElement: (blobUrl) => `<img src="${blobUrl}" alt="Asset" />`,
+              renderElement: (blobUrl) =>
+                `<img src="${blobUrl}" alt="Asset" />`,
               renderLoading: () => `
                 <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #666;">
                   Loading...
                 </div>
               `,
-              postRender: null
+              postRender: null,
             });
           }
         },
@@ -198,10 +212,11 @@
         class extends MediaElementBase {
           constructor() {
             super({
-              mediaType: 'video',
+              mediaType: "video",
               preloadCount: 2, // Only preload 2 adjacent videos
               preloadDelay: 1000, // Delay video preloading by 1 second
-              renderElement: (blobUrl) => `<video src="${blobUrl}" controls="controls" autoplay loop style="max-width: 100%; max-height: 100%;" />`,
+              renderElement: (blobUrl) =>
+                `<video src="${blobUrl}" controls="controls" autoplay loop style="max-width: 100%; max-height: 100%;" />`,
               renderLoading: () => `
                 <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #666;">
                   Loading video...
@@ -210,12 +225,12 @@
               postRender: (element) => {
                 // Force autoplay after render
                 setTimeout(() => {
-                  const video = element.querySelector('video');
+                  const video = element.querySelector("video");
                   if (video) {
                     video.play().catch(console.error);
                   }
                 }, 100);
-              }
+              },
             });
           }
         },
@@ -231,15 +246,15 @@
       var app = Elm.Main.init({
         node: document.getElementById("myapp"),
         flags: {
-          test: Date.now(),
+          currentDateMillis: Date.now(),
           immichApiKey: getEnvVar("IMMICH_API_KEY", ""),
           immichApiUrl: getEnvVar("IMMICH_URL", "https://localhost"),
         },
       });
 
       // Port subscriptions
-      app.ports.openUrl.subscribe(function(url) {
-        window.open(url, '_blank');
+      app.ports.openUrl.subscribe(function (url) {
+        window.open(url, "_blank");
       });
     </script>
   </body>
