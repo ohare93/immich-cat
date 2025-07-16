@@ -16,6 +16,7 @@ import Dict exposing (Dict)
 import Helpers exposing (isKeybindingLetter, isSupportedSearchLetter, loopImageIndexOverArray)
 import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId)
 import ViewAlbums exposing (AlbumSearch, AssetWithActions, InputMode(..), PropertyChange(..), filterToOnlySearchedForAlbums, flipPropertyChange, getAlbumByExactKeybinding, getAlbumSearchWithHeight, getFilteredAlbumsList, getSelectedAlbumForAsset, halfPageDown, halfPageUp, isAddingToAlbum, isCurrentlyInAlbum, moveSelectionDownForAsset, moveSelectionUpForAsset, pageDown, pageUp, resetPagination, toggleAssetAlbum, updateAlbumSearchString)
+import ViewGrid exposing (GridState, GridMsg)
 
 -- Define the asset state type that encapsulates all asset viewing/editing modes
 type AssetState
@@ -24,9 +25,12 @@ type AssetState
     | ShowEditAssetHelp InputMode AssetWithActions AlbumSearch
     | SearchAssetInput String
     | SelectAlbumInput AlbumSearch
+    | GridView GridState
 
 -- Simplified message type for asset
-type AssetMsg = AssetKeyPress String
+type AssetMsg 
+    = AssetKeyPress String
+    | AssetGridMsg GridMsg
 
 -- Result type that communicates what the asset module wants to do
 type AssetResult msg
@@ -42,6 +46,9 @@ type AssetResult msg
     | AssetOpenInImmich
     | AssetCreateAlbum String
     | AssetToggleTimeView
+    | AssetSwitchToGridView
+    | AssetSwitchToDetailView ImmichAssetId
+    | AssetGridUpdate GridState
 
 
 -- Action type for asset editing
@@ -64,6 +71,9 @@ type AssetAction
     | LoadAlbum ImmichAlbum
     | SwitchToAssetIndex Int
     | ToggleTimeView
+    | SwitchToGridView
+    | SwitchToDetailView ImmichAssetId
+    | UpdateGridState GridState
     | NoAssetAction
 
 -- Legacy message type for asset-related actions
@@ -91,6 +101,7 @@ handleEditAssetInput key inputMode asset search albumKeybindings knownAlbums scr
             "D" -> ToggleArchived
             "K" -> OpenInImmich
             "T" -> ToggleTimeView
+            "G" -> SwitchToGridView
             "?" -> ShowAssetHelp
             _ ->
                 if isKeybindingLetter key then
@@ -428,8 +439,8 @@ moveSelectionDownForSearch search albumKeybindings albums =
 
 -- Main update function that handles all asset logic internally
 -- This function now takes an AssetState and returns an AssetResult
-updateAsset : AssetMsg -> AssetState -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Int -> List ImmichAssetId -> AssetResult msg
-updateAsset assetMsg assetState albumKeybindings knownAlbums screenHeight currentAssets =
+updateAsset : AssetMsg -> AssetState -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Int -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> AssetResult msg
+updateAsset assetMsg assetState albumKeybindings knownAlbums screenHeight currentAssets knownAssets =
     case assetMsg of
         AssetKeyPress key ->
             case assetState of
@@ -443,6 +454,15 @@ updateAsset assetMsg assetState albumKeybindings knownAlbums screenHeight curren
                     handleCreateAlbumConfirmationKeyPress key inputMode asset search albumName
                 ShowEditAssetHelp inputMode asset search ->
                     handleShowEditAssetHelpKeyPress key inputMode asset search
+                GridView gridState ->
+                    handleGridViewKeyPress key gridState currentAssets knownAssets
+        
+        AssetGridMsg gridMsg ->
+            case assetState of
+                GridView gridState ->
+                    handleGridViewMessage gridMsg gridState currentAssets knownAssets
+                _ ->
+                    StayInAssets assetState
 
 -- Helper functions that convert asset actions to asset results
 handleEditAssetKeyPress : String -> InputMode -> AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Int -> List ImmichAssetId -> AssetResult msg
@@ -580,8 +600,51 @@ convertAssetActionToResult action inputMode asset search currentAssets =
             AssetSwitchToAssetIndex newIndex
         ToggleTimeView ->
             AssetToggleTimeView
+        SwitchToGridView ->
+            AssetSwitchToGridView
+        SwitchToDetailView assetId ->
+            AssetSwitchToDetailView assetId
+        UpdateGridState gridState ->
+            AssetGridUpdate gridState
         NoAssetAction ->
             StayInAssets (EditAsset inputMode asset search)
+
+-- Grid view handler functions
+handleGridViewKeyPress : String -> GridState -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> AssetResult msg
+handleGridViewKeyPress key gridState currentAssets knownAssets =
+    let
+        assets = List.filterMap (\id -> Dict.get id knownAssets) currentAssets
+    in
+    case key of
+        "Escape" ->
+            GoToMainMenu
+        "Enter" ->
+            case ViewGrid.getSelectedAsset gridState of
+                Just selectedAssetId ->
+                    AssetSwitchToDetailView selectedAssetId
+                Nothing ->
+                    StayInAssets (GridView gridState)
+        "G" ->
+            -- Toggle back to detail view (will be handled by parent)
+            GoToMainMenu
+        _ ->
+            let
+                updatedGridState = ViewGrid.updateGridState (ViewGrid.GridKeyPressed key) gridState assets
+            in
+            StayInAssets (GridView updatedGridState)
+
+handleGridViewMessage : GridMsg -> GridState -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> AssetResult msg
+handleGridViewMessage gridMsg gridState currentAssets knownAssets =
+    let
+        assets = List.filterMap (\id -> Dict.get id knownAssets) currentAssets
+        updatedGridState = ViewGrid.updateGridState gridMsg gridState assets
+    in
+    case gridMsg of
+        ViewGrid.GridItemClicked assetId ->
+            -- Single click switches to detail view
+            AssetSwitchToDetailView assetId
+        _ ->
+            StayInAssets (GridView updatedGridState)
 
 -- Legacy update function that processes LegacyAssetMsg and returns an action (for backward compatibility)
 -- This consolidates the asset input handling logic from Main.elm

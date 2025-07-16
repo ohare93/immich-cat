@@ -8,6 +8,7 @@ module ViewAsset exposing
     , viewKeybinding
     , viewLoadingAssets
     , viewVideo
+    , viewGridAssets
     )
 
 import Date exposing (Date)
@@ -20,6 +21,7 @@ import Html.Attributes
 import Immich exposing (ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..))
 import Time
 import ViewAlbums exposing (AssetWithActions, InputMode(..), PropertyChange(..), usefulColours)
+import ViewGrid exposing (GridState, GridMsg)
 
 type alias ImageIndex =
     Int
@@ -311,6 +313,7 @@ viewEditAssetHelp inputMode =
             , viewKeybinding "K" "Open in Immich (new tab)"
             , viewKeybinding "I" "Enter album search mode"
             , viewKeybinding "T" "Toggle time view (Absolute/Relative)"
+            , viewKeybinding "G" "Switch to grid view"
             ]
         , if inputMode == InsertMode then
             column [ Element.spacingXY 0 8 ]
@@ -336,4 +339,13 @@ viewKeybinding key description =
         [ el [ width <| Element.px 120, Font.family [ Font.monospace ], Background.color <| usefulColours "grey", paddingXY 8 4 ] <| text key
         , el [ width fill ] <| text description
         ]
+
+-- Grid view function
+
+viewGridAssets : ImmichApiPaths -> String -> GridState -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> (GridMsg -> msg) -> Element msg
+viewGridAssets apiPaths apiKey gridState currentAssets knownAssets toMsg =
+    let
+        assets = List.filterMap (\id -> Dict.get id knownAssets) currentAssets
+    in
+    ViewGrid.viewGrid apiPaths apiKey gridState assets toMsg
 

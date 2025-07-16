@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <title>Main</title>
     <script src="../dist/main.js"></script>
+    <script src="../node_modules/thumbhash/thumbhash.js"></script>
     <style>
       .center {
         text-align: center;
@@ -234,6 +235,161 @@
             });
           }
         },
+      );
+
+      // ThumbHash-to-Image Web Component
+      customElements.define(
+        "thumbhash-image",
+        class extends HTMLElement {
+          constructor() {
+            super();
+            this.thumbhashString = null;
+            this.assetUrl = null;
+            this.apiKey = null;
+            this.canvas = null;
+            this.img = null;
+            this.hasLoadedFullImage = false;
+          }
+
+          connectedCallback() {
+            this.style.display = "block";
+            this.style.width = "100%";
+            this.style.height = "100%";
+            this.style.position = "relative";
+            this.style.overflow = "hidden";
+            
+            this.thumbhashString = this.getAttribute("thumbhash");
+            this.assetUrl = this.getAttribute("asset-url");
+            this.apiKey = this.getAttribute("api-key");
+            
+            this.render();
+          }
+
+          attributeChangedCallback(name, oldValue, newValue) {
+            if (name === "thumbhash") {
+              this.thumbhashString = newValue;
+            } else if (name === "asset-url") {
+              this.assetUrl = newValue;
+              this.hasLoadedFullImage = false;
+            } else if (name === "api-key") {
+              this.apiKey = newValue;
+            }
+            
+            if (this.isConnected) {
+              this.render();
+            }
+          }
+
+          static get observedAttributes() {
+            return ["thumbhash", "asset-url", "api-key"];
+          }
+
+          async render() {
+            // Clear previous content
+            this.innerHTML = "";
+            
+            // Show thumbhash placeholder first
+            if (this.thumbhashString && window.thumbhash) {
+              this.renderThumbhash();
+            }
+            
+            // Then load full image
+            if (this.assetUrl && this.apiKey && !this.hasLoadedFullImage) {
+              this.loadFullImage();
+            }
+          }
+
+          renderThumbhash() {
+            try {
+              // Decode base64 thumbhash string to Uint8Array
+              const binaryString = atob(this.thumbhashString);
+              const thumbhashArray = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                thumbhashArray[i] = binaryString.charCodeAt(i);
+              }
+              
+              // Create canvas and render thumbhash
+              this.canvas = document.createElement("canvas");
+              this.canvas.style.width = "100%";
+              this.canvas.style.height = "100%";
+              this.canvas.style.objectFit = "cover";
+              this.canvas.style.position = "absolute";
+              this.canvas.style.top = "0";
+              this.canvas.style.left = "0";
+              this.canvas.style.filter = "blur(1px)"; // Slight blur for aesthetic
+              
+              // Use thumbhash library to decode
+              const { w, h, rgba } = window.thumbhash.thumbHashToRGBA(thumbhashArray);
+              this.canvas.width = w;
+              this.canvas.height = h;
+              
+              const ctx = this.canvas.getContext("2d");
+              const imageData = ctx.createImageData(w, h);
+              imageData.data.set(rgba);
+              ctx.putImageData(imageData, 0, 0);
+              
+              this.appendChild(this.canvas);
+              
+            } catch (error) {
+              console.error("Error rendering thumbhash:", error);
+              this.renderPlaceholder();
+            }
+          }
+
+          renderPlaceholder() {
+            const placeholder = document.createElement("div");
+            placeholder.style.width = "100%";
+            placeholder.style.height = "100%";
+            placeholder.style.background = "#f0f0f0";
+            placeholder.style.display = "flex";
+            placeholder.style.alignItems = "center";
+            placeholder.style.justifyContent = "center";
+            placeholder.style.color = "#999";
+            placeholder.style.fontSize = "12px";
+            placeholder.textContent = "Loading...";
+            this.appendChild(placeholder);
+          }
+
+          async loadFullImage() {
+            if (!this.assetUrl || !this.apiKey) return;
+            
+            try {
+              const objectUrl = await getProtectedAssetUrl(this.assetUrl, this.apiKey);
+              
+              this.img = document.createElement("img");
+              this.img.style.width = "100%";
+              this.img.style.height = "100%";
+              this.img.style.objectFit = "cover";
+              this.img.style.position = "absolute";
+              this.img.style.top = "0";
+              this.img.style.left = "0";
+              this.img.style.opacity = "0";
+              this.img.style.transition = "opacity 0.3s ease";
+              
+              this.img.onload = () => {
+                this.img.style.opacity = "1";
+                this.hasLoadedFullImage = true;
+                
+                // Remove thumbhash canvas after full image loads
+                setTimeout(() => {
+                  if (this.canvas && this.canvas.parentNode) {
+                    this.canvas.remove();
+                  }
+                }, 300);
+              };
+              
+              this.img.onerror = () => {
+                console.error("Error loading full image");
+              };
+              
+              this.img.src = objectUrl;
+              this.appendChild(this.img);
+              
+            } catch (error) {
+              console.error("Error loading full image:", error);
+            }
+          }
+        }
       );
 
       // Get environment variables from the running process (secure runtime injection)

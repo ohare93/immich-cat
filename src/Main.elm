@@ -20,7 +20,8 @@ import UpdateAlbums exposing (AlbumAction(..), AlbumMsg(..), handleAlbumBrowseIn
 import UpdateAsset exposing (AssetAction(..), AssetMsg(..), AssetState(..), AssetResult(..), handleCreateAlbumConfirmationInput, handleEditAssetInput, handleSearchAssetInput, handleSelectAlbumInput, handleShowEditAssetHelpInput, updateAsset)
 import UpdateMenus exposing (MenuAction(..), MenuMsg(..), MenuState(..), MenuResult(..), LegacyUserMode(..), handleAlbumViewInput, handleMainMenuInput, handleSearchViewInput, handleSettingsInput, handleTimelineViewInput, updateMenus)
 import ViewAlbums exposing (AlbumPagination, AlbumSearch, AssetWithActions, InputMode(..), PropertyChange(..), calculateItemsPerPage, calculateTotalPages, filterToOnlySearchedForAlbums, flipPropertyChange, getAlbumByExactKeybinding, getAlbumSearch, getAlbumSearchWithHeight, getAlbumSearchWithIndex, getAssetWithActions, getFilteredAlbumsList, getFilteredAlbumsListForAsset, getSelectedAlbum, getSelectedAlbumForAsset, halfPageDown, halfPageUp, isAddingToAlbum, isCurrentlyInAlbum, moveSelectionDown, moveSelectionDownForAsset, moveSelectionUp, moveSelectionUpForAsset, pageDown, pageUp, shittyFuzzyAlgorithmTest, toggleAssetAlbum, updateAlbumSearchString, updatePagination, usefulColours, viewSidebar, viewSidebarAlbums, viewSidebarAlbumsForCurrentAsset, viewWithSidebar)
-import ViewAsset exposing (TimeViewMode(..), viewAsset, viewCreateAlbumConfirmation, viewEditAsset, viewEditAssetHelp, viewImage, viewKeybinding, viewLoadingAssets, viewVideo)
+import ViewAsset exposing (TimeViewMode(..), viewAsset, viewCreateAlbumConfirmation, viewEditAsset, viewEditAssetHelp, viewGridAssets, viewImage, viewKeybinding, viewLoadingAssets, viewVideo)
+import ViewGrid exposing (GridState, GridMsg)
 
 
 
@@ -398,6 +399,8 @@ viewAssetState model assetState =
             ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums Nothing SelectAlbum) (ViewAsset.viewCreateAlbumConfirmation albumName)
         ShowEditAssetHelp inputMode asset search ->
             ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) SelectAlbum) (ViewAsset.viewEditAssetHelp inputMode)
+        GridView gridState ->
+            ViewAsset.viewGridAssets model.immichApiPaths model.apiKey gridState model.currentAssets model.knownAssets (AssetMsg << AssetGridMsg)
 
 
 viewCurrentConfig : ImageSearchConfig -> Element msg
@@ -460,6 +463,8 @@ viewInputMode userMode =
                             editInputMode
                         ShowEditAssetHelp editInputMode _ _ ->
                             editInputMode
+                        GridView _ ->
+                            NormalMode
                 LoadingAssets _ ->
                     NormalMode
     in
@@ -650,6 +655,26 @@ handleAssetResult assetResult model =
                             Absolute
             in
             ( { model | timeViewMode = newTimeViewMode }, Cmd.none )
+        AssetSwitchToGridView ->
+            -- Switch to grid view
+            let
+                -- Assume screen width is roughly 16:9 ratio of height for now
+                screenWidth = model.screenHeight * 16 // 9
+                gridState = ViewGrid.initGridState screenWidth model.screenHeight
+            in
+            ( { model | userMode = ViewAssets (GridView gridState) }, Cmd.none )
+        AssetSwitchToDetailView assetId ->
+            -- Switch to detail view for specific asset
+            case List.indexedMap (\index id -> if id == assetId then Just index else Nothing) model.currentAssets 
+                    |> List.filterMap identity
+                    |> List.head of
+                Just assetIndex ->
+                    switchToEditIfAssetFound model assetIndex
+                Nothing ->
+                    ( model, Cmd.none )
+        AssetGridUpdate gridState ->
+            -- Update grid state
+            ( { model | userMode = ViewAssets (GridView gridState) }, Cmd.none )
 
 -- Helper to convert UpdateMenus.AssetSource to Main.AssetSource
 convertMenuAssetSource : UpdateMenus.AssetSource -> AssetSource
@@ -698,7 +723,7 @@ update msg model =
                 MainMenu menuState ->
                     handleMenuResult (updateMenus (MenuKeyPress key) menuState model.knownAlbums model.immichApiPaths model.screenHeight) model
                 ViewAssets assetState ->
-                    handleAssetResult (updateAsset (AssetKeyPress key) assetState model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets) model
+                    handleAssetResult (updateAsset (AssetKeyPress key) assetState model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets model.knownAssets) model
                 LoadingAssets _ ->
                     ( model, Cmd.none )
         WindowResize width height ->
@@ -717,6 +742,12 @@ update msg model =
                                     { newModel | userMode = ViewAssets (CreateAlbumConfirmation inputMode asset { search | pagination = ViewAlbums.updatePagination height search.pagination } albumName) }
                                 ShowEditAssetHelp inputMode asset search ->
                                     { newModel | userMode = ViewAssets (ShowEditAssetHelp inputMode asset { search | pagination = ViewAlbums.updatePagination height search.pagination }) }
+                                GridView gridState ->
+                                    let
+                                        screenWidth = height * 16 // 9  -- Assume 16:9 ratio
+                                        updatedGridState = ViewGrid.updateGridState (ViewGrid.GridResized screenWidth height) gridState []
+                                    in
+                                    { newModel | userMode = ViewAssets (GridView updatedGridState) }
                                 _ ->
                                     newModel
                         _ ->

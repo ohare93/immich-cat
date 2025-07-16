@@ -95,6 +95,7 @@ type alias ImmichAsset =
     , isArchived : Bool
     , albumMembership : List ImmichAlbumId
     , fileCreatedAt : Date
+    , thumbhash : Maybe String
     }
 
 
@@ -422,7 +423,17 @@ dateDecoder =
 
 imageDecoder : Decode.Decoder ImmichAsset
 imageDecoder =
-    Decode.map8 ImmichAsset
+    Decode.map8 (\id path title mimeType isFavorite isArchived albumMembership fileCreatedAt ->
+        { id = id
+        , path = path
+        , title = title
+        , mimeType = mimeType
+        , isFavourite = isFavorite
+        , isArchived = isArchived
+        , albumMembership = albumMembership
+        , fileCreatedAt = fileCreatedAt
+        , thumbhash = Nothing
+        })
         (Decode.field "id" Decode.string)
         (Decode.field "originalPath" Decode.string)
         (Decode.field "originalFileName" Decode.string)
@@ -431,6 +442,10 @@ imageDecoder =
         (Decode.field "isArchived" Decode.bool)
         (Decode.succeed [])
         (Decode.field "fileCreatedAt" dateDecoder)
+        |> Decode.andThen (\asset -> 
+            Decode.map (\thumbhash -> { asset | thumbhash = thumbhash })
+                (Decode.maybe (Decode.field "thumbhash" Decode.string))
+        )
 
 errorToString : Http.Error -> String
 errorToString error =

@@ -30,6 +30,7 @@ generateTestAsset id fileName =
     , isArchived = False
     , albumMembership = []
     , fileCreatedAt = Date.fromRataDie 737790 -- January 1, 2020
+    , thumbhash = Nothing
     }
 
 -- JSON encoding/decoding tests

@@ -20,6 +20,7 @@ createTestAsset id title =
     , isArchived = False
     , albumMembership = []
     , fileCreatedAt = Date.fromRataDie 1
+    , thumbhash = Nothing
     }
 
 createTestAlbum : String -> String -> ImmichAlbum
@@ -64,6 +65,13 @@ testKnownAlbums = Dict.fromList
 testCurrentAssets : List ImmichAssetId
 testCurrentAssets = ["asset1", "asset2", "asset3"]
 
+testKnownAssets : Dict ImmichAssetId ImmichAsset
+testKnownAssets = Dict.fromList 
+    [ ("asset1", createTestAsset "asset1" "Asset 1")
+    , ("asset2", createTestAsset "asset2" "Asset 2")
+    , ("asset3", createTestAsset "asset3" "Asset 3")
+    ]
+
 -- Test suite
 suite : Test
 suite =
@@ -85,12 +93,12 @@ insertModeTests =
                     initialState = EditAsset InsertMode testAsset initialSearch
                     
                     -- Type "g"
-                    result1 = updateAsset (AssetKeyPress "g") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets
+                    result1 = updateAsset (AssetKeyPress "g") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets testKnownAssets
                     
                     -- Type "e"
                     result2 = case result1 of
                         StayInAssets (EditAsset mode asset search) ->
-                            updateAsset (AssetKeyPress "e") (EditAsset mode asset search) testAlbumKeybindings testKnownAlbums 800 testCurrentAssets
+                            updateAsset (AssetKeyPress "e") (EditAsset mode asset search) testAlbumKeybindings testKnownAlbums 800 testCurrentAssets testKnownAssets
                         _ -> result1
                 in
                 case result2 of
@@ -109,7 +117,7 @@ insertModeTests =
                     initialSearch = createTestAlbumSearch "" ""
                     initialState = EditAsset InsertMode testAsset initialSearch
                     
-                    result = updateAsset (AssetKeyPress "g") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets
+                    result = updateAsset (AssetKeyPress "g") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets testKnownAssets
                 in
                 case result of
                     StayInAssets (EditAsset _ _ search) ->
@@ -123,12 +131,12 @@ insertModeTests =
                     initialState = EditAsset InsertMode testAsset initialSearch
                     
                     -- Type multiple letters
-                    result1 = updateAsset (AssetKeyPress "g") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets
+                    result1 = updateAsset (AssetKeyPress "g") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets testKnownAssets
                     result2 = case result1 of
-                        StayInAssets state -> updateAsset (AssetKeyPress "e") state testAlbumKeybindings testKnownAlbums 800 testCurrentAssets
+                        StayInAssets state -> updateAsset (AssetKeyPress "e") state testAlbumKeybindings testKnownAlbums 800 testCurrentAssets testKnownAssets
                         _ -> result1
                     result3 = case result2 of
-                        StayInAssets state -> updateAsset (AssetKeyPress "n") state testAlbumKeybindings testKnownAlbums 800 testCurrentAssets
+                        StayInAssets state -> updateAsset (AssetKeyPress "n") state testAlbumKeybindings testKnownAlbums 800 testCurrentAssets testKnownAssets
                         _ -> result2
                 in
                 case result3 of
@@ -142,7 +150,7 @@ insertModeTests =
                     initialSearch = createTestAlbumSearch "gen" ""
                     initialState = EditAsset InsertMode testAsset initialSearch
                     
-                    result = updateAsset (AssetKeyPress "Escape") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets
+                    result = updateAsset (AssetKeyPress "Escape") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets testKnownAssets
                 in
                 case result of
                     StayInAssets (EditAsset mode _ _) ->
@@ -159,7 +167,7 @@ keybindingModeTests =
                     initialSearch = createTestAlbumSearch "" "g"
                     initialState = EditAsset KeybindingMode testAsset initialSearch
                     
-                    result = updateAsset (AssetKeyPress "e") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets
+                    result = updateAsset (AssetKeyPress "e") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets testKnownAssets
                 in
                 case result of
                     StayInAssets (EditAsset _ _ search) ->
@@ -179,7 +187,7 @@ keybindingModeTests =
                     initialSearch = createTestAlbumSearch "existing" "g"
                     initialState = EditAsset KeybindingMode testAsset initialSearch
                     
-                    result = updateAsset (AssetKeyPress "x") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets
+                    result = updateAsset (AssetKeyPress "x") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets testKnownAssets
                 in
                 case result of
                     StayInAssets (EditAsset _ _ search) ->
@@ -192,7 +200,7 @@ keybindingModeTests =
                     initialSearch = createTestAlbumSearch "" "g"
                     initialState = EditAsset KeybindingMode testAsset initialSearch
                     
-                    result = updateAsset (AssetKeyPress "Backspace") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets
+                    result = updateAsset (AssetKeyPress "Backspace") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets testKnownAssets
                 in
                 case result of
                     StayInAssets (EditAsset mode _ search) ->
@@ -213,7 +221,7 @@ modeTransitionTests =
                     initialSearch = createTestAlbumSearch "" ""
                     initialState = EditAsset NormalMode testAsset initialSearch
                     
-                    result = updateAsset (AssetKeyPress "I") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets
+                    result = updateAsset (AssetKeyPress "I") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets testKnownAssets
                 in
                 case result of
                     StayInAssets (EditAsset mode _ _) ->
@@ -226,7 +234,7 @@ modeTransitionTests =
                     initialSearch = createTestAlbumSearch "" ""
                     initialState = EditAsset NormalMode testAsset initialSearch
                     
-                    result = updateAsset (AssetKeyPress "g") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets
+                    result = updateAsset (AssetKeyPress "g") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets testKnownAssets
                 in
                 case result of
                     StayInAssets (EditAsset mode _ search) ->
@@ -243,8 +251,8 @@ modeTransitionTests =
         , test "Escape from any mode returns to NormalMode" <|
             \_ ->
                 let
-                    insertResult = updateAsset (AssetKeyPress "Escape") (EditAsset InsertMode testAsset (createTestAlbumSearch "test" "")) testAlbumKeybindings testKnownAlbums 800 testCurrentAssets
-                    keybindingResult = updateAsset (AssetKeyPress "Escape") (EditAsset KeybindingMode testAsset (createTestAlbumSearch "" "g")) testAlbumKeybindings testKnownAlbums 800 testCurrentAssets
+                    insertResult = updateAsset (AssetKeyPress "Escape") (EditAsset InsertMode testAsset (createTestAlbumSearch "test" "")) testAlbumKeybindings testKnownAlbums 800 testCurrentAssets testKnownAssets
+                    keybindingResult = updateAsset (AssetKeyPress "Escape") (EditAsset KeybindingMode testAsset (createTestAlbumSearch "" "g")) testAlbumKeybindings testKnownAlbums 800 testCurrentAssets testKnownAssets
                 in
                 case (insertResult, keybindingResult) of
                     (StayInAssets (EditAsset mode1 _ _), StayInAssets (EditAsset mode2 _ _)) ->
@@ -266,7 +274,7 @@ edgeCaseTests =
                     initialState = EditAsset KeybindingMode testAsset initialSearch
                     
                     -- This should normalize to NormalMode
-                    result = updateAsset (AssetKeyPress "Escape") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets
+                    result = updateAsset (AssetKeyPress "Escape") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets testKnownAssets
                 in
                 case result of
                     StayInAssets (EditAsset mode _ _) ->
@@ -280,7 +288,7 @@ edgeCaseTests =
                     initialState = EditAsset InsertMode testAsset initialSearch
                     
                     -- Arrow key navigation should preserve InsertMode
-                    result = updateAsset (AssetKeyPress "ArrowUp") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets
+                    result = updateAsset (AssetKeyPress "ArrowUp") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets testKnownAssets
                 in
                 case result of
                     StayInAssets (EditAsset mode _ _) ->
@@ -297,7 +305,7 @@ regressionTests =
                     initialSearch = createTestAlbumSearch "" ""
                     initialState = EditAsset InsertMode testAsset initialSearch
                     
-                    result = updateAsset (AssetKeyPress "g") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets
+                    result = updateAsset (AssetKeyPress "g") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets testKnownAssets
                 in
                 case result of
                     StayInAssets (EditAsset mode _ search) ->
@@ -315,7 +323,7 @@ regressionTests =
                     initialSearch = createTestAlbumSearch "g" ""
                     initialState = EditAsset InsertMode testAsset initialSearch
                     
-                    result = updateAsset (AssetKeyPress "e") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets
+                    result = updateAsset (AssetKeyPress "e") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets testKnownAssets
                 in
                 case result of
                     StayInAssets (EditAsset mode _ search) ->
@@ -334,9 +342,9 @@ regressionTests =
                     initialState = EditAsset NormalMode testAsset initialSearch
                     
                     -- Type "g" then "e" for "ge" keybinding
-                    result1 = updateAsset (AssetKeyPress "g") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets
+                    result1 = updateAsset (AssetKeyPress "g") initialState testAlbumKeybindings testKnownAlbums 800 testCurrentAssets testKnownAssets
                     result2 = case result1 of
-                        StayInAssets state -> updateAsset (AssetKeyPress "e") state testAlbumKeybindings testKnownAlbums 800 testCurrentAssets
+                        StayInAssets state -> updateAsset (AssetKeyPress "e") state testAlbumKeybindings testKnownAlbums 800 testCurrentAssets testKnownAssets
                         _ -> result1
                 in
                 case result2 of
