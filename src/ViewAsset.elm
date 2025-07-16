@@ -1,5 +1,6 @@
 module ViewAsset exposing
-    ( viewAsset
+    ( TimeViewMode(..)
+    , viewAsset
     , viewCreateAlbumConfirmation
     , viewEditAsset
     , viewEditAssetHelp
@@ -17,6 +18,7 @@ import Element.Font as Font
 import Html exposing (Html, node)
 import Html.Attributes
 import Immich exposing (ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..))
+import Time
 import ViewAlbums exposing (AssetWithActions, InputMode(..), PropertyChange(..), usefulColours)
 
 type alias ImageIndex =
@@ -27,6 +29,10 @@ type Msg
 
 -- Helper types and functions for date-based asset counting
 
+type TimeViewMode
+    = Absolute
+    | Relative
+
 type alias AssetCounts =
     { today : Int
     , week : Int
@@ -35,21 +41,38 @@ type alias AssetCounts =
     , all : Int
     }
 
--- Calculate asset counts for different time periods
-calculateAssetCounts : Date -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> AssetCounts
-calculateAssetCounts currentDate assetIds knownAssets =
+-- Calculate asset counts for different time periods with exclusive buckets
+calculateAssetCounts : TimeViewMode -> Date -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> AssetCounts
+calculateAssetCounts timeMode currentDate assetIds knownAssets =
     let
         assets = List.filterMap (\id -> Dict.get id knownAssets) assetIds
         
-        -- Calculate date boundaries
-        todayStart = currentDate
-        todayEnd = Date.add Date.Days 1 currentDate
-        weekStart = Date.add Date.Days (-(Date.weekdayToNumber (Date.weekday currentDate) - 1)) currentDate
-        weekEnd = Date.add Date.Days 7 weekStart
-        monthStart = Date.fromCalendarDate (Date.year currentDate) (Date.month currentDate) 1
-        monthEnd = Date.add Date.Months 1 monthStart
-        yearStart = Date.fromCalendarDate (Date.year currentDate) (Date.numberToMonth 1) 1
-        yearEnd = Date.add Date.Years 1 yearStart
+        -- Calculate date boundaries based on time mode
+        dateBoundaries =
+            case timeMode of
+                Absolute ->
+                    -- Calendar-based periods
+                    { todayStart = currentDate
+                    , todayEnd = Date.add Date.Days 1 currentDate
+                    , weekStart = Date.add Date.Days (-(Date.weekdayToNumber (Date.weekday currentDate) - 1)) currentDate
+                    , weekEnd = Date.add Date.Days 7 (Date.add Date.Days (-(Date.weekdayToNumber (Date.weekday currentDate) - 1)) currentDate)
+                    , monthStart = Date.fromCalendarDate (Date.year currentDate) (Date.month currentDate) 1
+                    , monthEnd = Date.add Date.Months 1 (Date.fromCalendarDate (Date.year currentDate) (Date.month currentDate) 1)
+                    , yearStart = Date.fromCalendarDate (Date.year currentDate) (Date.numberToMonth 1) 1
+                    , yearEnd = Date.add Date.Years 1 (Date.fromCalendarDate (Date.year currentDate) (Date.numberToMonth 1) 1)
+                    }
+                
+                Relative ->
+                    -- Duration-based periods from current time
+                    { todayStart = currentDate
+                    , todayEnd = Date.add Date.Days 1 currentDate
+                    , weekStart = Date.add Date.Days -7 currentDate
+                    , weekEnd = currentDate
+                    , monthStart = Date.add Date.Days -30 currentDate
+                    , monthEnd = currentDate
+                    , yearStart = Date.add Date.Days -365 currentDate
+                    , yearEnd = currentDate
+                    }
         
         -- Helper function to check if asset is in date range
         isInRange asset startDate endDate =
@@ -60,29 +83,46 @@ calculateAssetCounts currentDate assetIds knownAssets =
             in
             afterStart && beforeEnd
         
-        -- Count assets in each specific period
-        todayCount = List.length (List.filter (\asset -> isInRange asset todayStart todayEnd) assets)
-        weekCount = List.length (List.filter (\asset -> isInRange asset weekStart weekEnd) assets)
-        monthCount = List.length (List.filter (\asset -> isInRange asset monthStart monthEnd) assets)
-        yearCount = List.length (List.filter (\asset -> isInRange asset yearStart yearEnd) assets)
+        -- Categorize assets into exclusive time buckets (priority: Today > Week > Month > Year)
+        categorizedAssets = List.foldl
+            (\asset acc ->
+                if isInRange asset dateBoundaries.todayStart dateBoundaries.todayEnd then
+                    { acc | today = acc.today + 1 }
+                else if isInRange asset dateBoundaries.weekStart dateBoundaries.weekEnd then
+                    { acc | week = acc.week + 1 }
+                else if isInRange asset dateBoundaries.monthStart dateBoundaries.monthEnd then
+                    { acc | month = acc.month + 1 }
+                else if isInRange asset dateBoundaries.yearStart dateBoundaries.yearEnd then
+                    { acc | year = acc.year + 1 }
+                else
+                    acc
+            )
+            { today = 0, week = 0, month = 0, year = 0 }
+            assets
+        
         allCount = List.length assets
     in
-    { today = todayCount
-    , week = weekCount
-    , month = monthCount
-    , year = yearCount
+    { today = categorizedAssets.today
+    , week = categorizedAssets.week
+    , month = categorizedAssets.month
+    , year = categorizedAssets.year
     , all = allCount
     }
 
--- Format asset counts as simple text "today/week/month/year/all"
-viewAssetCountsText : AssetCounts -> Element msg
-viewAssetCountsText counts =
+-- Format asset counts as simple text "today/week/month/year/all (A/R)"
+viewAssetCountsText : AssetCounts -> TimeViewMode -> Element msg
+viewAssetCountsText counts timeMode =
+    let
+        modeIndicator = case timeMode of
+            Absolute -> " (A)"
+            Relative -> " (R)"
+    in
     el [ alignRight, Font.size 12, Font.color (Element.rgb 0.6 0.6 0.6) ] 
         (text (String.fromInt counts.today ++ "/" ++ 
                String.fromInt counts.week ++ "/" ++ 
                String.fromInt counts.month ++ "/" ++ 
                String.fromInt counts.year ++ "/" ++ 
-               String.fromInt counts.all))
+               String.fromInt counts.all ++ modeIndicator))
 
 -- Main asset view function
 
@@ -206,23 +246,18 @@ viewVideo asset apiPaths apiKey currentAssets knownAssets imageIndex =
 
 -- Edit asset view function
 
-viewEditAsset : ImmichApiPaths -> String -> ImageIndex -> Int -> String -> AssetWithActions -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> Element msg
-viewEditAsset apiPaths apiKey imageIndex totalAssets viewTitle currentAsset currentAssets knownAssets currentDateMillis =
+viewEditAsset : ImmichApiPaths -> String -> ImageIndex -> Int -> String -> AssetWithActions -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> TimeViewMode -> Element msg
+viewEditAsset apiPaths apiKey imageIndex totalAssets viewTitle currentAsset currentAssets knownAssets currentDateMillis timeMode =
     let
-        -- Simple approximation: use current milliseconds to derive a realistic current date
-        -- 1737400000000 ms ≈ January 20, 2025
-        -- Calculate days since epoch and create approximate date
-        daysFromEpoch = currentDateMillis // (1000 * 60 * 60 * 24)
-        -- Approximation: January 1, 1970 + calculated days ≈ current date
-        -- For simplicity, just use July 15, 2025 as current date since that's close to today
-        currentDate = Date.fromCalendarDate 2025 (Date.numberToMonth 7) 15
+        -- Convert milliseconds to proper Date
+        currentDate = Date.fromPosix Time.utc (Time.millisToPosix currentDateMillis)
         -- Calculate asset counts for current date
-        counts = calculateAssetCounts currentDate currentAssets knownAssets
+        counts = calculateAssetCounts timeMode currentDate currentAssets knownAssets
     in
     column [ width fill, height fill ]
         [ row [ width fill, alignTop, height (px 20) ]
             [ el [] (text (String.fromInt (imageIndex + 1) ++ "/" ++ String.fromInt totalAssets ++ "    " ++ viewTitle))
-            , viewAssetCountsText counts
+            , viewAssetCountsText counts timeMode
             ]
         , el [ width fill, height fill ] <| viewAsset apiPaths apiKey currentAsset.asset currentAssets knownAssets imageIndex
         ]
@@ -275,6 +310,7 @@ viewEditAssetHelp inputMode =
             , viewKeybinding "F" "Toggle favorite"
             , viewKeybinding "K" "Open in Immich (new tab)"
             , viewKeybinding "I" "Enter album search mode"
+            , viewKeybinding "T" "Toggle time view (Absolute/Relative)"
             ]
         , if inputMode == InsertMode then
             column [ Element.spacingXY 0 8 ]

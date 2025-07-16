@@ -20,7 +20,7 @@ import UpdateAlbums exposing (AlbumAction(..), AlbumMsg(..), handleAlbumBrowseIn
 import UpdateAsset exposing (AssetAction(..), AssetMsg(..), AssetState(..), AssetResult(..), handleCreateAlbumConfirmationInput, handleEditAssetInput, handleSearchAssetInput, handleSelectAlbumInput, handleShowEditAssetHelpInput, updateAsset)
 import UpdateMenus exposing (MenuAction(..), MenuMsg(..), MenuState(..), MenuResult(..), LegacyUserMode(..), handleAlbumViewInput, handleMainMenuInput, handleSearchViewInput, handleSettingsInput, handleTimelineViewInput, updateMenus)
 import ViewAlbums exposing (AlbumPagination, AlbumSearch, AssetWithActions, InputMode(..), PropertyChange(..), calculateItemsPerPage, calculateTotalPages, filterToOnlySearchedForAlbums, flipPropertyChange, getAlbumByExactKeybinding, getAlbumSearch, getAlbumSearchWithHeight, getAlbumSearchWithIndex, getAssetWithActions, getFilteredAlbumsList, getFilteredAlbumsListForAsset, getSelectedAlbum, getSelectedAlbumForAsset, halfPageDown, halfPageUp, isAddingToAlbum, isCurrentlyInAlbum, moveSelectionDown, moveSelectionDownForAsset, moveSelectionUp, moveSelectionUpForAsset, pageDown, pageUp, shittyFuzzyAlgorithmTest, toggleAssetAlbum, updateAlbumSearchString, updatePagination, usefulColours, viewSidebar, viewSidebarAlbums, viewSidebarAlbumsForCurrentAsset, viewWithSidebar)
-import ViewAsset exposing (viewAsset, viewCreateAlbumConfirmation, viewEditAsset, viewEditAssetHelp, viewImage, viewKeybinding, viewLoadingAssets, viewVideo)
+import ViewAsset exposing (TimeViewMode(..), viewAsset, viewCreateAlbumConfirmation, viewEditAsset, viewEditAssetHelp, viewImage, viewKeybinding, viewLoadingAssets, viewVideo)
 
 
 
@@ -69,6 +69,7 @@ type alias Model =
     , currentDateMillis : Int
     , imageIndex : ImageIndex
     , imageSearchConfig : ImageSearchConfig
+    , timeViewMode : TimeViewMode
     -- Immich fields
     , currentAssets : List ImmichAssetId
     , knownAssets : Dict ImmichAssetId ImmichAsset
@@ -123,6 +124,7 @@ init flags =
       , currentDateMillis = flags.currentDateMillis
       , imageIndex = 0
       , imageSearchConfig = { order = Desc, categorisation = Uncategorised, mediaType = AllMedia, status = AllStatuses }
+      , timeViewMode = Absolute
       -- Immich fields
       , currentAssets = []
       , knownAssets = Dict.empty
@@ -391,7 +393,7 @@ viewAssetState model assetState =
             let
                 viewTitle = createDetailedViewTitle model.currentAssetsSource
             in
-            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) SelectAlbum) (ViewAsset.viewEditAsset model.immichApiPaths model.apiKey model.imageIndex (List.length model.currentAssets) viewTitle asset model.currentAssets model.knownAssets model.currentDateMillis)
+            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) SelectAlbum) (ViewAsset.viewEditAsset model.immichApiPaths model.apiKey model.imageIndex (List.length model.currentAssets) viewTitle asset model.currentAssets model.knownAssets model.currentDateMillis model.timeViewMode)
         CreateAlbumConfirmation _ asset search albumName ->
             ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums Nothing SelectAlbum) (ViewAsset.viewCreateAlbumConfirmation albumName)
         ShowEditAssetHelp inputMode asset search ->
@@ -637,6 +639,17 @@ handleAssetResult assetResult model =
         AssetCreateAlbum albumName ->
             -- Handle album creation
             ( { model | userMode = LoadingAssets { fetchedAssetList = Nothing, fetchedAssetMembership = Nothing } }, Immich.createAlbum model.immichApiPaths albumName |> Cmd.map ImmichMsg )
+        AssetToggleTimeView ->
+            -- Handle time view toggle
+            let
+                newTimeViewMode =
+                    case model.timeViewMode of
+                        Absolute ->
+                            Relative
+                        Relative ->
+                            Absolute
+            in
+            ( { model | timeViewMode = newTimeViewMode }, Cmd.none )
 
 -- Helper to convert UpdateMenus.AssetSource to Main.AssetSource
 convertMenuAssetSource : UpdateMenus.AssetSource -> AssetSource

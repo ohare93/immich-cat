@@ -41,6 +41,7 @@ type AssetResult msg
     | AssetToggleAlbumMembership ImmichAlbum
     | AssetOpenInImmich
     | AssetCreateAlbum String
+    | AssetToggleTimeView
 
 
 -- Action type for asset editing
@@ -62,6 +63,7 @@ type AssetAction
     | CreateAlbumWithName String
     | LoadAlbum ImmichAlbum
     | SwitchToAssetIndex Int
+    | ToggleTimeView
     | NoAssetAction
 
 -- Legacy message type for asset-related actions
@@ -88,6 +90,7 @@ handleEditAssetInput key inputMode asset search albumKeybindings knownAlbums scr
             "F" -> ToggleFavorite  
             "D" -> ToggleArchived
             "K" -> OpenInImmich
+            "T" -> ToggleTimeView
             "?" -> ShowAssetHelp
             _ ->
                 if isKeybindingLetter key then
@@ -575,6 +578,8 @@ convertAssetActionToResult action inputMode asset search currentAssets =
             AssetLoadAlbum album
         SwitchToAssetIndex newIndex ->
             AssetSwitchToAssetIndex newIndex
+        ToggleTimeView ->
+            AssetToggleTimeView
         NoAssetAction ->
             StayInAssets (EditAsset inputMode asset search)
 
