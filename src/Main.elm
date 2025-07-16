@@ -11,7 +11,6 @@ import Element.Font as Font
 import Element.Input exposing (button)
 import Helpers exposing (isKeybindingLetter, isSupportedSearchLetter, loopImageIndexOverArray, regexFromString)
 import Html exposing (Html, node)
-import Html.Attributes
 import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImageSearchConfig, ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..), MediaTypeFilter(..), StatusFilter(..), fetchAlbumAssetsWithFilters, getAllAlbums, getImmichApiPaths)
 import Json.Decode as Decode
 import KeybindingGenerator exposing (generateAlbumKeybindings)
@@ -471,253 +470,7 @@ viewInputMode userMode =
             el [ width fill, Background.color <| Element.fromRgb { red = 1, green = 0.5, blue = 0, alpha = 1 } ] <| text "Keybind"
 
 
-viewSidebar : AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAssetId ImmichAlbum -> Maybe InputMode -> Element Msg
-viewSidebar asset search albumKeybindings albums maybeInputMode =
-    column [ alignTop, height fill ]
-        [ el [ alignTop ] <| text "Asset Changes"
-        , if search.searchString /= "" then
-            el [ alignTop, Font.color <| usefulColours "blue" ] <| text ("Search: \"" ++ search.searchString ++ "\"")
-          else
-            Element.none
-        , if search.partialKeybinding /= "" then
-            el [ alignTop, Font.color <| Element.fromRgb { red = 1, green = 0.5, blue = 0, alpha = 1 } ] <| text ("Keybind: \"" ++ search.partialKeybinding ++ "\"")
-          else
-            Element.none
-        , row [ alignTop ]
-            [ case asset.isFavourite of
-                ChangeToTrue ->
-                    el [ Font.color <| usefulColours "green" ] <| text "Fav"
-                ChangeToFalse ->
-                    el [ Font.color <| usefulColours "red" ] <| text "!Fav"
-                RemainTrue ->
-                    el [ Font.color <| usefulColours "grey" ] <| text "Fav"
-                RemainFalse ->
-                    el [ Font.color <| usefulColours "grey" ] <| text "!Fav"
-            , case asset.isArchived of
-                ChangeToTrue ->
-                    el [ Font.color <| usefulColours "red" ] <| text "Delete"
-                ChangeToFalse ->
-                    el [ Font.color <| usefulColours "green" ] <| text "Undelete"
-                RemainTrue ->
-                    el [ Font.color <| usefulColours "grey" ] <| text ""
-                RemainFalse ->
-                    el [ Font.color <| usefulColours "grey" ] <| text ""
-            ]
-        , el [ height fill ] <| viewSidebarAlbumsForCurrentAsset asset search albumKeybindings albums maybeInputMode
-        ]
 
-
-viewSidebarAlbums : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAssetId ImmichAlbum -> Element Msg
-viewSidebarAlbums search albumKeybindings albums =
-    let
-        allFilteredAlbums =
-            Dict.values <| filterToOnlySearchedForAlbums search albumKeybindings albums
-        totalItems =
-            List.length allFilteredAlbums
-
-        -- Calculate pagination
-        startIndex =
-            search.pagination.currentPage * search.pagination.itemsPerPage
-        endIndex =
-            startIndex + search.pagination.itemsPerPage
-        paginatedAlbums =
-            allFilteredAlbums |> List.drop startIndex |> List.take search.pagination.itemsPerPage
-
-        -- Calculate remaining items info
-        totalPages =
-            calculateTotalPages totalItems search.pagination.itemsPerPage
-        itemsAfter =
-            max 0 (totalItems - endIndex)
-        itemsBefore =
-            startIndex
-
-        -- Create pagination status row
-        paginationStatus =
-            if totalPages > 1 then
-                let
-                    pageInfo =
-                        "Page " ++ String.fromInt (search.pagination.currentPage + 1) ++ " of " ++ String.fromInt totalPages
-                    remainingInfo =
-                        if itemsAfter > 0 && itemsBefore > 0 then
-                            " (" ++ String.fromInt itemsBefore ++ " above, " ++ String.fromInt itemsAfter ++ " below)"
-                        else if itemsAfter > 0 then
-                            " (" ++ String.fromInt itemsAfter ++ " more below)"
-                        else if itemsBefore > 0 then
-                            " (" ++ String.fromInt itemsBefore ++ " above)"
-                        else
-                            ""
-                in
-                [ el [ Font.size 12, Font.color <| Element.fromRgb { red = 0.5, green = 0.5, blue = 0.5, alpha = 1 } ] <|
-                    text (pageInfo ++ remainingInfo)
-                ]
-            else
-                []
-
-        albumRows =
-            List.map
-                (\album ->
-                    let
-                        keybinding =
-                            Dict.get album.id albumKeybindings |> Maybe.withDefault ""
-                        isKeybindingMatch =
-                            search.partialKeybinding /= "" && String.startsWith search.partialKeybinding keybinding
-                        albumDisplayName =
-                            if keybinding == "" then
-                                album.albumName
-                            else
-                                album.albumName ++ " (" ++ keybinding ++ ")"
-                        attrs =
-                            if isKeybindingMatch then
-                                [ Background.color <| Element.fromRgb { red = 1, green = 0.8, blue = 0.4, alpha = 0.8 } ]
-                            else
-                                []
-                    in
-                    row [ onClick (SelectAlbum album) ]
-                        [ el [ paddingXY 5 0 ] <| text (String.fromInt album.assetCount)
-                        , el attrs <| text albumDisplayName
-                        ]
-                )
-                paginatedAlbums
-    in
-    column [ height fill ] (paginationStatus ++ albumRows)
-
-viewSidebarAlbumsForCurrentAsset : AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Maybe InputMode -> Element Msg
-viewSidebarAlbumsForCurrentAsset asset search albumKeybindings albums maybeInputMode =
-    let
-        allFilteredAlbums =
-            getFilteredAlbumsListForAsset search albumKeybindings albums asset
-        totalItems =
-            List.length allFilteredAlbums
-
-        -- Calculate pagination
-        startIndex =
-            search.pagination.currentPage * search.pagination.itemsPerPage
-        endIndex =
-            startIndex + search.pagination.itemsPerPage
-        paginatedAlbums =
-            allFilteredAlbums |> List.drop startIndex |> List.take search.pagination.itemsPerPage
-
-        -- Calculate remaining items info
-        totalPages =
-            calculateTotalPages totalItems search.pagination.itemsPerPage
-        itemsAfter =
-            max 0 (totalItems - endIndex)
-        itemsBefore =
-            startIndex
-
-        -- Create pagination status row
-        paginationStatus =
-            if totalPages > 1 then
-                let
-                    pageInfo =
-                        "Page " ++ String.fromInt (search.pagination.currentPage + 1) ++ " of " ++ String.fromInt totalPages
-                    remainingInfo =
-                        if itemsAfter > 0 && itemsBefore > 0 then
-                            " (" ++ String.fromInt itemsBefore ++ " above, " ++ String.fromInt itemsAfter ++ " below)"
-                        else if itemsAfter > 0 then
-                            " (" ++ String.fromInt itemsAfter ++ " more below)"
-                        else if itemsBefore > 0 then
-                            " (" ++ String.fromInt itemsBefore ++ " above)"
-                        else
-                            ""
-                in
-                [ el [ Font.size 12, Font.color <| Element.fromRgb { red = 0.5, green = 0.5, blue = 0.5, alpha = 1 } ] <|
-                    text (pageInfo ++ remainingInfo)
-                ]
-            else
-                []
-
-        albumRows =
-            List.indexedMap
-                (\index album ->
-                    let
-                        assetInAlbum =
-                            Maybe.withDefault RemainFalse <| Dict.get album.id asset.albumMembership
-                        isSelected =
-                            (index + startIndex) == search.selectedIndex && maybeInputMode == Just InsertMode
-                        baseAttrs =
-                            case assetInAlbum of
-                                RemainTrue ->
-                                    [ Background.color <| usefulColours "green" ]
-                                RemainFalse ->
-                                    [ Background.color <| usefulColours "grey" ]
-                                ChangeToTrue ->
-                                    [ Background.color <| usefulColours "blue" ]
-                                ChangeToFalse ->
-                                    [ Background.color <| usefulColours "red" ]
-                        attrs =
-                            if isSelected then
-                                Font.color (usefulColours "white") :: Font.bold :: baseAttrs
-                            else
-                                baseAttrs
-                    in
-                    let
-                        keybinding =
-                            Dict.get album.id albumKeybindings |> Maybe.withDefault ""
-                        isKeybindingMatch =
-                            search.partialKeybinding /= "" && String.startsWith search.partialKeybinding keybinding
-                        albumDisplayName =
-                            if keybinding == "" then
-                                album.albumName
-                            else
-                                album.albumName ++ " (" ++ keybinding ++ ")"
-
-                        finalAttrs =
-                            if isKeybindingMatch then
-                                (Background.color <| Element.fromRgb { red = 1, green = 0.8, blue = 0.4, alpha = 0.8 }) :: attrs
-                            else
-                                attrs
-                    in
-                    row [ onClick (SelectAlbum album) ]
-                        [ el [ paddingXY 5 0 ] <| text (String.fromInt album.assetCount)
-                        , el finalAttrs <|
-                            text
-                                (if isSelected then
-                                    "► " ++ albumDisplayName
-
-                                 else
-                                    albumDisplayName
-                                )
-                        ]
-                )
-                paginatedAlbums
-    in
-    column [ height fill ] (paginationStatus ++ albumRows)
-
-filterToOnlySearchedForAlbums : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Dict ImmichAlbumId ImmichAlbum
-filterToOnlySearchedForAlbums search albumKeybindings albums =
-    let
-        textFiltered =
-            if search.searchString == "" then
-                albums
-            else
-                Dict.filter (\id _ -> shouldFilterAlbum search.albumScores id) albums
-    in
-    if search.partialKeybinding == "" then
-        textFiltered
-    else
-        filterAlbumsByKeybinding search.partialKeybinding albumKeybindings textFiltered
-
-filterAlbumsByKeybinding : String -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Dict ImmichAlbumId ImmichAlbum
-filterAlbumsByKeybinding partialKeybinding albumKeybindings albums =
-    Dict.filter
-        (\albumId _ ->
-            case Dict.get albumId albumKeybindings of
-                Just keybinding ->
-                    String.startsWith partialKeybinding keybinding
-                Nothing ->
-                    False
-        )
-        albums
-
-shouldFilterAlbum : Dict ImmichAlbumId Int -> ImmichAlbumId -> Bool
-shouldFilterAlbum albumScores albumId =
-    case Dict.get albumId albumScores of
-        Just score ->
-            0 < score
-
-        Nothing ->
-            False
 
 
 -- UPDATE --
@@ -797,7 +550,7 @@ handleAssetResult assetResult model =
                         EditAsset inputMode asset search ->
                             let
                                 newAsset =
-                                    { asset | isFavourite = flipPropertyChange asset.isFavourite }
+                                    { asset | isFavourite = ViewAlbums.flipPropertyChange asset.isFavourite }
                                 newIsFavorite =
                                     case newAsset.isFavourite of
                                         ChangeToTrue ->
@@ -822,7 +575,7 @@ handleAssetResult assetResult model =
                         EditAsset inputMode asset search ->
                             let
                                 newAsset =
-                                    { asset | isArchived = flipPropertyChange asset.isArchived }
+                                    { asset | isArchived = ViewAlbums.flipPropertyChange asset.isArchived }
                                 newIsArchived =
                                     case newAsset.isArchived of
                                         ChangeToTrue ->
@@ -849,17 +602,17 @@ handleAssetResult assetResult model =
                                 currentPropertyChange =
                                     Maybe.withDefault RemainFalse (Dict.get album.id asset.albumMembership)
                                 currentlyInAlbum =
-                                    isCurrentlyInAlbum currentPropertyChange
+                                    ViewAlbums.isCurrentlyInAlbum currentPropertyChange
                                 isNotInAlbum =
                                     not currentlyInAlbum
                                 toggledAsset =
-                                    toggleAssetAlbum asset album
+                                    ViewAlbums.toggleAssetAlbum asset album
                                 newPropertyChange =
                                     Maybe.withDefault RemainFalse (Dict.get album.id toggledAsset.albumMembership)
                                 isAddition =
-                                    isAddingToAlbum newPropertyChange
+                                    ViewAlbums.isAddingToAlbum newPropertyChange
                                 newSearch =
-                                    { search | partialKeybinding = "", pagination = resetPagination search.pagination }
+                                    { search | partialKeybinding = "", pagination = ViewAlbums.resetPagination search.pagination }
                             in
                             ( { model | userMode = ViewAssets (EditAsset NormalMode toggledAsset newSearch), pendingAlbumChange = Just ( album.id, isAddition ) }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
                         _ ->
@@ -912,17 +665,17 @@ update msg model =
                                 currentPropertyChange =
                                     Maybe.withDefault RemainFalse (Dict.get album.id asset.albumMembership)
                                 currentlyInAlbum =
-                                    isCurrentlyInAlbum currentPropertyChange
+                                    ViewAlbums.isCurrentlyInAlbum currentPropertyChange
                                 isNotInAlbum =
                                     not currentlyInAlbum
                                 toggledAsset =
-                                    toggleAssetAlbum asset album
+                                    ViewAlbums.toggleAssetAlbum asset album
                                 newPropertyChange =
                                     Maybe.withDefault RemainFalse (Dict.get album.id toggledAsset.albumMembership)
                                 isAddition =
-                                    isAddingToAlbum newPropertyChange
+                                    ViewAlbums.isAddingToAlbum newPropertyChange
                             in
-                            ( { model | userMode = ViewAssets (EditAsset inputMode toggledAsset (getAlbumSearch "" model.knownAlbums)), pendingAlbumChange = Just ( album.id, isAddition ) }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
+                            ( { model | userMode = ViewAssets (EditAsset inputMode toggledAsset (ViewAlbums.getAlbumSearch "" model.knownAlbums)), pendingAlbumChange = Just ( album.id, isAddition ) }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
                         _ ->
                             ( model, Cmd.none )
                 _ ->
@@ -944,13 +697,13 @@ update msg model =
                         ViewAssets assetState ->
                             case assetState of
                                 SelectAlbumInput search ->
-                                    { newModel | userMode = ViewAssets (SelectAlbumInput { search | pagination = updatePagination height search.pagination }) }
+                                    { newModel | userMode = ViewAssets (SelectAlbumInput { search | pagination = ViewAlbums.updatePagination height search.pagination }) }
                                 EditAsset inputMode asset search ->
-                                    { newModel | userMode = ViewAssets (EditAsset inputMode asset { search | pagination = updatePagination height search.pagination }) }
+                                    { newModel | userMode = ViewAssets (EditAsset inputMode asset { search | pagination = ViewAlbums.updatePagination height search.pagination }) }
                                 CreateAlbumConfirmation inputMode asset search albumName ->
-                                    { newModel | userMode = ViewAssets (CreateAlbumConfirmation inputMode asset { search | pagination = updatePagination height search.pagination } albumName) }
+                                    { newModel | userMode = ViewAssets (CreateAlbumConfirmation inputMode asset { search | pagination = ViewAlbums.updatePagination height search.pagination } albumName) }
                                 ShowEditAssetHelp inputMode asset search ->
-                                    { newModel | userMode = ViewAssets (ShowEditAssetHelp inputMode asset { search | pagination = updatePagination height search.pagination }) }
+                                    { newModel | userMode = ViewAssets (ShowEditAssetHelp inputMode asset { search | pagination = ViewAlbums.updatePagination height search.pagination }) }
                                 _ ->
                                     newModel
                         _ ->
@@ -1264,9 +1017,9 @@ update msg model =
                                     (\( assetWithActions, _ ) ->
                                         let
                                             updatedAsset =
-                                                toggleAssetAlbum assetWithActions album
+                                                ViewAlbums.toggleAssetAlbum assetWithActions album
                                             updatedModel =
-                                                { newModel | userMode = ViewAssets (EditAsset InsertMode updatedAsset (getAlbumSearch "" newModel.knownAlbums)) }
+                                                { newModel | userMode = ViewAssets (EditAsset InsertMode updatedAsset (ViewAlbums.getAlbumSearch "" newModel.knownAlbums)) }
                                         in
                                         ( { updatedModel | pendingAlbumChange = Just ( album.id, True ) }, Immich.albumChangeAssetMembership newModel.immichApiPaths album.id [ assetWithActions.asset.id ] True |> Cmd.map ImmichMsg )
                                     )
@@ -1389,181 +1142,7 @@ convertAssetSource menuAssetSource =
 
 
 
--- Helper functions for album selection navigation
 
-getFilteredAlbumsList : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> List ImmichAlbum
-getFilteredAlbumsList search albumKeybindings albums =
-    let
-        matchesDict =
-            filterToOnlySearchedForAlbums search albumKeybindings albums
-    in
-    if search.searchString == "" then
-        -- When no search, just sort by asset count
-        matchesDict
-            |> Dict.values
-            |> List.sortBy (\album -> -album.assetCount)
-    else
-        -- When searching, sort by: score > 0 first, then by asset count within each group
-        matchesDict
-            |> Dict.toList
-            |> List.map (\( id, album ) -> ( Dict.get id search.albumScores |> Maybe.withDefault 0, album ))
-            |> List.sortBy
-                (\( score, album ) ->
-                    ( if score > 0 then
-                        0
-
-                      else
-                        1
-                    , -album.assetCount
-                    )
-                )
-            |> List.map (\( _, album ) -> album)
-
-getFilteredAlbumsListForAsset : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AssetWithActions -> List ImmichAlbum
-getFilteredAlbumsListForAsset search albumKeybindings albums asset =
-    let
-        matchesDict =
-            filterToOnlySearchedForAlbums search albumKeybindings albums
-    in
-    if search.searchString == "" then
-        -- When no search, sort by: asset membership first, then by asset count
-        matchesDict
-            |> Dict.values
-            |> List.sortBy
-                (\album ->
-                    ( if Dict.member album.id asset.albumMembership then
-                        0
-
-                      else
-                        1
-                    , -album.assetCount
-                    )
-                )
-    else
-        -- When searching, sort by: score > 0 first, then asset membership, then by asset count
-        matchesDict
-            |> Dict.toList
-            |> List.map (\( id, album ) -> ( Dict.get id search.albumScores |> Maybe.withDefault 0, album ))
-            |> List.sortBy
-                (\( score, album ) ->
-                    ( if score > 0 then
-                        0
-
-                      else
-                        1
-                    , if Dict.member album.id asset.albumMembership then
-                        0
-
-                      else
-                        1
-                    , -album.assetCount
-                    )
-                )
-            |> List.map (\( _, album ) -> album)
-
-getSelectedAlbum : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Maybe ImmichAlbum
-getSelectedAlbum search albumKeybindings albums =
-    let
-        filteredAlbums =
-            getFilteredAlbumsList search albumKeybindings albums
-    in
-    List.drop search.selectedIndex filteredAlbums
-        |> List.head
-
-moveSelectionUp : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AlbumSearch
-moveSelectionUp search albumKeybindings albums =
-    { search | selectedIndex = max 0 (search.selectedIndex - 1) }
-
-moveSelectionDown : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AlbumSearch
-moveSelectionDown search albumKeybindings albums =
-    let
-        filteredCount =
-            List.length (getFilteredAlbumsList search albumKeybindings albums)
-        maxIndex =
-            max 0 (filteredCount - 1)
-    in
-    { search | selectedIndex = min maxIndex (search.selectedIndex + 1) }
-
-moveSelectionDownForAsset : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AssetWithActions -> AlbumSearch
-moveSelectionDownForAsset search albumKeybindings albums asset =
-    let
-        filteredCount =
-            List.length (getFilteredAlbumsListForAsset search albumKeybindings albums asset)
-        maxIndex =
-            max 0 (filteredCount - 1)
-    in
-    { search | selectedIndex = min maxIndex (search.selectedIndex + 1) }
-
-moveSelectionUpForAsset : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AssetWithActions -> AlbumSearch
-moveSelectionUpForAsset search albumKeybindings albums asset =
-    { search | selectedIndex = max 0 (search.selectedIndex - 1) }
-
-getSelectedAlbumForAsset : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AssetWithActions -> Maybe ImmichAlbum
-getSelectedAlbumForAsset search albumKeybindings albums asset =
-    let
-        filteredAlbums =
-            getFilteredAlbumsListForAsset search albumKeybindings albums asset
-    in
-    List.drop search.selectedIndex filteredAlbums
-        |> List.head
-
-getAlbumByExactKeybinding : String -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Maybe ImmichAlbum
-getAlbumByExactKeybinding keybinding albumKeybindings albums =
-    albumKeybindings
-        |> Dict.toList
-        |> List.filter (\( _, albumKeybinding ) -> albumKeybinding == keybinding)
-        |> List.head
-        |> Maybe.andThen (\( albumId, _ ) -> Dict.get albumId albums)
-
-updateAlbumSearchString : String -> AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> AlbumSearch
-updateAlbumSearchString newSearchString oldSearch albums =
-    getAlbumSearchWithIndex newSearchString 0 albums
-
-toggleAssetAlbum : AssetWithActions -> ImmichAlbum -> AssetWithActions
-toggleAssetAlbum asset album =
-    { asset | albumMembership = Dict.insert album.id (flipPropertyChange <| Maybe.withDefault RemainFalse <| Dict.get album.id asset.albumMembership) asset.albumMembership }
-
-
--- Helper to determine if a PropertyChange represents adding to album
-
-isAddingToAlbum : PropertyChange -> Bool
-isAddingToAlbum propertyChange =
-    case propertyChange of
-        ChangeToTrue ->
-            True
-        RemainTrue ->
-            False
-
-        -- already in album, not adding
-        ChangeToFalse ->
-            False
-        RemainFalse ->
-            False
-
-
--- Helper to determine current effective membership state
-
-isCurrentlyInAlbum : PropertyChange -> Bool
-isCurrentlyInAlbum propertyChange =
-    case propertyChange of
-        RemainTrue ->
-            True
-
-        -- currently in, staying in
-        ChangeToFalse ->
-            True
-
-        -- currently in, changing to not in
-        RemainFalse ->
-            False
-
-        -- currently not in, staying not in
-        ChangeToTrue ->
-            False
-
-
-
--- currently not in, changing to in
 
 updateAlbumAssetCount : ImmichAlbumId -> Int -> Model -> Model
 updateAlbumAssetCount albumId countChange model =
@@ -1634,7 +1213,7 @@ switchToEditIfAssetFound model index =
                     -- else
                     --     Cmd.none
                 in
-                ( { model | imageIndex = index, userMode = ViewAssets (EditAsset NormalMode (getAssetWithActions asset) (getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight)) }, cmdToSend )
+                ( { model | imageIndex = index, userMode = ViewAssets (EditAsset NormalMode (ViewAlbums.getAssetWithActions asset) (ViewAlbums.getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight)) }, cmdToSend )
             )
         |> Maybe.withDefault ( createLoadStateForCurrentAssetSource model.currentAssetsSource model, Cmd.none )
 
@@ -1645,165 +1224,7 @@ getCurrentAssetWithActions model =
         |> List.drop model.imageIndex
         |> List.head
         |> Maybe.andThen (\id -> Dict.get id model.knownAssets)
-        |> Maybe.map (\asset -> ( getAssetWithActions asset, getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight ))
-
-getAssetWithActions : ImmichAsset -> AssetWithActions
-getAssetWithActions asset =
-    { asset = asset
-    , isFavourite =
-        if asset.isFavourite then
-            RemainTrue
-
-        else
-            RemainFalse
-    , isArchived =
-        if asset.isArchived then
-            RemainTrue
-
-        else
-            RemainFalse
-    , albumMembership = Dict.fromList <| List.map (\a -> ( a, RemainTrue )) asset.albumMembership
-    }
-
-getAlbumSearch : String -> Dict ImmichAssetId ImmichAlbum -> AlbumSearch
-getAlbumSearch searchString albums =
-    getAlbumSearchWithHeight searchString albums 800
-
-getAlbumSearchWithHeight : String -> Dict ImmichAssetId ImmichAlbum -> Int -> AlbumSearch
-getAlbumSearchWithHeight searchString albums screenHeight =
-    let
-        totalItems =
-            Dict.size albums
-        itemsPerPage =
-            calculateItemsPerPage screenHeight
-    in
-    { searchString = searchString
-    , albumScores =
-        Dict.map (\id album -> shittyFuzzyAlgorithmTest searchString album.albumName) albums
-    , selectedIndex = 0
-    , partialKeybinding = ""
-    , pagination =
-        { currentPage = 0
-        , itemsPerPage = itemsPerPage
-        , totalItems = totalItems
-        }
-    }
-
-getAlbumSearchWithIndex : String -> Int -> Dict ImmichAssetId ImmichAlbum -> AlbumSearch
-getAlbumSearchWithIndex searchString selectedIndex albums =
-    let
-        totalItems =
-            Dict.size albums
-        itemsPerPage =
-            calculateItemsPerPage 800
-
-        -- Default screen height
-    in
-    { searchString = searchString
-    , albumScores =
-        Dict.map (\id album -> shittyFuzzyAlgorithmTest searchString album.albumName) albums
-    , selectedIndex = selectedIndex
-    , partialKeybinding = ""
-    , pagination =
-        { currentPage = 0
-        , itemsPerPage = itemsPerPage
-        , totalItems = totalItems
-        }
-    }
-
-
--- Pagination helper functions
-
-calculateItemsPerPage : Int -> Int
-calculateItemsPerPage screenHeight =
-    -- Assuming each album item is about 25px tall, with some padding for header/footer
-    max 5 ((screenHeight - 100) // 25)
-
-calculateTotalPages : Int -> Int -> Int
-calculateTotalPages totalItems itemsPerPage =
-    if itemsPerPage == 0 then
-        1
-    else
-        (totalItems + itemsPerPage - 1) // itemsPerPage
-
-updatePagination : Int -> AlbumPagination -> AlbumPagination
-updatePagination screenHeight pagination =
-    let
-        newItemsPerPage =
-            calculateItemsPerPage screenHeight
-    in
-    { pagination
-        | itemsPerPage = newItemsPerPage
-    }
-
-resetPagination : AlbumPagination -> AlbumPagination
-resetPagination pagination =
-    { pagination | currentPage = 0 }
-
-pageUp : AlbumPagination -> AlbumPagination
-pageUp pagination =
-    { pagination | currentPage = max 0 (pagination.currentPage - 1) }
-
-pageDown : AlbumPagination -> AlbumPagination
-pageDown pagination =
-    let
-        maxPage =
-            calculateTotalPages pagination.totalItems pagination.itemsPerPage - 1
-    in
-    { pagination | currentPage = min maxPage (pagination.currentPage + 1) }
-
-halfPageUp : AlbumPagination -> AlbumPagination
-halfPageUp pagination =
-    let
-        halfPage =
-            pagination.itemsPerPage // 2
-        newCurrentItem =
-            max 0 (pagination.currentPage * pagination.itemsPerPage - halfPage)
-        newPage =
-            newCurrentItem // pagination.itemsPerPage
-    in
-    { pagination | currentPage = newPage }
-
-halfPageDown : AlbumPagination -> AlbumPagination
-halfPageDown pagination =
-    let
-        halfPage =
-            pagination.itemsPerPage // 2
-        maxItems =
-            pagination.totalItems
-        newCurrentItem =
-            min (maxItems - 1) (pagination.currentPage * pagination.itemsPerPage + pagination.itemsPerPage + halfPage)
-        newPage =
-            newCurrentItem // pagination.itemsPerPage
-        maxPage =
-            calculateTotalPages pagination.totalItems pagination.itemsPerPage - 1
-    in
-    { pagination | currentPage = min maxPage newPage }
-
-
--- { searchString = searchString
--- , albumsWithScore =
---     albumsWithScores
---         |> List.filter (\a -> a.score > 0 || searchString == "")
---         |> List.sortBy (\a -> ( a.score, a.album.assetCount ))
---         |> List.reverse
--- }
-
-shittyFuzzyAlgorithmTest : String -> String -> Int
-shittyFuzzyAlgorithmTest searchString textToBeSearched =
-    let
-        patternFzfFuzzy =
-            List.foldr (++) ".*" <| List.map (\a -> String.fromChar a ++ ".*") <| String.toList searchString
-        regexes =
-            [ { score = 10, regex = regexFromString ("$" ++ searchString ++ ".*") }
-            , { score = 7, regex = regexFromString ("[^a-z]" ++ searchString ++ ".*") }
-            , { score = 5, regex = regexFromString patternFzfFuzzy }
-            ]
-    in
-    if searchString == "" then
-        0
-    else
-        List.filter (\a -> Regex.contains a.regex textToBeSearched) regexes |> List.map .score |> List.foldr (+) 0
+        |> Maybe.map (\asset -> ( ViewAlbums.getAssetWithActions asset, ViewAlbums.getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight ))
 
 
 
