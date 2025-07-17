@@ -83,6 +83,16 @@ type alias Model =
     , immichApiPaths : ImmichApiPaths
     , screenHeight : Int
     , pendingAlbumChange : Maybe ( ImmichAlbumId, Bool ) -- (albumId, isAddition)
+    , paginationState : PaginationState
+    }
+
+type alias PaginationState =
+    { currentConfig : Maybe ImageSearchConfig
+    , currentQuery : Maybe String
+    , totalAssets : Int
+    , currentPage : Int
+    , hasMorePages : Bool
+    , isLoadingMore : Bool
     }
 
 
@@ -138,6 +148,14 @@ init flags =
       , immichApiPaths = getImmichApiPaths flags.immichApiUrl flags.immichApiKey
       , screenHeight = 800 -- Default, will be updated by window resize
       , pendingAlbumChange = Nothing
+      , paginationState = 
+          { currentConfig = Nothing
+          , currentQuery = Nothing
+          , totalAssets = 0
+          , currentPage = 1
+          , hasMorePages = False
+          , isLoadingMore = False
+          }
       }
       -- , Cmd.none
     , getAllAlbums flags.immichApiUrl flags.immichApiKey |> Cmd.map ImmichMsg
@@ -888,7 +906,11 @@ update msg model =
                                 searchConfig =
                                     { order = config.order, categorisation = config.categorisation, mediaType = config.mediaType, status = config.status }
                             in
-                            ( createLoadStateForCurrentAssetSource (ImageSearch searchConfig) model, Immich.fetchImages model.immichApiPaths searchConfig 1000 1 |> Cmd.map ImmichMsg )
+                            let
+                                updatedModel = createLoadStateForCurrentAssetSource (ImageSearch searchConfig) model
+                                modelWithPagination = { updatedModel | paginationState = { currentConfig = Just searchConfig, currentQuery = Nothing, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False } }
+                            in
+                            ( modelWithPagination, Immich.fetchImagesPaginated model.immichApiPaths searchConfig 1000 1 |> Cmd.map ImmichMsg )
                         _ ->
                             ( model, Cmd.none )
                 _ ->
@@ -901,7 +923,11 @@ update msg model =
                             if String.isEmpty config.query then
                                 ( model, Cmd.none )
                             else
-                                ( createLoadStateForCurrentAssetSource (TextSearch config.query) model, Immich.searchAssets model.immichApiPaths config.query config.mediaType config.status 1000 1 |> Cmd.map ImmichMsg )
+                                let
+                                    updatedModel = createLoadStateForCurrentAssetSource (TextSearch config.query) model
+                                    modelWithPagination = { updatedModel | paginationState = { currentConfig = Nothing, currentQuery = Just config.query, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False } }
+                                in
+                                ( modelWithPagination, Immich.searchAssetsPaginated model.immichApiPaths config.query config.mediaType config.status 1000 1 |> Cmd.map ImmichMsg )
                         _ ->
                             ( model, Cmd.none )
                 _ ->
@@ -980,6 +1006,17 @@ update msg model =
                             in
                             updatedModel
 
+                        Immich.PaginatedImagesFetched (Ok paginatedResponse) ->
+                            model
+                                |> handleFetchAssets paginatedResponse.assets
+                                |> handleUpdateLoadingState FetchedAssetList
+                                |> updatePaginationState paginatedResponse 1
+
+                        Immich.MoreImagesFetched page (Ok paginatedResponse) ->
+                            model
+                                |> appendFetchedAssets paginatedResponse.assets
+                                |> updatePaginationState paginatedResponse page
+
                         Immich.AlbumFetchedForFiltering order mediaType status (Ok album) ->
                             let
                                 -- Filter album assets client-side
@@ -1037,6 +1074,10 @@ update msg model =
                                     model
                         Immich.ImagesFetched (Err error) ->
                             { model | imagesLoadState = ImmichLoadError error }
+                        Immich.PaginatedImagesFetched (Err error) ->
+                            { model | imagesLoadState = ImmichLoadError error }
+                        Immich.MoreImagesFetched _ (Err error) ->
+                            { model | imagesLoadState = ImmichLoadError error }
                         _ ->
                             model
             in
@@ -1085,6 +1126,42 @@ update msg model =
                                 |> Maybe.withDefault ( newModel, Cmd.none )
                         _ ->
                             ( newModel, Cmd.none )
+                Immich.PaginatedImagesFetched (Ok paginatedResponse) ->
+                    -- Auto-fetch next page if there are more assets
+                    let
+                        nextPageCmd = 
+                            if paginatedResponse.hasNextPage && not newModel.paginationState.isLoadingMore then
+                                case (newModel.paginationState.currentConfig, newModel.paginationState.currentQuery) of
+                                    (Just config, Nothing) ->
+                                        Immich.fetchMoreImages newModel.immichApiPaths config 1000 2 |> Cmd.map ImmichMsg
+                                    (Nothing, Just query) ->
+                                        Immich.searchAssetsPaginated newModel.immichApiPaths query AllMedia AllStatuses 1000 2 |> Cmd.map ImmichMsg
+                                    _ ->
+                                        Cmd.none
+                            else
+                                Cmd.none
+                    in
+                    ( newModel, nextPageCmd )
+                Immich.MoreImagesFetched page (Ok paginatedResponse) ->
+                    -- Auto-fetch next page if there are more assets
+                    let
+                        nextPageCmd = 
+                            if paginatedResponse.hasNextPage && not newModel.paginationState.isLoadingMore then
+                                case (newModel.paginationState.currentConfig, newModel.paginationState.currentQuery) of
+                                    (Just config, Nothing) ->
+                                        Immich.fetchMoreImages newModel.immichApiPaths config 1000 (page + 1) |> Cmd.map ImmichMsg
+                                    (Nothing, Just query) ->
+                                        Immich.searchAssetsPaginated newModel.immichApiPaths query AllMedia AllStatuses 1000 (page + 1) |> Cmd.map ImmichMsg
+                                    _ ->
+                                        Cmd.none
+                            else
+                                Cmd.none
+                    in
+                    ( newModel, nextPageCmd )
+                Immich.PaginatedImagesFetched (Err _) ->
+                    checkIfLoadingComplete newModel
+                Immich.MoreImagesFetched _ (Err _) ->
+                    checkIfLoadingComplete newModel
                 _ ->
                     checkIfLoadingComplete newModel
 
@@ -1285,6 +1362,36 @@ getCurrentAssetWithActions model =
         |> Maybe.andThen (\id -> Dict.get id model.knownAssets)
         |> Maybe.map (\asset -> ( ViewAlbums.getAssetWithActions asset, ViewAlbums.getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight ))
 
+
+-- PAGINATION HELPERS --
+
+updatePaginationState : Immich.PaginatedAssetResponse -> Int -> Model -> Model
+updatePaginationState paginatedResponse page model =
+    { model 
+        | paginationState = 
+            { currentConfig = model.paginationState.currentConfig
+            , currentQuery = model.paginationState.currentQuery
+            , totalAssets = paginatedResponse.total
+            , currentPage = page
+            , hasMorePages = paginatedResponse.hasNextPage
+            , isLoadingMore = False
+            }
+    }
+
+appendFetchedAssets : List ImmichAsset -> Model -> Model
+appendFetchedAssets newAssets model =
+    let
+        updatedKnownAssets =
+            Helpers.listOverrideDict newAssets (\a -> ( a.id, a )) model.knownAssets
+        
+        existingAssetIds = model.currentAssets
+        newAssetIds = List.map .id newAssets
+        combinedAssetIds = existingAssetIds ++ newAssetIds
+    in
+    { model 
+        | knownAssets = updatedKnownAssets
+        , currentAssets = combinedAssetIds
+    }
 
 
 -- SUBSCRIPTIONS --
