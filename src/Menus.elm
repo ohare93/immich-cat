@@ -1,54 +1,42 @@
 module Menus exposing
-    ( SearchContext(..)
-    , TimelineConfig
+    ( AlbumConfig
     , SearchConfig
-    , AlbumConfig
-    , viewMainMenu
-    , viewTimelineView
-    , viewSearchView
-    , viewAlbumView
-    , viewSettings
-    , viewInstructions
-    , viewMainMenuOption
-    , viewTimelineFilters
-    , viewSearchFilters
-    , viewAlbumFilters
-    , viewFilterValue
-    , checkForEmptyFilterResults
-    , mediaTypeToString
-    , categorisationToString
-    , orderToString
-    , statusToString
-    , searchContextToString
-    , toggleMediaType
-    , toggleCategorisation
-    , toggleOrder
-    , toggleStatus
-    , toggleSearchContext
-    , defaultTimelineConfig
-    , defaultSearchConfig
+    , SearchContext(..)
+    , TimelineConfig
     , defaultAlbumConfig
+    , defaultSearchConfig
+    , defaultTimelineConfig
     , filterByMediaType
     , filterByStatus
+    , toggleCategorisation
+    , toggleMediaType
+    , toggleOrder
+    , toggleSearchContext
+    , toggleStatus
+    , viewAlbumView
+    , viewMainMenu
+    , viewSearchView
+    , viewSettings
+    , viewTimelineView
     )
 
-import Date exposing (Date)
 import Dict exposing (Dict)
 import Element exposing (Element, centerX, centerY, column, el, fill, fillPortion, height, paddingXY, px, row, text, width)
-import Element.Background as Background
-import Element.Border as Border
 import Element.Font as Font
-import Element.Input as Input
 import Element.Input exposing (button)
-import Immich exposing (ImmichAlbum, ImmichAsset, ImmichAssetId, ImmichLoadState(..), ImageOrder(..), CategorisationFilter(..), MediaTypeFilter(..), StatusFilter(..))
-import ViewAlbums exposing (AlbumSearch, viewSidebarAlbums, viewWithSidebar)
+import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImmichAlbum, ImmichAsset, ImmichAssetId, ImmichLoadState(..), MediaTypeFilter(..), StatusFilter(..))
 import ViewAsset exposing (viewKeybinding)
 
+
+
 -- Types that need to be imported from Main
+
+
 type SearchContext
     = ContentSearch
     | FilenameSearch
     | DescriptionSearch
+
 
 type alias TimelineConfig =
     { mediaType : MediaTypeFilter
@@ -56,6 +44,7 @@ type alias TimelineConfig =
     , order : ImageOrder
     , status : StatusFilter
     }
+
 
 type alias SearchConfig =
     { mediaType : MediaTypeFilter
@@ -65,6 +54,7 @@ type alias SearchConfig =
     , inputFocused : Bool
     }
 
+
 type alias AlbumConfig =
     { mediaType : MediaTypeFilter
     , order : ImageOrder
@@ -73,8 +63,9 @@ type alias AlbumConfig =
 
 
 
-
 -- Main menu view
+
+
 viewMainMenu : msg -> Element msg
 viewMainMenu loadDataMsg =
     row [ width fill, height fill ]
@@ -95,6 +86,7 @@ viewMainMenu loadDataMsg =
         , el [ width <| fillPortion 1, height fill ] <| viewInstructions
         ]
 
+
 viewMainMenuOption : String -> String -> String -> Element msg
 viewMainMenuOption key title description =
     row [ width fill, Element.spacingXY 10 0, paddingXY 10 8 ]
@@ -104,6 +96,7 @@ viewMainMenuOption key title description =
             , el [ Font.size 14, Font.color (Element.rgb 0.6 0.6 0.6) ] (text description)
             ]
         ]
+
 
 viewInstructions : Element msg
 viewInstructions =
@@ -130,7 +123,11 @@ viewInstructions =
             ]
         ]
 
+
+
 -- Timeline view
+
+
 viewTimelineView : { a | albumKeybindings : Dict ImmichAssetId String, currentAssets : List ImmichAssetId, imagesLoadState : ImmichLoadState, knownAlbums : Dict ImmichAssetId ImmichAlbum, knownAssets : Dict ImmichAssetId ImmichAsset, imageIndex : Int } -> TimelineConfig -> msg -> msg -> Element msg
 viewTimelineView model config loadDataMsg loadTimelineAssetsMsg =
     row [ width fill, height fill ]
@@ -150,7 +147,11 @@ viewTimelineView model config loadDataMsg loadTimelineAssetsMsg =
             ]
         ]
 
+
+
 -- Search view
+
+
 viewSearchView : { a | albumKeybindings : Dict ImmichAssetId String, currentAssets : List ImmichAssetId, imagesLoadState : ImmichLoadState, knownAlbums : Dict ImmichAssetId ImmichAlbum } -> SearchConfig -> msg -> Element msg
 viewSearchView model config executeSearchMsg =
     row [ width fill, height fill ]
@@ -163,7 +164,15 @@ viewSearchView model config executeSearchMsg =
                 [ el [ Font.size 12, Font.bold ] (text "Filters:")
                 , el [ Font.size 11 ] (text "[m] Media Type  [c] Search Context  [s] Status")
                 , el [ Font.size 12, Font.bold ] (text "Input Mode:")
-                , el [ Font.size 11 ] (text (if config.inputFocused then "[Escape] Exit input mode" else "[i] Enter input mode to type"))
+                , el [ Font.size 11 ]
+                    (text
+                        (if config.inputFocused then
+                            "[Escape] Exit input mode"
+
+                         else
+                            "[i] Enter input mode to type"
+                        )
+                    )
                 , el [ Font.size 12, Font.bold ] (text "Actions:")
                 , el [ Font.size 11 ] (text "[Enter/Space] Search & View Results  [Escape] Back to Menu")
                 ]
@@ -173,7 +182,11 @@ viewSearchView model config executeSearchMsg =
             ]
         ]
 
+
+
 -- Album view
+
+
 viewAlbumView : { a | albumKeybindings : Dict ImmichAssetId String, currentAssets : List ImmichAssetId, imagesLoadState : ImmichLoadState, knownAlbums : Dict ImmichAssetId ImmichAlbum } -> ImmichAlbum -> AlbumConfig -> (ImmichAlbum -> msg) -> Element msg
 viewAlbumView model album config loadAlbumAssetsMsg =
     row [ width fill, height fill ]
@@ -194,6 +207,7 @@ viewAlbumView model album config loadAlbumAssetsMsg =
             ]
         ]
 
+
 checkForEmptyFilterResults : { a | albumKeybindings : Dict ImmichAssetId String, currentAssets : List ImmichAssetId, imagesLoadState : ImmichLoadState, knownAlbums : Dict ImmichAssetId ImmichAlbum } -> AlbumConfig -> ImmichAlbum -> Element msg
 checkForEmptyFilterResults model config album =
     case model.imagesLoadState of
@@ -209,12 +223,19 @@ checkForEmptyFilterResults model config album =
                         ]
                     , el [ Font.size 12, Font.color <| Element.rgb 0.5 0.5 0.5 ] (text "Press [m], [o], or [s] to change filters")
                     ]
+
             else
-                text "Album assets will appear here" -- TODO: implement filtered album assets
+                text "Album assets will appear here"
+
+        -- TODO: implement filtered album assets
         _ ->
             text "Loading album assets..."
 
+
+
 -- Settings view
+
+
 viewSettings : { a | albumKeybindings : Dict ImmichAssetId String, currentAssets : List ImmichAssetId, imagesLoadState : ImmichLoadState, knownAlbums : Dict ImmichAssetId ImmichAlbum } -> Element msg
 viewSettings model =
     column [ width fill, height fill, paddingXY 20 20, Element.spacingXY 0 20 ]
@@ -230,7 +251,11 @@ viewSettings model =
         , el [ Font.size 12 ] (text "Press Escape to return to main menu")
         ]
 
+
+
 -- Filter panel views
+
+
 viewTimelineFilters : TimelineConfig -> Element msg
 viewTimelineFilters config =
     column [ Element.spacingXY 0 12 ]
@@ -241,6 +266,7 @@ viewTimelineFilters config =
         , viewFilterValue "Status" (statusToString config.status)
         ]
 
+
 viewSearchFilters : SearchConfig -> Element msg
 viewSearchFilters config =
     column [ Element.spacingXY 0 12 ]
@@ -249,6 +275,7 @@ viewSearchFilters config =
         , viewFilterValue "Search Context" (searchContextToString config.searchContext)
         , viewFilterValue "Status" (statusToString config.status)
         ]
+
 
 viewAlbumFilters : AlbumConfig -> Element msg
 viewAlbumFilters config =
@@ -259,6 +286,7 @@ viewAlbumFilters config =
         , viewFilterValue "Status" (statusToString config.status)
         ]
 
+
 viewFilterValue : String -> String -> Element msg
 viewFilterValue label value =
     row [ Element.spacingXY 10 0 ]
@@ -266,77 +294,143 @@ viewFilterValue label value =
         , el [ Font.size 14, Font.color (Element.rgb 0.2 0.6 1.0) ] (text value)
         ]
 
+
+
 -- String conversion functions
+
+
 mediaTypeToString : MediaTypeFilter -> String
 mediaTypeToString mediaType =
     case mediaType of
-        AllMedia -> "All"
-        ImagesOnly -> "Images"
-        VideosOnly -> "Videos"
+        AllMedia ->
+            "All"
+
+        ImagesOnly ->
+            "Images"
+
+        VideosOnly ->
+            "Videos"
+
 
 categorisationToString : CategorisationFilter -> String
 categorisationToString categorisation =
     case categorisation of
-        All -> "All"
-        Uncategorised -> "Uncategorised"
+        All ->
+            "All"
+
+        Uncategorised ->
+            "Uncategorised"
+
 
 orderToString : ImageOrder -> String
 orderToString order =
     case order of
-        Desc -> "Newest"
-        Asc -> "Oldest"
-        Random -> "Random"
+        Desc ->
+            "Newest"
+
+        Asc ->
+            "Oldest"
+
+        Random ->
+            "Random"
+
 
 statusToString : StatusFilter -> String
 statusToString status =
     case status of
-        AllStatuses -> "All"
-        FavoritesOnly -> "Favorites"
-        ArchivedOnly -> "Archived"
+        AllStatuses ->
+            "All"
+
+        FavoritesOnly ->
+            "Favorites"
+
+        ArchivedOnly ->
+            "Archived"
+
 
 searchContextToString : SearchContext -> String
 searchContextToString context =
     case context of
-        ContentSearch -> "Content"
-        FilenameSearch -> "Filename"
-        DescriptionSearch -> "Description"
+        ContentSearch ->
+            "Content"
+
+        FilenameSearch ->
+            "Filename"
+
+        DescriptionSearch ->
+            "Description"
+
+
 
 -- Toggle functions
+
+
 toggleMediaType : MediaTypeFilter -> MediaTypeFilter
 toggleMediaType current =
     case current of
-        AllMedia -> ImagesOnly
-        ImagesOnly -> VideosOnly
-        VideosOnly -> AllMedia
+        AllMedia ->
+            ImagesOnly
+
+        ImagesOnly ->
+            VideosOnly
+
+        VideosOnly ->
+            AllMedia
+
 
 toggleCategorisation : CategorisationFilter -> CategorisationFilter
 toggleCategorisation current =
     case current of
-        All -> Uncategorised
-        Uncategorised -> All
+        All ->
+            Uncategorised
+
+        Uncategorised ->
+            All
+
 
 toggleOrder : ImageOrder -> ImageOrder
 toggleOrder current =
     case current of
-        Desc -> Asc
-        Asc -> Random
-        Random -> Desc
+        Desc ->
+            Asc
+
+        Asc ->
+            Random
+
+        Random ->
+            Desc
+
 
 toggleStatus : StatusFilter -> StatusFilter
 toggleStatus current =
     case current of
-        AllStatuses -> FavoritesOnly
-        FavoritesOnly -> ArchivedOnly
-        ArchivedOnly -> AllStatuses
+        AllStatuses ->
+            FavoritesOnly
+
+        FavoritesOnly ->
+            ArchivedOnly
+
+        ArchivedOnly ->
+            AllStatuses
+
 
 toggleSearchContext : SearchContext -> SearchContext
 toggleSearchContext current =
     case current of
-        ContentSearch -> FilenameSearch
-        FilenameSearch -> DescriptionSearch
-        DescriptionSearch -> ContentSearch
+        ContentSearch ->
+            FilenameSearch
+
+        FilenameSearch ->
+            DescriptionSearch
+
+        DescriptionSearch ->
+            ContentSearch
+
+
 
 -- Default configurations
+
+
 defaultTimelineConfig : TimelineConfig
 defaultTimelineConfig =
     { mediaType = AllMedia
@@ -344,6 +438,7 @@ defaultTimelineConfig =
     , order = Desc
     , status = AllStatuses
     }
+
 
 defaultSearchConfig : SearchConfig
 defaultSearchConfig =
@@ -354,6 +449,7 @@ defaultSearchConfig =
     , inputFocused = False
     }
 
+
 defaultAlbumConfig : AlbumConfig
 defaultAlbumConfig =
     { mediaType = AllMedia
@@ -361,23 +457,32 @@ defaultAlbumConfig =
     , status = AllStatuses
     }
 
+
+
 -- Filter functions
+
+
 filterByMediaType : MediaTypeFilter -> List ImmichAsset -> List ImmichAsset
 filterByMediaType mediaFilter assets =
     case mediaFilter of
         AllMedia ->
             assets
+
         ImagesOnly ->
             List.filter (\asset -> String.startsWith "image/" asset.mimeType) assets
+
         VideosOnly ->
             List.filter (\asset -> String.startsWith "video/" asset.mimeType) assets
+
 
 filterByStatus : StatusFilter -> List ImmichAsset -> List ImmichAsset
 filterByStatus statusFilter assets =
     case statusFilter of
         AllStatuses ->
             assets
+
         FavoritesOnly ->
             List.filter (\asset -> asset.isFavourite) assets
+
         ArchivedOnly ->
             List.filter (\asset -> asset.isArchived) assets

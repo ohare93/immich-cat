@@ -2,13 +2,6 @@ module Helpers exposing (..)
 
 import Dict exposing (Dict)
 import Regex exposing (Regex)
-import Task
-
-
-send : msg -> Cmd msg
-send msg =
-    Task.succeed msg
-        |> Task.perform identity
 
 
 regexFromString : String -> Regex

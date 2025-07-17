@@ -1,13 +1,11 @@
 module Immich exposing (..)
 
 import Date exposing (Date, fromIsoString)
-import Html exposing (..)
 import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
 import String exposing (split)
-import Url exposing (percentEncode)
-import Url.Builder exposing (absolute, crossOrigin, string)
+import Url.Builder exposing (crossOrigin, string)
 
 
 type ImageOrder
@@ -15,9 +13,11 @@ type ImageOrder
     | Asc
     | Random
 
+
 type CategorisationFilter
     = All
     | Uncategorised
+
 
 type alias ImageSearchConfig =
     { order : ImageOrder
@@ -26,20 +26,24 @@ type alias ImageSearchConfig =
     , status : StatusFilter
     }
 
+
 type MediaTypeFilter
     = AllMedia
-    | ImagesOnly 
+    | ImagesOnly
     | VideosOnly
+
 
 type StatusFilter
     = AllStatuses
     | FavoritesOnly
     | ArchivedOnly
 
+
 type ImmichLoadState
     = ImmichLoading
     | ImmichLoadSuccess
     | ImmichLoadError Http.Error
+
 
 type alias ImmichApiPaths =
     { downloadAsset : ImmichAssetId -> String
@@ -54,33 +58,43 @@ type alias ImmichApiPaths =
     , apiKey : String
     }
 
+
+
 -- Helper function to properly join URL paths using crossOrigin
+
+
 joinUrl : String -> List String -> String
 joinUrl baseUrl pathSegments =
     crossOrigin baseUrl pathSegments []
 
+
+
 -- Helper function to build URL with query parameters using crossOrigin
-buildUrlWithQuery : String -> List String -> List (String, String) -> String
+
+
+buildUrlWithQuery : String -> List String -> List ( String, String ) -> String
 buildUrlWithQuery baseUrl pathSegments queryParams =
-    crossOrigin baseUrl pathSegments (List.map (\(key, value) -> string key value) queryParams)
+    crossOrigin baseUrl pathSegments (List.map (\( key, value ) -> string key value) queryParams)
+
 
 getImmichApiPaths : String -> String -> ImmichApiPaths
 getImmichApiPaths baseUrl immichApiKey =
-    { downloadAsset = \id -> joinUrl baseUrl ["api", "assets", id, "original"]
-    , fetchMembershipForAsset = \assetId -> buildUrlWithQuery baseUrl ["api", "albums"] [("assetId", assetId)]
-    , searchRandom = joinUrl baseUrl ["api", "search", "random"]
-    , searchAssets = joinUrl baseUrl ["api", "search", "metadata"]
-    , searchSmart = joinUrl baseUrl ["api", "search", "smart"]
-    , getAlbum = \id -> joinUrl baseUrl ["api", "albums", id]
-    , putAlbumAssets = \id -> joinUrl baseUrl ["api", "albums", id, "assets"]
-    , createAlbum = joinUrl baseUrl ["api", "albums"]
-    , updateAsset = \id -> joinUrl baseUrl ["api", "assets", id]
+    { downloadAsset = \id -> joinUrl baseUrl [ "api", "assets", id, "original" ]
+    , fetchMembershipForAsset = \assetId -> buildUrlWithQuery baseUrl [ "api", "albums" ] [ ( "assetId", assetId ) ]
+    , searchRandom = joinUrl baseUrl [ "api", "search", "random" ]
+    , searchAssets = joinUrl baseUrl [ "api", "search", "metadata" ]
+    , searchSmart = joinUrl baseUrl [ "api", "search", "smart" ]
+    , getAlbum = \id -> joinUrl baseUrl [ "api", "albums", id ]
+    , putAlbumAssets = \id -> joinUrl baseUrl [ "api", "albums", id, "assets" ]
+    , createAlbum = joinUrl baseUrl [ "api", "albums" ]
+    , updateAsset = \id -> joinUrl baseUrl [ "api", "assets", id ]
     , apiKey = immichApiKey
     }
 
 
 type alias ImmichAssetId =
     String
+
 
 type alias ImmichAlbumId =
     String
@@ -105,31 +119,24 @@ type alias ImmichAlbum =
     , albumName : String
     , assetCount : Int
     , assets : List ImmichAsset
+
     -- , albumThumbnailAssetId : String
     , createdAt : Date
     }
 
 
-type alias ImmichConfig =
-    { baseUrl : String
-    , apiKey : String
-    }
-
-type SearchModifier
-    = NotInAnyAlbum Bool
-    | OrderDesc Bool
-    | IsFavourited Bool
-
 
 -- GENERIC HTTP REQUEST BUILDERS
 
-makeApiRequest : 
+
+makeApiRequest :
     { method : String
     , url : String
     , apiKey : String
     , body : Http.Body
     , expect : Http.Expect Msg
-    } -> Cmd Msg
+    }
+    -> Cmd Msg
 makeApiRequest config =
     Http.request
         { method = config.method
@@ -141,6 +148,7 @@ makeApiRequest config =
         , tracker = Nothing
         }
 
+
 makeGetRequest : String -> String -> Decode.Decoder a -> (Result Http.Error a -> Msg) -> Cmd Msg
 makeGetRequest apiKey url decoder msgConstructor =
     makeApiRequest
@@ -150,6 +158,7 @@ makeGetRequest apiKey url decoder msgConstructor =
         , body = Http.emptyBody
         , expect = Http.expectJson msgConstructor decoder
         }
+
 
 makePostRequest : String -> String -> Encode.Value -> Decode.Decoder a -> (Result Http.Error a -> Msg) -> Cmd Msg
 makePostRequest apiKey url jsonBody decoder msgConstructor =
@@ -161,6 +170,7 @@ makePostRequest apiKey url jsonBody decoder msgConstructor =
         , expect = Http.expectJson msgConstructor decoder
         }
 
+
 makePutRequest : String -> String -> Encode.Value -> Decode.Decoder a -> (Result Http.Error a -> Msg) -> Cmd Msg
 makePutRequest apiKey url jsonBody decoder msgConstructor =
     makeApiRequest
@@ -170,6 +180,7 @@ makePutRequest apiKey url jsonBody decoder msgConstructor =
         , body = Http.jsonBody jsonBody
         , expect = Http.expectJson msgConstructor decoder
         }
+
 
 makeDeleteRequest : String -> String -> Encode.Value -> (Result Http.Error () -> Msg) -> Cmd Msg
 makeDeleteRequest apiKey url jsonBody msgConstructor =
@@ -181,6 +192,7 @@ makeDeleteRequest apiKey url jsonBody msgConstructor =
         , expect = Http.expectWhatever msgConstructor
         }
 
+
 makePutRequestWithWhatever : String -> String -> Encode.Value -> (Result Http.Error () -> Msg) -> Cmd Msg
 makePutRequestWithWhatever apiKey url jsonBody msgConstructor =
     makeApiRequest
@@ -191,67 +203,99 @@ makePutRequestWithWhatever apiKey url jsonBody msgConstructor =
         , expect = Http.expectWhatever msgConstructor
         }
 
+
+
 -- BODY CONSTRUCTION HELPERS
 
-makeSimpleJsonBody : List (String, Encode.Value) -> Encode.Value
+
+makeSimpleJsonBody : List ( String, Encode.Value ) -> Encode.Value
 makeSimpleJsonBody fields =
     Encode.object fields
+
 
 makeAssetIdsBody : List ImmichAssetId -> Encode.Value
 makeAssetIdsBody assetIds =
     Encode.object [ ( "ids", Encode.list Encode.string assetIds ) ]
 
+
 makeSearchBody : ImageSearchConfig -> Int -> Int -> Encode.Value
 makeSearchBody config size page =
     makeSearchBodyWithAlbum config Nothing size page
 
+
 makeSearchBodyWithAlbum : ImageSearchConfig -> Maybe ImmichAlbumId -> Int -> Int -> Encode.Value
 makeSearchBodyWithAlbum config maybeAlbumId size page =
     let
-        orderField = 
+        orderField =
             case config.order of
-                Desc -> [ ( "order", Encode.string "desc" ) ]
-                Asc -> [ ( "order", Encode.string "asc" ) ]
-                Random -> [] -- Random uses different endpoint
+                Desc ->
+                    [ ( "order", Encode.string "desc" ) ]
 
-        categorisationField = 
+                Asc ->
+                    [ ( "order", Encode.string "asc" ) ]
+
+                Random ->
+                    []
+
+        -- Random uses different endpoint
+        categorisationField =
             case config.categorisation of
-                Uncategorised -> [ ( "isNotInAlbum", Encode.bool True ) ]
-                All -> []
+                Uncategorised ->
+                    [ ( "isNotInAlbum", Encode.bool True ) ]
+
+                All ->
+                    []
 
         mediaTypeField =
             case config.mediaType of
-                AllMedia -> []
-                ImagesOnly -> [ ( "type", Encode.string "IMAGE" ) ]
-                VideosOnly -> [ ( "type", Encode.string "VIDEO" ) ]
+                AllMedia ->
+                    []
+
+                ImagesOnly ->
+                    [ ( "type", Encode.string "IMAGE" ) ]
+
+                VideosOnly ->
+                    [ ( "type", Encode.string "VIDEO" ) ]
 
         statusField =
             case config.status of
-                AllStatuses -> []
-                FavoritesOnly -> [ ( "isFavorite", Encode.bool True ) ]
-                ArchivedOnly -> [ ( "isArchived", Encode.bool True ) ]
+                AllStatuses ->
+                    []
+
+                FavoritesOnly ->
+                    [ ( "isFavorite", Encode.bool True ) ]
+
+                ArchivedOnly ->
+                    [ ( "isArchived", Encode.bool True ) ]
 
         albumField =
             case maybeAlbumId of
-                Nothing -> []
-                Just albumId -> [ ( "albumIds", Encode.list Encode.string [albumId] ) ]
+                Nothing ->
+                    []
 
-        paginationFields = 
+                Just albumId ->
+                    [ ( "albumIds", Encode.list Encode.string [ albumId ] ) ]
+
+        paginationFields =
             [ ( "size", Encode.int size )
             , ( "page", Encode.int page )
             ]
     in
     Encode.object (orderField ++ categorisationField ++ mediaTypeField ++ statusField ++ albumField ++ paginationFields)
 
+
+
 -- API FUNCTIONS (REFACTORED)
+
 
 getAllAlbums : String -> String -> Cmd Msg
 getAllAlbums baseUrl key =
-    makeGetRequest 
+    makeGetRequest
         key
-        (joinUrl baseUrl ["api", "albums"])
+        (joinUrl baseUrl [ "api", "albums" ])
         (Decode.list albumDecoder)
         AlbumsFetched
+
 
 getAlbum : ImmichApiPaths -> ImmichAlbumId -> Cmd Msg
 getAlbum apiPaths albumId =
@@ -261,115 +305,58 @@ getAlbum apiPaths albumId =
         albumDecoder
         SingleAlbumFetched
 
-fetchImages : ImmichApiPaths -> ImageSearchConfig -> Int -> Int -> Cmd Msg
-fetchImages apiPaths config size page =
-    case config.order of
-        Random ->
-            let
-                categorisationField = 
-                    case config.categorisation of
-                        Uncategorised -> [ ( "isNotInAlbum", Encode.bool True ) ]
-                        All -> []
-
-                mediaTypeField =
-                    case config.mediaType of
-                        AllMedia -> []
-                        ImagesOnly -> [ ( "type", Encode.string "IMAGE" ) ]
-                        VideosOnly -> [ ( "type", Encode.string "VIDEO" ) ]
-
-                statusField =
-                    case config.status of
-                        AllStatuses -> []
-                        FavoritesOnly -> [ ( "isFavorite", Encode.bool True ) ]
-                        ArchivedOnly -> [ ( "isArchived", Encode.bool True ) ]
-
-                paginationFields = 
-                    [ ( "size", Encode.int size )
-                    , ( "page", Encode.int page )
-                    ]
-
-                randomBody = Encode.object (categorisationField ++ mediaTypeField ++ statusField ++ paginationFields)
-            in
-            makePostRequest
-                apiPaths.apiKey
-                apiPaths.searchRandom
-                randomBody
-                (Decode.list imageDecoder)
-                ImagesFetched
-        
-        _ ->
-            makePostRequest
-                apiPaths.apiKey
-                apiPaths.searchAssets
-                (makeSearchBody config size page)
-                nestedAssetsDecoder
-                ImagesFetched
-
-searchAssets : ImmichApiPaths -> String -> MediaTypeFilter -> StatusFilter -> Int -> Int -> Cmd Msg
-searchAssets apiPaths searchText mediaType status size page =
-    let
-        queryField = [ ( "query", Encode.string searchText ) ]
-        
-        mediaTypeField =
-            case mediaType of
-                AllMedia -> []
-                ImagesOnly -> [ ( "type", Encode.string "IMAGE" ) ]
-                VideosOnly -> [ ( "type", Encode.string "VIDEO" ) ]
-
-        statusField =
-            case status of
-                AllStatuses -> []
-                FavoritesOnly -> [ ( "isFavorite", Encode.bool True ) ]
-                ArchivedOnly -> [ ( "isArchived", Encode.bool True ) ]
-
-        paginationFields = 
-            [ ( "size", Encode.int size )
-            , ( "page", Encode.int page )
-            ]
-    in
-    makePostRequest
-        apiPaths.apiKey
-        apiPaths.searchSmart
-        (makeSimpleJsonBody (queryField ++ mediaTypeField ++ statusField ++ paginationFields))
-        nestedAssetsDecoder
-        ImagesFetched
 
 fetchImagesPaginated : ImmichApiPaths -> ImageSearchConfig -> Int -> Int -> Cmd Msg
 fetchImagesPaginated apiPaths config size page =
     let
         -- Use PaginatedImagesFetched for page 1, MoreImagesFetched for page 2+
-        messageConstructor = 
+        messageConstructor =
             if page == 1 then
                 PaginatedImagesFetched
+
             else
                 MoreImagesFetched page
     in
     case config.order of
         Random ->
             let
-                categorisationField = 
+                categorisationField =
                     case config.categorisation of
-                        Uncategorised -> [ ( "isNotInAlbum", Encode.bool True ) ]
-                        All -> []
+                        Uncategorised ->
+                            [ ( "isNotInAlbum", Encode.bool True ) ]
+
+                        All ->
+                            []
 
                 mediaTypeField =
                     case config.mediaType of
-                        AllMedia -> []
-                        ImagesOnly -> [ ( "type", Encode.string "IMAGE" ) ]
-                        VideosOnly -> [ ( "type", Encode.string "VIDEO" ) ]
+                        AllMedia ->
+                            []
+
+                        ImagesOnly ->
+                            [ ( "type", Encode.string "IMAGE" ) ]
+
+                        VideosOnly ->
+                            [ ( "type", Encode.string "VIDEO" ) ]
 
                 statusField =
                     case config.status of
-                        AllStatuses -> []
-                        FavoritesOnly -> [ ( "isFavorite", Encode.bool True ) ]
-                        ArchivedOnly -> [ ( "isArchived", Encode.bool True ) ]
+                        AllStatuses ->
+                            []
 
-                paginationFields = 
+                        FavoritesOnly ->
+                            [ ( "isFavorite", Encode.bool True ) ]
+
+                        ArchivedOnly ->
+                            [ ( "isArchived", Encode.bool True ) ]
+
+                paginationFields =
                     [ ( "size", Encode.int size )
                     , ( "page", Encode.int page )
                     ]
 
-                randomBody = Encode.object (categorisationField ++ mediaTypeField ++ statusField ++ paginationFields)
+                randomBody =
+                    Encode.object (categorisationField ++ mediaTypeField ++ statusField ++ paginationFields)
             in
             makePostRequest
                 apiPaths.apiKey
@@ -377,7 +364,7 @@ fetchImagesPaginated apiPaths config size page =
                 randomBody
                 paginatedAssetsDecoder
                 messageConstructor
-        
+
         _ ->
             makePostRequest
                 apiPaths.apiKey
@@ -386,31 +373,44 @@ fetchImagesPaginated apiPaths config size page =
                 paginatedAssetsDecoder
                 messageConstructor
 
+
 searchAssetsPaginated : ImmichApiPaths -> String -> MediaTypeFilter -> StatusFilter -> Int -> Int -> Cmd Msg
 searchAssetsPaginated apiPaths searchText mediaType status size page =
     let
         -- Use PaginatedImagesFetched for page 1, MoreImagesFetched for page 2+
-        messageConstructor = 
+        messageConstructor =
             if page == 1 then
                 PaginatedImagesFetched
+
             else
                 MoreImagesFetched page
-                
-        queryField = [ ( "query", Encode.string searchText ) ]
-        
+
+        queryField =
+            [ ( "query", Encode.string searchText ) ]
+
         mediaTypeField =
             case mediaType of
-                AllMedia -> []
-                ImagesOnly -> [ ( "type", Encode.string "IMAGE" ) ]
-                VideosOnly -> [ ( "type", Encode.string "VIDEO" ) ]
+                AllMedia ->
+                    []
+
+                ImagesOnly ->
+                    [ ( "type", Encode.string "IMAGE" ) ]
+
+                VideosOnly ->
+                    [ ( "type", Encode.string "VIDEO" ) ]
 
         statusField =
             case status of
-                AllStatuses -> []
-                FavoritesOnly -> [ ( "isFavorite", Encode.bool True ) ]
-                ArchivedOnly -> [ ( "isArchived", Encode.bool True ) ]
+                AllStatuses ->
+                    []
 
-        paginationFields = 
+                FavoritesOnly ->
+                    [ ( "isFavorite", Encode.bool True ) ]
+
+                ArchivedOnly ->
+                    [ ( "isArchived", Encode.bool True ) ]
+
+        paginationFields =
             [ ( "size", Encode.int size )
             , ( "page", Encode.int page )
             ]
@@ -422,49 +422,6 @@ searchAssetsPaginated apiPaths searchText mediaType status size page =
         paginatedAssetsDecoder
         messageConstructor
 
-fetchMoreImages : ImmichApiPaths -> ImageSearchConfig -> Int -> Int -> Cmd Msg
-fetchMoreImages apiPaths config size page =
-    case config.order of
-        Random ->
-            let
-                categorisationField = 
-                    case config.categorisation of
-                        Uncategorised -> [ ( "isNotInAlbum", Encode.bool True ) ]
-                        All -> []
-
-                mediaTypeField =
-                    case config.mediaType of
-                        AllMedia -> []
-                        ImagesOnly -> [ ( "type", Encode.string "IMAGE" ) ]
-                        VideosOnly -> [ ( "type", Encode.string "VIDEO" ) ]
-
-                statusField =
-                    case config.status of
-                        AllStatuses -> []
-                        FavoritesOnly -> [ ( "isFavorite", Encode.bool True ) ]
-                        ArchivedOnly -> [ ( "isArchived", Encode.bool True ) ]
-
-                paginationFields = 
-                    [ ( "size", Encode.int size )
-                    , ( "page", Encode.int page )
-                    ]
-
-                randomBody = Encode.object (categorisationField ++ mediaTypeField ++ statusField ++ paginationFields)
-            in
-            makePostRequest
-                apiPaths.apiKey
-                apiPaths.searchRandom
-                randomBody
-                paginatedAssetsDecoder
-                (MoreImagesFetched page)
-        
-        _ ->
-            makePostRequest
-                apiPaths.apiKey
-                apiPaths.searchAssets
-                (makeSearchBody config size page)
-                paginatedAssetsDecoder
-                (MoreImagesFetched page)
 
 fetchAlbumAssetsWithFilters : ImmichApiPaths -> ImmichAlbumId -> ImageOrder -> MediaTypeFilter -> StatusFilter -> Cmd Msg
 fetchAlbumAssetsWithFilters apiPaths albumId order mediaType status =
@@ -475,6 +432,7 @@ fetchAlbumAssetsWithFilters apiPaths albumId order mediaType status =
         albumDecoder
         (AlbumFetchedForFiltering order mediaType status)
 
+
 fetchMembershipForAsset : ImmichApiPaths -> ImmichAssetId -> Cmd Msg
 fetchMembershipForAsset apiPaths assetId =
     makeGetRequest
@@ -482,6 +440,7 @@ fetchMembershipForAsset apiPaths assetId =
         (apiPaths.fetchMembershipForAsset assetId)
         (albumToAssetWithMembershipDecoder assetId)
         AssetMembershipFetched
+
 
 albumChangeAssetMembership : ImmichApiPaths -> ImmichAlbumId -> List ImmichAssetId -> Bool -> Cmd Msg
 albumChangeAssetMembership apiPaths albumId assetIds isAddition =
@@ -491,12 +450,14 @@ albumChangeAssetMembership apiPaths albumId assetIds isAddition =
             (apiPaths.putAlbumAssets albumId)
             (makeAssetIdsBody assetIds)
             AlbumAssetsChanged
+
     else
         makeDeleteRequest
             apiPaths.apiKey
             (apiPaths.putAlbumAssets albumId)
             (makeAssetIdsBody assetIds)
             AlbumAssetsChanged
+
 
 createAlbum : ImmichApiPaths -> String -> Cmd Msg
 createAlbum apiPaths albumName =
@@ -507,6 +468,7 @@ createAlbum apiPaths albumName =
         albumDecoder
         AlbumCreated
 
+
 updateAssetFavorite : ImmichApiPaths -> ImmichAssetId -> Bool -> Cmd Msg
 updateAssetFavorite apiPaths assetId isFavorite =
     makePutRequest
@@ -516,6 +478,7 @@ updateAssetFavorite apiPaths assetId isFavorite =
         imageDecoder
         AssetUpdated
 
+
 updateAssetArchived : ImmichApiPaths -> ImmichAssetId -> Bool -> Cmd Msg
 updateAssetArchived apiPaths assetId isArchived =
     makePutRequest
@@ -524,6 +487,7 @@ updateAssetArchived apiPaths assetId isArchived =
         (makeSimpleJsonBody [ ( "isArchived", Encode.bool isArchived ) ])
         imageDecoder
         AssetUpdated
+
 
 albumDecoder : Decode.Decoder ImmichAlbum
 albumDecoder =
@@ -535,23 +499,28 @@ albumDecoder =
         -- (Decode.field "albumThumbnailAssetId" Decode.string)
         (Decode.field "createdAt" dateDecoder)
 
+
 nestedAssetsDecoder : Decode.Decoder (List ImmichAsset)
 nestedAssetsDecoder =
     Decode.field "assets" (Decode.field "items" (Decode.list imageDecoder))
 
+
 paginatedAssetsDecoder : Decode.Decoder PaginatedAssetResponse
 paginatedAssetsDecoder =
-    Decode.map3 (\assets total count -> 
-        let
-            -- Calculate if there are more pages based on count returned
-            -- If we got exactly 1000 items, there might be more
-            hasNext = count >= 1000
-        in
-        PaginatedAssetResponse assets total count hasNext
-    )
+    Decode.map3
+        (\assets total count ->
+            let
+                -- Calculate if there are more pages based on count returned
+                -- If we got exactly 1000 items, there might be more
+                hasNext =
+                    count >= 1000
+            in
+            PaginatedAssetResponse assets total count hasNext
+        )
         (Decode.field "assets" (Decode.field "items" (Decode.list imageDecoder)))
         (Decode.field "assets" (Decode.field "total" Decode.int))
         (Decode.field "assets" (Decode.field "count" Decode.int))
+
 
 albumToAssetWithMembershipDecoder : ImmichAssetId -> Decode.Decoder AssetWithMembership
 albumToAssetWithMembershipDecoder assetId =
@@ -569,30 +538,39 @@ splitDateTimeToDate str =
         str
 
 
+
 -- Parse duration string in HH:MM:SS.mmm format to seconds
+
+
 parseDurationToSeconds : String -> Maybe Int
 parseDurationToSeconds durationStr =
     let
         -- Remove milliseconds if present (everything after the dot)
-        withoutMillis = 
+        withoutMillis =
             if String.contains "." durationStr then
                 Maybe.withDefault durationStr (List.head (String.split "." durationStr))
+
             else
                 durationStr
-        
+
         -- Split by colon to get hours, minutes, seconds
-        parts = String.split ":" withoutMillis
-        
+        parts =
+            String.split ":" withoutMillis
+
         -- Convert each part to int
-        intParts = List.map String.toInt parts
+        intParts =
+            List.map String.toInt parts
     in
     case intParts of
         [ Just hours, Just minutes, Just seconds ] ->
             Just (hours * 3600 + minutes * 60 + seconds)
+
         [ Just minutes, Just seconds ] ->
             Just (minutes * 60 + seconds)
+
         [ Just seconds ] ->
             Just seconds
+
         _ ->
             Nothing
 
@@ -613,18 +591,20 @@ dateDecoder =
 
 imageDecoder : Decode.Decoder ImmichAsset
 imageDecoder =
-    Decode.map8 (\id path title mimeType isFavorite isArchived albumMembership fileCreatedAt ->
-        { id = id
-        , path = path
-        , title = title
-        , mimeType = mimeType
-        , isFavourite = isFavorite
-        , isArchived = isArchived
-        , albumMembership = albumMembership
-        , fileCreatedAt = fileCreatedAt
-        , thumbhash = Nothing
-        , duration = Nothing
-        })
+    Decode.map8
+        (\id path title mimeType isFavorite isArchived albumMembership fileCreatedAt ->
+            { id = id
+            , path = path
+            , title = title
+            , mimeType = mimeType
+            , isFavourite = isFavorite
+            , isArchived = isArchived
+            , albumMembership = albumMembership
+            , fileCreatedAt = fileCreatedAt
+            , thumbhash = Nothing
+            , duration = Nothing
+            }
+        )
         (Decode.field "id" Decode.string)
         (Decode.field "originalPath" Decode.string)
         (Decode.field "originalFileName" Decode.string)
@@ -633,18 +613,20 @@ imageDecoder =
         (Decode.field "isArchived" Decode.bool)
         (Decode.succeed [])
         (Decode.field "fileCreatedAt" dateDecoder)
-        |> Decode.andThen (\asset -> 
-            Decode.map2 (\thumbhash duration -> { asset | thumbhash = thumbhash, duration = duration })
-                (Decode.maybe (Decode.field "thumbhash" Decode.string))
-                (Decode.oneOf
-                    [ Decode.maybe (Decode.field "duration" Decode.string)
-                    , Decode.maybe (Decode.field "videoDuration" Decode.string)
-                    , Decode.maybe (Decode.at ["metadata", "duration"] Decode.string)
-                    , Decode.maybe (Decode.at ["exifInfo", "duration"] Decode.string)
-                    , Decode.succeed Nothing
-                    ]
-                )
-        )
+        |> Decode.andThen
+            (\asset ->
+                Decode.map2 (\thumbhash duration -> { asset | thumbhash = thumbhash, duration = duration })
+                    (Decode.maybe (Decode.field "thumbhash" Decode.string))
+                    (Decode.oneOf
+                        [ Decode.maybe (Decode.field "duration" Decode.string)
+                        , Decode.maybe (Decode.field "videoDuration" Decode.string)
+                        , Decode.maybe (Decode.at [ "metadata", "duration" ] Decode.string)
+                        , Decode.maybe (Decode.at [ "exifInfo", "duration" ] Decode.string)
+                        , Decode.succeed Nothing
+                        ]
+                    )
+            )
+
 
 errorToString : Http.Error -> String
 errorToString error =
@@ -665,12 +647,15 @@ errorToString error =
             "Problem with response body: " ++ message
 
 
+
 -- UPDATE --
+
 
 type alias AssetWithMembership =
     { assetId : ImmichAssetId
     , albumIds : List ImmichAlbumId
     }
+
 
 type alias PaginatedAssetResponse =
     { assets : List ImmichAsset
@@ -678,6 +663,7 @@ type alias PaginatedAssetResponse =
     , count : Int
     , hasNextPage : Bool
     }
+
 
 type Msg
     = AlbumsFetched (Result Http.Error (List ImmichAlbum))
@@ -690,14 +676,3 @@ type Msg
     | AlbumCreated (Result Http.Error ImmichAlbum)
     | AssetUpdated (Result Http.Error ImmichAsset)
     | AlbumFetchedForFiltering ImageOrder MediaTypeFilter StatusFilter (Result Http.Error ImmichAlbum)
-
-
-type alias Model r =
-    { r
-        | images : List ImmichAsset
-        , imagesLoadState : ImmichLoadState
-        , albums : List ImmichAlbum
-        , albumsLoadState : ImmichLoadState
-        , baseUrl : String
-        , apiKey : String
-    }

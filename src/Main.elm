@@ -2,30 +2,28 @@ port module Main exposing (main)
 
 import Browser exposing (element)
 import Browser.Events exposing (onKeyDown, onResize)
-import Date exposing (Date)
+import Date
 import Dict exposing (Dict)
-import Element exposing (Element, alignBottom, alignRight, alignTop, centerX, centerY, clipY, column, el, fill, fillPortion, height, minimum, paddingXY, px, row, text, width)
+import Element exposing (Element, alignRight, alignTop, clipY, column, el, fill, height, minimum, px, text, width)
 import Element.Background as Background
-import Element.Events exposing (onClick)
 import Element.Font as Font
-import Element.Input exposing (button)
-import Helpers exposing (isKeybindingLetter, isSupportedSearchLetter, loopImageIndexOverArray, regexFromString)
-import Html exposing (Html, node)
-import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImageSearchConfig, ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..), MediaTypeFilter(..), StatusFilter(..), fetchAlbumAssetsWithFilters, getAllAlbums, getImmichApiPaths)
+import Helpers
+import Html exposing (Html)
+import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImageSearchConfig, ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..), MediaTypeFilter(..), StatusFilter(..), getAllAlbums, getImmichApiPaths)
 import Json.Decode as Decode
 import KeybindingGenerator exposing (generateAlbumKeybindings)
-import Menus exposing (AlbumConfig, SearchConfig, SearchContext(..), TimelineConfig, defaultAlbumConfig, defaultSearchConfig, defaultTimelineConfig, filterByMediaType, filterByStatus, toggleCategorisation, toggleMediaType, toggleOrder, toggleSearchContext, toggleStatus, viewAlbumView, viewInstructions, viewMainMenu, viewMainMenuOption, viewSearchView, viewSettings, viewTimelineView)
-import Regex
-import UpdateAlbums exposing (AlbumAction(..), AlbumMsg(..), handleAlbumBrowseInput, updateAlbums)
-import UpdateAsset exposing (AssetAction(..), AssetMsg(..), AssetState(..), AssetResult(..), handleCreateAlbumConfirmationInput, handleEditAssetInput, handleSearchAssetInput, handleSelectAlbumInput, handleShowEditAssetHelpInput, updateAsset)
-import UpdateMenus exposing (MenuAction(..), MenuMsg(..), MenuState(..), MenuResult(..), LegacyUserMode(..), handleAlbumViewInput, handleMainMenuInput, handleSearchViewInput, handleSettingsInput, handleTimelineViewInput, updateMenus)
-import ViewAlbums exposing (AlbumPagination, AlbumSearch, AssetWithActions, InputMode(..), PropertyChange(..), calculateItemsPerPage, calculateTotalPages, filterToOnlySearchedForAlbums, flipPropertyChange, getAlbumByExactKeybinding, getAlbumSearch, getAlbumSearchWithHeight, getAlbumSearchWithIndex, getAssetWithActions, getFilteredAlbumsList, getFilteredAlbumsListForAsset, getSelectedAlbum, getSelectedAlbumForAsset, halfPageDown, halfPageUp, isAddingToAlbum, isCurrentlyInAlbum, moveSelectionDown, moveSelectionDownForAsset, moveSelectionUp, moveSelectionUpForAsset, pageDown, pageUp, shittyFuzzyAlgorithmTest, toggleAssetAlbum, updateAlbumSearchString, updatePagination, usefulColours, viewSidebar, viewSidebarAlbums, viewSidebarAlbumsForCurrentAsset, viewWithSidebar)
-import ViewAsset exposing (TimeViewMode(..), viewAsset, viewCreateAlbumConfirmation, viewEditAsset, viewEditAssetHelp, viewGridAssets, viewImage, viewKeybinding, viewLoadingAssets, viewVideo)
-import ViewGrid exposing (GridState, GridMsg)
+import Menus exposing (AlbumConfig, SearchContext, defaultAlbumConfig, defaultSearchConfig, filterByMediaType, filterByStatus)
+import UpdateAlbums exposing (AlbumMsg)
+import UpdateAsset exposing (AssetMsg(..), AssetResult(..), AssetState(..), updateAsset)
+import UpdateMenus exposing (MenuMsg(..), MenuResult(..), MenuState(..), updateMenus)
+import ViewAlbums exposing (AlbumSearch, AssetWithActions, InputMode(..), PropertyChange(..))
+import ViewAsset exposing (TimeViewMode(..))
+import ViewGrid
 
 
 
 -- PORTS
+
 
 port openUrl : String -> Cmd msg
 
@@ -52,16 +50,18 @@ type Msg
     | LoadAlbumAssets ImmichAlbum
     | SearchInputFocused
     | SearchInputBlurred
-    -- Module-specific messages
+      -- Module-specific messages
     | MenuMsg MenuMsg
     | AlbumMsg AlbumMsg
     | AssetMsg AssetMsg
+
 
 type alias Flags =
     { currentDateMillis : Int
     , immichApiKey : String
     , immichApiUrl : String
     }
+
 
 type alias Model =
     { key : String
@@ -71,6 +71,7 @@ type alias Model =
     , imageIndex : ImageIndex
     , imageSearchConfig : ImageSearchConfig
     , timeViewMode : TimeViewMode
+
     -- Immich fields
     , currentAssets : List ImmichAssetId
     , knownAssets : Dict ImmichAssetId ImmichAsset
@@ -85,6 +86,7 @@ type alias Model =
     , pendingAlbumChange : Maybe ( ImmichAlbumId, Bool ) -- (albumId, isAddition)
     , paginationState : PaginationState
     }
+
 
 type alias PaginationState =
     { currentConfig : Maybe ImageSearchConfig
@@ -105,10 +107,12 @@ type AssetSource
     | Album ImmichAlbum
     | FilteredAlbum ImmichAlbum AlbumConfig
 
+
 type alias SourceLoadState =
     { fetchedAssetList : Maybe Bool
     , fetchedAssetMembership : Maybe Bool
     }
+
 
 type AssetSourceUpdate
     = FetchedAssetList
@@ -117,13 +121,12 @@ type AssetSourceUpdate
 
 -- | FetchedAlbums
 
+
 type UserMode
     = MainMenu MenuState
     | ViewAssets AssetState
     | LoadingAssets SourceLoadState
 
-type alias SearchString =
-    String
 
 type alias ImageIndex =
     Int
@@ -138,6 +141,7 @@ init flags =
       , imageIndex = 0
       , imageSearchConfig = { order = Desc, categorisation = Uncategorised, mediaType = AllMedia, status = AllStatuses }
       , timeViewMode = Absolute
+
       -- Immich fields
       , currentAssets = []
       , knownAssets = Dict.empty
@@ -150,107 +154,20 @@ init flags =
       , immichApiPaths = getImmichApiPaths flags.immichApiUrl flags.immichApiKey
       , screenHeight = 800 -- Default, will be updated by window resize
       , pendingAlbumChange = Nothing
-      , paginationState = 
-          { currentConfig = Nothing
-          , currentQuery = Nothing
-          , totalAssets = 0
-          , currentPage = 1
-          , hasMorePages = False
-          , isLoadingMore = False
-          , loadedAssets = 0
-          , maxAssetsToFetch = 10000 -- Default limit of 10,000 assets
-          }
+      , paginationState =
+            { currentConfig = Nothing
+            , currentQuery = Nothing
+            , totalAssets = 0
+            , currentPage = 1
+            , hasMorePages = False
+            , isLoadingMore = False
+            , loadedAssets = 0
+            , maxAssetsToFetch = 10000 -- Default limit of 10,000 assets
+            }
       }
       -- , Cmd.none
     , getAllAlbums flags.immichApiUrl flags.immichApiKey |> Cmd.map ImmichMsg
     )
-
-
-assetIsImage : ImmichAsset -> Bool
-assetIsImage asset =
-    List.member asset.mimeType
-        [ "image/jpeg"
-        , "image/jpg"
-        , "image/pjpeg"
-        , "image/png"
-        , "image/x-png"
-        , "image/gif"
-        , "image/bmp"
-        , "image/x-windows-bmp"
-        , "image/webp"
-        , "image/heif"
-        , "image/heic"
-        , "image/tiff"
-        , "image/x-tiff"
-        , "image/svg+xml"
-        , "image/vnd.adobe.photoshop"
-        , "image/vnd.microsoft.icon"
-        , "image/x-icon"
-        , "image/ico"
-        , "image/avif"
-        , "image/x-canon-cr2"
-        , "image/x-canon-crw"
-        , "image/x-nikon-nef"
-        , "image/x-nikon-nrw"
-        , "image/x-sony-arw"
-        , "image/x-panasonic-rw2"
-        , "image/x-pentax-pef"
-        , "image/x-olympus-orf"
-        , "image/x-fuji-raf"
-        ]
-
-generatePreloadUrls : List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> ImmichApiPaths -> Int -> Int -> String
-generatePreloadUrls currentAssets knownAssets apiPaths imageIndex count =
-    let
-        -- Generate indices for next few images and previous few images
-        forwardIndices =
-            List.range (imageIndex + 1) (imageIndex + count)
-        backwardIndices =
-            List.range (max 0 (imageIndex - count)) (imageIndex - 1)
-        adjacentIndices =
-            forwardIndices ++ backwardIndices
-
-        getAssetUrl index =
-            if index >= 0 && index < List.length currentAssets then
-                currentAssets
-                    |> List.drop index
-                    |> List.head
-                    |> Maybe.andThen (\id -> Dict.get id knownAssets)
-                    |> Maybe.map (\asset -> apiPaths.downloadAsset asset.id)
-            else
-                Nothing
-
-        preloadUrls =
-            adjacentIndices
-                |> List.filterMap getAssetUrl
-                |> List.take (count * 2)
-
-        -- Allow both forward and backward
-    in
-    String.join "," preloadUrls
-
-assetIsVideo : ImmichAsset -> Bool
-assetIsVideo asset =
-    List.member asset.mimeType
-        [ "video/mp4"
-        , "video/quicktime"
-        , "video/x-msvideo"
-        , "video/msvideo"
-        , "video/x-flv"
-        , "video/webm"
-        , "video/x-matroska"
-        , "video/mpeg"
-        , "video/x-mpeg"
-        , "video/x-mpeq2a"
-        , "video/mp4v"
-        , "video/ogg"
-        , "video/3gpp"
-        , "video/x-sgi-movie"
-        , "video/avi"
-        , "video/mpv2"
-        , "video/x-ms-wmv"
-        , "video/x-ms-asf"
-        ]
 
 
 createDetailedViewTitle : AssetSource -> String
@@ -262,19 +179,24 @@ createDetailedViewTitle assetSource =
                     case config.order of
                         Desc ->
                             "[desc]"
+
                         Asc ->
                             "[asc]"
 
                         Random ->
                             "[random]"
+
                 mediaText =
                     case config.mediaType of
                         AllMedia ->
                             ""
+
                         ImagesOnly ->
                             " [images]"
+
                         VideosOnly ->
                             " [videos]"
+
                 statusText =
                     case config.status of
                         AllStatuses ->
@@ -282,12 +204,15 @@ createDetailedViewTitle assetSource =
 
                         FavoritesOnly ->
                             " [favourites]"
+
                         ArchivedOnly ->
                             " [archived]"
+
                 categText =
                     case config.categorisation of
                         All ->
                             "Timeline"
+
                         Uncategorised ->
                             "Timeline [uncategorised]"
             in
@@ -305,11 +230,13 @@ createDetailedViewTitle assetSource =
                     case config.order of
                         Desc ->
                             "[desc]"
+
                         Asc ->
                             "[asc]"
 
                         Random ->
                             "[random]"
+
                 mediaText =
                     case config.mediaType of
                         AllMedia ->
@@ -317,8 +244,10 @@ createDetailedViewTitle assetSource =
 
                         ImagesOnly ->
                             " [images]"
+
                         VideosOnly ->
                             " [videos]"
+
                 statusText =
                     case config.status of
                         AllStatuses ->
@@ -326,13 +255,16 @@ createDetailedViewTitle assetSource =
 
                         FavoritesOnly ->
                             " [favourites]"
+
                         ArchivedOnly ->
                             " [archived]"
+
                 hasFilters =
                     config.mediaType /= AllMedia || config.status /= AllStatuses || config.order /= Desc
             in
             if hasFilters then
                 "Album \"" ++ album.albumName ++ "\"" ++ statusText ++ mediaText ++ " " ++ orderText
+
             else
                 "Album \"" ++ album.albumName ++ "\""
 
@@ -358,26 +290,32 @@ viewWithInputBottomBar userMode viewMain =
 viewMainWindow : Model -> Element Msg
 viewMainWindow model =
     let
-        mainContent = 
+        mainContent =
             case model.userMode of
                 MainMenu menuState ->
                     viewMenuState model menuState
+
                 ViewAssets assetState ->
                     viewAssetState model assetState
+
                 LoadingAssets _ ->
                     ViewAsset.viewLoadingAssets model.imagesLoadState
     in
     Element.el [ width fill, height fill, Element.inFront (viewPaginationStatus model.paginationState) ] mainContent
+
 
 viewMenuState : Model -> MenuState -> Element Msg
 viewMenuState model menuState =
     case menuState of
         MainMenuHome ->
             Menus.viewMainMenu LoadDataAgain
+
         TimelineView config ->
             Menus.viewTimelineView model config LoadDataAgain LoadTimelineAssets
+
         SearchView config ->
             Menus.viewSearchView model config ExecuteSearch
+
         AlbumBrowse search ->
             ViewAlbums.viewWithSidebar
                 (ViewAlbums.viewSidebarAlbums search model.albumKeybindings model.knownAlbums SelectAlbum)
@@ -385,51 +323,65 @@ viewMenuState model menuState =
                     [ text "Browse Albums"
                     , if search.searchString /= "" then
                         text ("Search: \"" ++ search.searchString ++ "\"")
+
                       else
                         text ""
                     , if search.partialKeybinding /= "" then
                         let
-                            nextChars = ViewAlbums.getNextAvailableCharacters search.partialKeybinding model.albumKeybindings
-                            nextCharString = String.fromList nextChars
+                            nextChars =
+                                ViewAlbums.getNextAvailableCharacters search.partialKeybinding model.albumKeybindings
+
+                            nextCharString =
+                                String.fromList nextChars
                         in
                         column []
                             [ el [ Font.color <| Element.fromRgb { red = 1, green = 0.6, blue = 0, alpha = 1 } ] <|
                                 text ("Keybind: \"" ++ search.partialKeybinding ++ "\"")
                             , if List.isEmpty nextChars then
                                 el [ Font.color <| Element.fromRgb { red = 1, green = 0.2, blue = 0.2, alpha = 1 }, Font.size 12 ] <| text "No matches"
+
                               else
                                 el [ Font.color <| Element.fromRgb { red = 0.5, green = 0.5, blue = 0.5, alpha = 1 }, Font.size 12 ] <| text ("Next: " ++ nextCharString)
                             ]
+
                       else
                         text ""
                     , case search.invalidInputWarning of
                         Just warning ->
                             el [ Font.color <| Element.fromRgb { red = 1, green = 0.2, blue = 0.2, alpha = 1 }, Font.size 12 ] <| text ("Invalid: \"" ++ warning ++ "\"")
+
                         Nothing ->
                             text ""
                     , text "Type album name or keybinding to filter"
                     ]
                 )
+
         AlbumView album config ->
             Menus.viewAlbumView model album config LoadAlbumAssets
+
         Settings ->
             Menus.viewSettings model
+
 
 viewPaginationStatus : PaginationState -> Element Msg
 viewPaginationStatus paginationState =
     if paginationState.isLoadingMore then
         let
-            progressText = 
-                "Loading assets: " ++ 
-                String.fromInt paginationState.loadedAssets ++ 
-                " / " ++ 
-                (if paginationState.totalAssets > 0 then
-                    String.fromInt (min paginationState.totalAssets paginationState.maxAssetsToFetch)
-                else
-                    "?") ++ 
-                " (page " ++ String.fromInt paginationState.currentPage ++ ")"
+            progressText =
+                "Loading assets: "
+                    ++ String.fromInt paginationState.loadedAssets
+                    ++ " / "
+                    ++ (if paginationState.totalAssets > 0 then
+                            String.fromInt (min paginationState.totalAssets paginationState.maxAssetsToFetch)
+
+                        else
+                            "?"
+                       )
+                    ++ " (page "
+                    ++ String.fromInt paginationState.currentPage
+                    ++ ")"
         in
-        el 
+        el
             [ alignRight
             , alignTop
             , Element.padding 10
@@ -438,8 +390,10 @@ viewPaginationStatus paginationState =
             , Font.size 14
             ]
             (text progressText)
+
     else
         Element.none
+
 
 viewAssetState : Model -> AssetState -> Element Msg
 viewAssetState model assetState =
@@ -449,6 +403,7 @@ viewAssetState model assetState =
                 [ text "Search Assets"
                 , text searchString
                 ]
+
         SelectAlbumInput search ->
             ViewAlbums.viewWithSidebar
                 (ViewAlbums.viewSidebarAlbums search model.albumKeybindings model.knownAlbums SelectAlbum)
@@ -457,43 +412,22 @@ viewAssetState model assetState =
                     , text search.searchString
                     ]
                 )
+
         EditAsset inputMode asset search ->
             let
-                viewTitle = createDetailedViewTitle model.currentAssetsSource
+                viewTitle =
+                    createDetailedViewTitle model.currentAssetsSource
             in
             ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) SelectAlbum) (ViewAsset.viewEditAsset model.immichApiPaths model.apiKey model.imageIndex (List.length model.currentAssets) viewTitle asset model.currentAssets model.knownAssets model.currentDateMillis model.timeViewMode)
+
         CreateAlbumConfirmation _ asset search albumName ->
             ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums Nothing SelectAlbum) (ViewAsset.viewCreateAlbumConfirmation albumName)
+
         ShowEditAssetHelp inputMode asset search ->
             ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) SelectAlbum) (ViewAsset.viewEditAssetHelp inputMode)
+
         GridView gridState ->
             ViewAsset.viewGridAssets model.immichApiPaths model.apiKey gridState model.currentAssets model.knownAssets (AssetMsg << AssetGridMsg)
-
-
-viewCurrentConfig : ImageSearchConfig -> Element msg
-viewCurrentConfig config =
-    let
-        orderText =
-            case config.order of
-                Desc ->
-                    "Descending"
-                Asc ->
-                    "Ascending"
-                Random ->
-                    "Random"
-
-        categorisationText =
-            case config.categorisation of
-                All ->
-                    "All images"
-                Uncategorised ->
-                    "Uncategorised"
-    in
-    column [ Element.spacingXY 0 8 ]
-        [ el [ Font.size 16, Font.bold ] (text "Current Settings:")
-        , el [ Font.size 14 ] (text ("Order: " ++ orderText))
-        , el [ Font.size 14 ] (text ("Filter: " ++ categorisationText))
-        ]
 
 
 viewInputMode : UserMode -> Element msg
@@ -505,81 +439,102 @@ viewInputMode userMode =
                     case menuState of
                         MainMenuHome ->
                             NormalMode
+
                         TimelineView _ ->
                             NormalMode
+
                         SearchView config ->
                             if config.inputFocused then
                                 InsertMode
+
                             else
                                 NormalMode
+
                         AlbumBrowse _ ->
                             InsertMode
+
                         AlbumView _ _ ->
                             NormalMode
+
                         Settings ->
                             NormalMode
+
                 ViewAssets assetState ->
                     case assetState of
                         SearchAssetInput _ ->
                             InsertMode
+
                         SelectAlbumInput _ ->
                             InsertMode
+
                         EditAsset editInputMode _ _ ->
                             editInputMode
+
                         CreateAlbumConfirmation editInputMode _ _ _ ->
                             editInputMode
+
                         ShowEditAssetHelp editInputMode _ _ ->
                             editInputMode
+
                         GridView _ ->
                             NormalMode
+
                 LoadingAssets _ ->
                     NormalMode
     in
     case inputMode of
         NormalMode ->
             el [ width fill, Background.color <| Element.fromRgb { red = 0.8, green = 0.8, blue = 0.8, alpha = 1 } ] <| text "Normal"
+
         InsertMode ->
             el [ width fill, Background.color <| Element.fromRgb { red = 0, green = 1, blue = 0, alpha = 1 } ] <| text "Input"
+
         KeybindingMode ->
             el [ width fill, Background.color <| Element.fromRgb { red = 1, green = 0.5, blue = 0, alpha = 1 } ] <| text "Keybind"
 
 
 
-
-
 -- UPDATE --
-
 -- Helper function to handle MenuResult
+
+
 handleMenuResult : MenuResult msg -> Model -> ( Model, Cmd Msg )
 handleMenuResult menuResult model =
     case menuResult of
         StayInMenu newMenuState ->
             ( { model | userMode = MainMenu newMenuState }, Cmd.none )
+
         MenuLoadAssets assetSource ->
             -- Convert to Main's AssetSource and load assets
             let
                 mainAssetSource =
                     convertMenuAssetSource assetSource
+
                 loadModel =
                     createLoadStateForCurrentAssetSource mainAssetSource model
-                
+
                 -- Set pagination state based on asset source
-                (modelWithPagination, loadCmd) =
+                ( modelWithPagination, loadCmd ) =
                     case assetSource of
                         UpdateMenus.ImageSearch searchConfig ->
                             let
-                                paginatedModel = { loadModel | paginationState = { currentConfig = Just searchConfig, currentQuery = Nothing, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = loadModel.paginationState.maxAssetsToFetch } }
+                                paginatedModel =
+                                    { loadModel | paginationState = { currentConfig = Just searchConfig, currentQuery = Nothing, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = loadModel.paginationState.maxAssetsToFetch } }
                             in
                             ( paginatedModel, Immich.fetchImagesPaginated paginatedModel.immichApiPaths searchConfig 1000 1 |> Cmd.map ImmichMsg )
+
                         UpdateMenus.TextSearch query ->
                             let
-                                paginatedModel = { loadModel | paginationState = { currentConfig = Nothing, currentQuery = Just query, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = loadModel.paginationState.maxAssetsToFetch } }
+                                paginatedModel =
+                                    { loadModel | paginationState = { currentConfig = Nothing, currentQuery = Just query, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = loadModel.paginationState.maxAssetsToFetch } }
                             in
                             ( paginatedModel, Immich.searchAssetsPaginated paginatedModel.immichApiPaths query AllMedia AllStatuses 1000 1 |> Cmd.map ImmichMsg )
+
                         UpdateMenus.FilteredAlbum album config ->
                             ( loadModel, Immich.fetchAlbumAssetsWithFilters loadModel.immichApiPaths album.id config.order config.mediaType config.status |> Cmd.map ImmichMsg )
             in
             ( modelWithPagination, loadCmd )
+
         MenuUpdateSearchInput focused ->
             -- Handle search input focus change
             case model.userMode of
@@ -587,43 +542,59 @@ handleMenuResult menuResult model =
                     case menuState of
                         SearchView config ->
                             ( { model | userMode = MainMenu (SearchView { config | inputFocused = focused }) }, Cmd.none )
+
                         _ ->
                             ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
 
+
+
 -- Helper function to handle AssetResult
+
+
 handleAssetResult : AssetResult msg -> Model -> ( Model, Cmd Msg )
 handleAssetResult assetResult model =
     case assetResult of
         StayInAssets newAssetState ->
             ( { model | userMode = ViewAssets newAssetState }, Cmd.none )
+
         GoToMainMenu ->
             ( { model | userMode = MainMenu MainMenuHome }, Cmd.none )
+
         GoToSearchView query ->
             ( { model | userMode = MainMenu (SearchView { defaultSearchConfig | query = query }) }, Cmd.none )
+
         AssetLoadTextSearch query ->
             let
                 mainAssetSource =
                     TextSearch query
+
                 loadModel =
                     createLoadStateForCurrentAssetSource mainAssetSource model
+
                 loadCmd =
                     Immich.searchAssetsPaginated model.immichApiPaths query AllMedia AllStatuses 1000 1 |> Cmd.map ImmichMsg
             in
             ( loadModel, loadCmd )
+
         AssetLoadAlbum album ->
             let
                 mainAssetSource =
                     Album album
+
                 loadModel =
                     createLoadStateForCurrentAssetSource mainAssetSource model
+
                 loadCmd =
                     Immich.getAlbum model.immichApiPaths album.id |> Cmd.map ImmichMsg
             in
             ( loadModel, loadCmd )
+
         AssetSwitchToAssetIndex newIndex ->
             switchToEditIfAssetFound model newIndex
+
         AssetToggleFavorite ->
             -- Handle favorite toggle
             case model.userMode of
@@ -633,22 +604,29 @@ handleAssetResult assetResult model =
                             let
                                 newAsset =
                                     { asset | isFavourite = ViewAlbums.flipPropertyChange asset.isFavourite }
+
                                 newIsFavorite =
                                     case newAsset.isFavourite of
                                         ChangeToTrue ->
                                             True
+
                                         RemainTrue ->
                                             True
+
                                         ChangeToFalse ->
                                             False
+
                                         RemainFalse ->
                                             False
                             in
                             ( { model | userMode = ViewAssets (EditAsset inputMode newAsset search) }, Immich.updateAssetFavorite model.immichApiPaths asset.asset.id newIsFavorite |> Cmd.map ImmichMsg )
+
                         _ ->
                             ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
+
         AssetToggleArchived ->
             -- Handle archived toggle
             case model.userMode of
@@ -658,22 +636,29 @@ handleAssetResult assetResult model =
                             let
                                 newAsset =
                                     { asset | isArchived = ViewAlbums.flipPropertyChange asset.isArchived }
+
                                 newIsArchived =
                                     case newAsset.isArchived of
                                         ChangeToTrue ->
                                             True
+
                                         RemainTrue ->
                                             True
+
                                         ChangeToFalse ->
                                             False
+
                                         RemainFalse ->
                                             False
                             in
                             ( { model | userMode = ViewAssets (EditAsset inputMode newAsset search) }, Immich.updateAssetArchived model.immichApiPaths asset.asset.id newIsArchived |> Cmd.map ImmichMsg )
+
                         _ ->
                             ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
+
         AssetToggleAlbumMembership album ->
             -- Handle album membership toggle
             case model.userMode of
@@ -683,24 +668,33 @@ handleAssetResult assetResult model =
                             let
                                 currentPropertyChange =
                                     Maybe.withDefault RemainFalse (Dict.get album.id asset.albumMembership)
+
                                 currentlyInAlbum =
                                     ViewAlbums.isCurrentlyInAlbum currentPropertyChange
+
                                 isNotInAlbum =
                                     not currentlyInAlbum
+
                                 toggledAsset =
                                     ViewAlbums.toggleAssetAlbum asset album
+
                                 newPropertyChange =
                                     Maybe.withDefault RemainFalse (Dict.get album.id toggledAsset.albumMembership)
+
                                 isAddition =
                                     ViewAlbums.isAddingToAlbum newPropertyChange
+
                                 newSearch =
                                     { search | partialKeybinding = "", pagination = ViewAlbums.resetPagination search.pagination, invalidInputWarning = Nothing }
                             in
                             ( { model | userMode = ViewAssets (EditAsset NormalMode toggledAsset newSearch), pendingAlbumChange = Just ( album.id, isAddition ) }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
+
                         _ ->
                             ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
+
         AssetOpenInImmich ->
             -- Handle opening in Immich
             case model.userMode of
@@ -712,13 +706,17 @@ handleAssetResult assetResult model =
                                     model.baseUrl ++ "/photos/" ++ asset.asset.id
                             in
                             ( model, openUrl immichUrl )
+
                         _ ->
                             ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
+
         AssetCreateAlbum albumName ->
             -- Handle album creation
             ( { model | userMode = LoadingAssets { fetchedAssetList = Nothing, fetchedAssetMembership = Nothing } }, Immich.createAlbum model.immichApiPaths albumName |> Cmd.map ImmichMsg )
+
         AssetToggleTimeView ->
             -- Handle time view toggle
             let
@@ -726,219 +724,302 @@ handleAssetResult assetResult model =
                     case model.timeViewMode of
                         Absolute ->
                             Relative
+
                         Relative ->
                             Absolute
             in
             ( { model | timeViewMode = newTimeViewMode }, Cmd.none )
+
         AssetSwitchToGridView ->
             -- Switch to grid view
             let
                 -- Assume screen width is roughly 16:9 ratio of height for now
-                screenWidth = model.screenHeight * 16 // 9
-                gridState = ViewGrid.initGridState screenWidth model.screenHeight
+                screenWidth =
+                    model.screenHeight * 16 // 9
+
+                gridState =
+                    ViewGrid.initGridState screenWidth model.screenHeight
             in
             ( { model | userMode = ViewAssets (GridView gridState) }, Cmd.none )
+
         AssetSwitchToDetailView assetId ->
             -- Switch to detail view for specific asset
-            case List.indexedMap (\index id -> if id == assetId then Just index else Nothing) model.currentAssets 
+            case
+                List.indexedMap
+                    (\index id ->
+                        if id == assetId then
+                            Just index
+
+                        else
+                            Nothing
+                    )
+                    model.currentAssets
                     |> List.filterMap identity
-                    |> List.head of
+                    |> List.head
+            of
                 Just assetIndex ->
                     switchToEditIfAssetFound model assetIndex
+
                 Nothing ->
                     ( model, Cmd.none )
+
         AssetGridUpdate gridState ->
             -- Update grid state
             ( { model | userMode = ViewAssets (GridView gridState) }, Cmd.none )
 
+
+
 -- Helper to convert UpdateMenus.AssetSource to Main.AssetSource
+
+
 convertMenuAssetSource : UpdateMenus.AssetSource -> AssetSource
 convertMenuAssetSource menuAssetSource =
     case menuAssetSource of
         UpdateMenus.ImageSearch config ->
             ImageSearch config
+
         UpdateMenus.TextSearch query ->
             TextSearch query
+
         UpdateMenus.FilteredAlbum album config ->
             FilteredAlbum album config
+
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         LoadDataAgain ->
             ( model, Immich.getAllAlbums model.baseUrl model.apiKey |> Cmd.map ImmichMsg )
+
         SelectAlbum album ->
             case model.userMode of
                 ViewAssets assetState ->
                     case assetState of
                         SelectAlbumInput _ ->
                             ( createLoadStateForCurrentAssetSource (Album album) model, Immich.getAlbum model.immichApiPaths album.id |> Cmd.map ImmichMsg )
+
                         EditAsset inputMode asset search ->
                             let
                                 currentPropertyChange =
                                     Maybe.withDefault RemainFalse (Dict.get album.id asset.albumMembership)
+
                                 currentlyInAlbum =
                                     ViewAlbums.isCurrentlyInAlbum currentPropertyChange
+
                                 isNotInAlbum =
                                     not currentlyInAlbum
+
                                 toggledAsset =
                                     ViewAlbums.toggleAssetAlbum asset album
+
                                 newPropertyChange =
                                     Maybe.withDefault RemainFalse (Dict.get album.id toggledAsset.albumMembership)
+
                                 isAddition =
                                     ViewAlbums.isAddingToAlbum newPropertyChange
                             in
                             ( { model | userMode = ViewAssets (EditAsset inputMode toggledAsset (ViewAlbums.getAlbumSearch "" model.knownAlbums)), pendingAlbumChange = Just ( album.id, isAddition ) }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
+
                         _ ->
                             ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
+
         KeyPress key ->
             case model.userMode of
                 MainMenu menuState ->
                     handleMenuResult (updateMenus (MenuKeyPress key) menuState model.knownAlbums model.immichApiPaths model.screenHeight) model
+
                 ViewAssets assetState ->
                     handleAssetResult (updateAsset (AssetKeyPress key) assetState model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets model.knownAssets) model
+
                 LoadingAssets _ ->
                     ( model, Cmd.none )
+
         WindowResize width height ->
             let
                 newModel =
                     { model | screenHeight = height }
+
                 updatedModel =
                     case model.userMode of
                         ViewAssets assetState ->
                             case assetState of
                                 SelectAlbumInput search ->
                                     { newModel | userMode = ViewAssets (SelectAlbumInput { search | pagination = ViewAlbums.updatePagination height search.pagination }) }
+
                                 EditAsset inputMode asset search ->
                                     { newModel | userMode = ViewAssets (EditAsset inputMode asset { search | pagination = ViewAlbums.updatePagination height search.pagination }) }
+
                                 CreateAlbumConfirmation inputMode asset search albumName ->
                                     { newModel | userMode = ViewAssets (CreateAlbumConfirmation inputMode asset { search | pagination = ViewAlbums.updatePagination height search.pagination } albumName) }
+
                                 ShowEditAssetHelp inputMode asset search ->
                                     { newModel | userMode = ViewAssets (ShowEditAssetHelp inputMode asset { search | pagination = ViewAlbums.updatePagination height search.pagination }) }
+
                                 GridView gridState ->
                                     let
-                                        screenWidth = height * 16 // 9  -- Assume 16:9 ratio
-                                        updatedGridState = ViewGrid.updateGridState (ViewGrid.GridResized screenWidth height) gridState []
+                                        screenWidth =
+                                            height * 16 // 9
+
+                                        -- Assume 16:9 ratio
+                                        updatedGridState =
+                                            ViewGrid.updateGridState (ViewGrid.GridResized screenWidth height) gridState []
                                     in
                                     { newModel | userMode = ViewAssets (GridView updatedGridState) }
+
                                 _ ->
                                     newModel
+
                         _ ->
                             newModel
             in
             ( updatedModel, Cmd.none )
+
         ChangeTimelineMediaType newMediaType ->
             case model.userMode of
                 MainMenu menuState ->
                     case menuState of
                         TimelineView config ->
                             ( { model | userMode = MainMenu (TimelineView { config | mediaType = newMediaType }) }, Cmd.none )
+
                         _ ->
                             ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
+
         ChangeTimelineCategorisation newCategorisation ->
             case model.userMode of
                 MainMenu menuState ->
                     case menuState of
                         TimelineView config ->
                             ( { model | userMode = MainMenu (TimelineView { config | categorisation = newCategorisation }) }, Cmd.none )
+
                         _ ->
                             ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
+
         ChangeTimelineOrder newOrder ->
             case model.userMode of
                 MainMenu menuState ->
                     case menuState of
                         TimelineView config ->
                             ( { model | userMode = MainMenu (TimelineView { config | order = newOrder }) }, Cmd.none )
+
                         _ ->
                             ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
+
         ChangeTimelineStatus newStatus ->
             case model.userMode of
                 MainMenu menuState ->
                     case menuState of
                         TimelineView config ->
                             ( { model | userMode = MainMenu (TimelineView { config | status = newStatus }) }, Cmd.none )
+
                         _ ->
                             ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
+
         ChangeSearchMediaType newMediaType ->
             case model.userMode of
                 MainMenu menuState ->
                     case menuState of
                         SearchView config ->
                             ( { model | userMode = MainMenu (SearchView { config | mediaType = newMediaType }) }, Cmd.none )
+
                         _ ->
                             ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
+
         ChangeSearchContext newContext ->
             case model.userMode of
                 MainMenu menuState ->
                     case menuState of
                         SearchView config ->
                             ( { model | userMode = MainMenu (SearchView { config | searchContext = newContext }) }, Cmd.none )
+
                         _ ->
                             ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
+
         ChangeSearchStatus newStatus ->
             case model.userMode of
                 MainMenu menuState ->
                     case menuState of
                         SearchView config ->
                             ( { model | userMode = MainMenu (SearchView { config | status = newStatus }) }, Cmd.none )
+
                         _ ->
                             ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
+
         ChangeSearchQuery newQuery ->
             case model.userMode of
                 MainMenu menuState ->
                     case menuState of
                         SearchView config ->
                             ( { model | userMode = MainMenu (SearchView { config | query = newQuery }) }, Cmd.none )
+
                         _ ->
                             ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
+
         ChangeAlbumMediaType newMediaType ->
             case model.userMode of
                 MainMenu menuState ->
                     case menuState of
                         AlbumView album config ->
                             ( { model | userMode = MainMenu (AlbumView album { config | mediaType = newMediaType }) }, Cmd.none )
+
                         _ ->
                             ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
+
         ChangeAlbumOrder newOrder ->
             case model.userMode of
                 MainMenu menuState ->
                     case menuState of
                         AlbumView album config ->
                             ( { model | userMode = MainMenu (AlbumView album { config | order = newOrder }) }, Cmd.none )
+
                         _ ->
                             ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
+
         ChangeAlbumStatus newStatus ->
             case model.userMode of
                 MainMenu menuState ->
                     case menuState of
                         AlbumView album config ->
                             ( { model | userMode = MainMenu (AlbumView album { config | status = newStatus }) }, Cmd.none )
+
                         _ ->
                             ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
+
         LoadTimelineAssets ->
             case model.userMode of
                 MainMenu menuState ->
@@ -949,14 +1030,20 @@ update msg model =
                                     { order = config.order, categorisation = config.categorisation, mediaType = config.mediaType, status = config.status }
                             in
                             let
-                                updatedModel = createLoadStateForCurrentAssetSource (ImageSearch searchConfig) model
-                                modelWithPagination = { updatedModel | paginationState = { currentConfig = Just searchConfig, currentQuery = Nothing, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = updatedModel.paginationState.maxAssetsToFetch } }
+                                updatedModel =
+                                    createLoadStateForCurrentAssetSource (ImageSearch searchConfig) model
+
+                                modelWithPagination =
+                                    { updatedModel | paginationState = { currentConfig = Just searchConfig, currentQuery = Nothing, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = updatedModel.paginationState.maxAssetsToFetch } }
                             in
                             ( modelWithPagination, Immich.fetchImagesPaginated modelWithPagination.immichApiPaths searchConfig 1000 1 |> Cmd.map ImmichMsg )
+
                         _ ->
                             ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
+
         ExecuteSearch ->
             case model.userMode of
                 MainMenu menuState ->
@@ -964,59 +1051,75 @@ update msg model =
                         SearchView config ->
                             if String.isEmpty config.query then
                                 ( model, Cmd.none )
+
                             else
                                 let
-                                    updatedModel = createLoadStateForCurrentAssetSource (TextSearch config.query) model
-                                    modelWithPagination = { updatedModel | paginationState = { currentConfig = Nothing, currentQuery = Just config.query, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = updatedModel.paginationState.maxAssetsToFetch } }
+                                    updatedModel =
+                                        createLoadStateForCurrentAssetSource (TextSearch config.query) model
+
+                                    modelWithPagination =
+                                        { updatedModel | paginationState = { currentConfig = Nothing, currentQuery = Just config.query, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = updatedModel.paginationState.maxAssetsToFetch } }
                                 in
                                 ( modelWithPagination, Immich.searchAssetsPaginated modelWithPagination.immichApiPaths config.query config.mediaType config.status 1000 1 |> Cmd.map ImmichMsg )
+
                         _ ->
                             ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
+
         LoadAlbumAssets album ->
             case model.userMode of
                 MainMenu menuState ->
                     case menuState of
                         AlbumView _ config ->
                             ( createLoadStateForCurrentAssetSource (FilteredAlbum album config) model, Immich.fetchAlbumAssetsWithFilters model.immichApiPaths album.id config.order config.mediaType config.status |> Cmd.map ImmichMsg )
+
                         _ ->
                             ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
+
         SearchInputFocused ->
             case model.userMode of
                 MainMenu menuState ->
                     case menuState of
                         SearchView config ->
                             ( { model | userMode = MainMenu (SearchView { config | inputFocused = True }) }, Cmd.none )
+
                         _ ->
                             ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
+
         SearchInputBlurred ->
             case model.userMode of
                 MainMenu menuState ->
                     case menuState of
                         SearchView config ->
                             ( { model | userMode = MainMenu (SearchView { config | inputFocused = False }) }, Cmd.none )
+
                         _ ->
                             ( model, Cmd.none )
+
                 _ ->
                     ( model, Cmd.none )
-        
+
         -- Module-specific message handlers (now removed - handled in KeyPress above)
         MenuMsg menuMsg ->
             -- This should no longer be called due to new architecture
             ( model, Cmd.none )
-        
+
         AlbumMsg albumMsg ->
-            -- This should no longer be called due to new architecture 
+            -- This should no longer be called due to new architecture
             ( model, Cmd.none )
-        
+
         AssetMsg assetMsg ->
             -- This should no longer be called due to new architecture
             ( model, Cmd.none )
+
         ImmichMsg imsg ->
             let
                 newModel =
@@ -1027,9 +1130,11 @@ update msg model =
                                 |> handleFetchAssets album.assets
                                 -- |> handleProgressLoadingState FetchedAlbums
                                 |> handleUpdateLoadingState FetchedAssetList
+
                         Immich.AlbumsFetched (Ok albums) ->
                             model
                                 |> handleFetchAlbums albums
+
                         Immich.AlbumCreated (Ok album) ->
                             let
                                 updatedModel =
@@ -1050,9 +1155,14 @@ update msg model =
 
                         Immich.PaginatedImagesFetched (Ok paginatedResponse) ->
                             let
-                                afterFetch = model |> handleFetchAssets paginatedResponse.assets
-                                afterUpdate = afterFetch |> handleUpdateLoadingState FetchedAssetList
-                                finalModel = afterUpdate |> updatePaginationState paginatedResponse 1
+                                afterFetch =
+                                    model |> handleFetchAssets paginatedResponse.assets
+
+                                afterUpdate =
+                                    afterFetch |> handleUpdateLoadingState FetchedAssetList
+
+                                finalModel =
+                                    afterUpdate |> updatePaginationState paginatedResponse 1
                             in
                             finalModel
 
@@ -1081,6 +1191,7 @@ update msg model =
                                                     identity
                                             -- Keep riginal album order for now
                                            )
+
                                 updatedModel =
                                     if List.isEmpty filteredAssets then
                                         -- Handle empty results - show a message instead of going to EditAssets
@@ -1088,6 +1199,7 @@ update msg model =
                                             | userMode = MainMenu (AlbumView album defaultAlbumConfig)
                                             , imagesLoadState = ImmichLoadSuccess
                                         }
+
                                     else
                                         model
                                             |> handleFetchAlbums [ album ]
@@ -1108,20 +1220,26 @@ update msg model =
 
                         Immich.AlbumsFetched (Err error) ->
                             { model | albumsLoadState = ImmichLoadError error }
+
                         Immich.AlbumCreated (Err error) ->
                             case model.userMode of
                                 LoadingAssets _ ->
                                     getCurrentAssetWithActions model
                                         |> Maybe.map (\( assetWithActions, search ) -> { model | userMode = ViewAssets (EditAsset InsertMode assetWithActions search) })
                                         |> Maybe.withDefault model
+
                                 _ ->
                                     model
+
                         Immich.ImagesFetched (Err error) ->
                             { model | imagesLoadState = ImmichLoadError error }
+
                         Immich.PaginatedImagesFetched (Err error) ->
                             { model | imagesLoadState = ImmichLoadError error }
+
                         Immich.MoreImagesFetched _ (Err error) ->
                             { model | imagesLoadState = ImmichLoadError error }
+
                         _ ->
                             model
             in
@@ -1139,20 +1257,25 @@ update msg model =
 
                                             else
                                                 -1
+
                                         modelWithUpdatedCount =
                                             updateAlbumAssetCount albumId countChange { newModel | pendingAlbumChange = Nothing }
+
                                         -- Normalize the asset's PropertyChange state to stable state
                                         finalModel =
                                             normalizeAssetMembershipStates modelWithUpdatedCount albumId isAddition
                                     in
                                     finalModel
+
                                 Nothing ->
                                     { newModel | pendingAlbumChange = Nothing }
                     in
                     ( updatedModel, Cmd.none )
+
                 Immich.AlbumAssetsChanged (Err _) ->
                     -- Album membership change failed, clear pending change and re-fetch to get correct state
                     switchToEditIfAssetFound { model | pendingAlbumChange = Nothing } model.imageIndex
+
                 Immich.AlbumCreated (Ok album) ->
                     case model.userMode of
                         LoadingAssets _ ->
@@ -1162,93 +1285,128 @@ update msg model =
                                         let
                                             updatedAsset =
                                                 ViewAlbums.toggleAssetAlbum assetWithActions album
+
                                             updatedModel =
                                                 { newModel | userMode = ViewAssets (EditAsset InsertMode updatedAsset (ViewAlbums.getAlbumSearch "" newModel.knownAlbums)) }
                                         in
                                         ( { updatedModel | pendingAlbumChange = Just ( album.id, True ) }, Immich.albumChangeAssetMembership newModel.immichApiPaths album.id [ assetWithActions.asset.id ] True |> Cmd.map ImmichMsg )
                                     )
                                 |> Maybe.withDefault ( newModel, Cmd.none )
+
                         _ ->
                             ( newModel, Cmd.none )
+
                 Immich.PaginatedImagesFetched (Ok paginatedResponse) ->
                     -- Auto-fetch next page if there are more assets
                     let
                         -- Clear loading state since we just received a response
-                        currentPaginationState1 = newModel.paginationState
-                        clearedPaginationState = { currentPaginationState1 | isLoadingMore = False }
-                        modelWithClearedLoading = 
+                        currentPaginationState1 =
+                            newModel.paginationState
+
+                        clearedPaginationState =
+                            { currentPaginationState1 | isLoadingMore = False }
+
+                        modelWithClearedLoading =
                             { newModel | paginationState = clearedPaginationState }
-                        
+
                         -- Use the paginatedResponse data directly, not the processed model
-                        newLoadedAssets = modelWithClearedLoading.paginationState.loadedAssets
-                        reachedLimit = newLoadedAssets >= modelWithClearedLoading.paginationState.maxAssetsToFetch
-                        shouldFetchMore = paginatedResponse.hasNextPage && not reachedLimit
-                        
-                        
-                        modelWithLoadingState = 
+                        newLoadedAssets =
+                            modelWithClearedLoading.paginationState.loadedAssets
+
+                        reachedLimit =
+                            newLoadedAssets >= modelWithClearedLoading.paginationState.maxAssetsToFetch
+
+                        shouldFetchMore =
+                            paginatedResponse.hasNextPage && not reachedLimit
+
+                        modelWithLoadingState =
                             if shouldFetchMore then
                                 let
-                                    ps = modelWithClearedLoading.paginationState
+                                    ps =
+                                        modelWithClearedLoading.paginationState
                                 in
                                 { modelWithClearedLoading | paginationState = { ps | isLoadingMore = True } }
+
                             else
                                 modelWithClearedLoading
-                                
-                        nextPageCmd = 
+
+                        nextPageCmd =
                             if shouldFetchMore then
-                                case (modelWithClearedLoading.paginationState.currentConfig, modelWithClearedLoading.paginationState.currentQuery) of
-                                    (Just config, Nothing) ->
+                                case ( modelWithClearedLoading.paginationState.currentConfig, modelWithClearedLoading.paginationState.currentQuery ) of
+                                    ( Just config, Nothing ) ->
                                         Immich.fetchImagesPaginated modelWithClearedLoading.immichApiPaths config 1000 2 |> Cmd.map ImmichMsg
-                                    (Nothing, Just query) ->
+
+                                    ( Nothing, Just query ) ->
                                         Immich.searchAssetsPaginated modelWithClearedLoading.immichApiPaths query AllMedia AllStatuses 1000 2 |> Cmd.map ImmichMsg
+
                                     _ ->
                                         Cmd.none
+
                             else
                                 Cmd.none
                     in
                     ( modelWithLoadingState, nextPageCmd )
+
                 Immich.MoreImagesFetched page (Ok paginatedResponse) ->
                     -- Auto-fetch next page if there are more assets
                     let
                         -- Clear loading state since we just received a response
-                        currentPaginationState1 = newModel.paginationState
-                        clearedPaginationState = { currentPaginationState1 | isLoadingMore = False }
-                        modelWithClearedLoading = 
+                        currentPaginationState1 =
+                            newModel.paginationState
+
+                        clearedPaginationState =
+                            { currentPaginationState1 | isLoadingMore = False }
+
+                        modelWithClearedLoading =
                             { newModel | paginationState = clearedPaginationState }
-                        
+
                         -- Use the paginatedResponse data directly, not the processed model
-                        newLoadedAssets = modelWithClearedLoading.paginationState.loadedAssets
-                        reachedLimit = newLoadedAssets >= modelWithClearedLoading.paginationState.maxAssetsToFetch
-                        shouldFetchMore = paginatedResponse.hasNextPage && not reachedLimit
-                        
-                        modelWithLoadingState = 
+                        newLoadedAssets =
+                            modelWithClearedLoading.paginationState.loadedAssets
+
+                        reachedLimit =
+                            newLoadedAssets >= modelWithClearedLoading.paginationState.maxAssetsToFetch
+
+                        shouldFetchMore =
+                            paginatedResponse.hasNextPage && not reachedLimit
+
+                        modelWithLoadingState =
                             if shouldFetchMore then
                                 let
-                                    ps = modelWithClearedLoading.paginationState
+                                    ps =
+                                        modelWithClearedLoading.paginationState
                                 in
                                 { modelWithClearedLoading | paginationState = { ps | isLoadingMore = True } }
+
                             else
                                 modelWithClearedLoading
-                                
-                        nextPageCmd = 
+
+                        nextPageCmd =
                             if shouldFetchMore then
-                                case (modelWithClearedLoading.paginationState.currentConfig, modelWithClearedLoading.paginationState.currentQuery) of
-                                    (Just config, Nothing) ->
+                                case ( modelWithClearedLoading.paginationState.currentConfig, modelWithClearedLoading.paginationState.currentQuery ) of
+                                    ( Just config, Nothing ) ->
                                         Immich.fetchImagesPaginated modelWithClearedLoading.immichApiPaths config 1000 (page + 1) |> Cmd.map ImmichMsg
-                                    (Nothing, Just query) ->
+
+                                    ( Nothing, Just query ) ->
                                         Immich.searchAssetsPaginated modelWithClearedLoading.immichApiPaths query AllMedia AllStatuses 1000 (page + 1) |> Cmd.map ImmichMsg
+
                                     _ ->
                                         Cmd.none
+
                             else
                                 Cmd.none
                     in
                     ( modelWithLoadingState, nextPageCmd )
+
                 Immich.PaginatedImagesFetched (Err _) ->
                     checkIfLoadingComplete newModel
+
                 Immich.MoreImagesFetched _ (Err _) ->
                     checkIfLoadingComplete newModel
+
                 _ ->
                     checkIfLoadingComplete newModel
+
 
 handleFetchAssetMembership : Immich.AssetWithMembership -> Model -> Model
 handleFetchAssetMembership assetWithMembership model =
@@ -1266,10 +1424,11 @@ handleFetchAssetMembership assetWithMembership model =
 
 handleFetchAssets : List ImmichAsset -> Model -> Model
 handleFetchAssets assets model =
-    { model 
+    { model
         | knownAssets = Helpers.listOverrideDict assets (\a -> ( a.id, a )) model.knownAssets
         , currentAssets = List.map .id assets
         , imagesLoadState = ImmichLoadSuccess
+
         -- Preserve paginationState - don't overwrite it
     }
 
@@ -1279,14 +1438,15 @@ handleFetchAssets assets model =
 -- All keybinding functions are now imported from KeybindingGenerator module
 
 
-
 handleFetchAlbums : List ImmichAlbum -> Model -> Model
 handleFetchAlbums albums model =
     let
         updatedKnownAlbums =
             Helpers.listOverrideDict albums (\a -> ( a.id, a )) model.knownAlbums
+
         allAlbums =
             Dict.values updatedKnownAlbums
+
         albumKeybindings =
             generateAlbumKeybindings allAlbums
     in
@@ -1295,6 +1455,7 @@ handleFetchAlbums albums model =
         , albumsLoadState = ImmichLoadSuccess
         , albumKeybindings = albumKeybindings
     }
+
 
 handleUpdateLoadingState : AssetSourceUpdate -> Model -> Model
 handleUpdateLoadingState updateType model =
@@ -1307,74 +1468,72 @@ handleUpdateLoadingState updateType model =
                     case updateType of
                         FetchedAssetList ->
                             { loadState | fetchedAssetList = Just True }
+
                 -- FetchedAlbums ->
                 --     { loadState | fetchedAssetList = Just True }
                 updatedModel =
                     { model | userMode = LoadingAssets updatedLoadState }
-                    
+
                 -- Check if loading is complete and transition to ViewAssets
-                (finalModel, _) = checkIfLoadingComplete updatedModel
+                ( finalModel, _ ) =
+                    checkIfLoadingComplete updatedModel
             in
             finalModel
+
         _ ->
             model
+
 
 checkIfLoadingComplete : Model -> ( Model, Cmd Msg )
 checkIfLoadingComplete model =
     case model.userMode of
         LoadingAssets loadState ->
             let
-                isCompleted = isLoadStateCompleted loadState
+                isCompleted =
+                    isLoadStateCompleted loadState
             in
             if isCompleted then
                 switchToEditIfAssetFound model 0
+
             else
                 ( model, Cmd.none )
+
         _ ->
             ( model, Cmd.none )
+
 
 isLoadStateCompleted : SourceLoadState -> Bool
 isLoadStateCompleted loadState =
     isLoadCompletedForProp loadState.fetchedAssetMembership
         && isLoadCompletedForProp loadState.fetchedAssetList
 
+
 isLoadCompletedForProp : Maybe Bool -> Bool
 isLoadCompletedForProp maybeBool =
     maybeBool == Nothing || maybeBool == Just True
+
 
 createLoadStateForCurrentAssetSource : AssetSource -> Model -> Model
 createLoadStateForCurrentAssetSource assetSource model =
     case assetSource of
         NoAssets ->
             model
+
         ImageSearch _ ->
             { model | currentAssetsSource = assetSource, userMode = LoadingAssets { fetchedAssetList = Just False, fetchedAssetMembership = Nothing } }
+
         Album _ ->
             { model | currentAssetsSource = assetSource, userMode = LoadingAssets { fetchedAssetList = Just False, fetchedAssetMembership = Nothing } }
+
         FilteredAlbum _ _ ->
             { model | currentAssetsSource = assetSource, userMode = LoadingAssets { fetchedAssetList = Just False, fetchedAssetMembership = Nothing } }
+
         TextSearch _ ->
             { model | currentAssetsSource = assetSource, userMode = LoadingAssets { fetchedAssetList = Just False, fetchedAssetMembership = Nothing } }
 
 
+
 -- Helper to convert UpdateMenus.AssetSource to Main.AssetSource
-
-convertAssetSource : UpdateMenus.AssetSource -> AssetSource
-convertAssetSource menuAssetSource =
-    case menuAssetSource of
-        UpdateMenus.ImageSearch config ->
-            ImageSearch config
-        UpdateMenus.TextSearch query ->
-            TextSearch query
-        UpdateMenus.FilteredAlbum album config ->
-            FilteredAlbum album config
-
-
-
-
-
-
-
 
 
 updateAlbumAssetCount : ImmichAlbumId -> Int -> Model -> Model
@@ -1386,6 +1545,7 @@ updateAlbumAssetCount albumId countChange model =
                     case maybeAlbum of
                         Just album ->
                             Just { album | assetCount = max 0 (album.assetCount + countChange) }
+
                         Nothing ->
                             Nothing
                 )
@@ -1394,7 +1554,9 @@ updateAlbumAssetCount albumId countChange model =
     { model | knownAlbums = updatedAlbums }
 
 
+
 -- Normalize asset PropertyChange states after successful API call
+
 
 normalizeAssetMembershipStates : Model -> ImmichAlbumId -> Bool -> Model
 normalizeAssetMembershipStates model albumId isAddition =
@@ -1422,8 +1584,10 @@ normalizeAssetMembershipStates model albumId isAddition =
                                     }
                             in
                             ViewAssets (EditAsset inputMode updatedAsset search)
+
                         _ ->
                             model.userMode
+
                 _ ->
                     model.userMode
     in
@@ -1460,17 +1624,24 @@ getCurrentAssetWithActions model =
         |> Maybe.map (\asset -> ( ViewAlbums.getAssetWithActions asset, ViewAlbums.getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight ))
 
 
+
 -- PAGINATION HELPERS --
+
 
 updatePaginationState : Immich.PaginatedAssetResponse -> Int -> Model -> Model
 updatePaginationState paginatedResponse page model =
     let
-        newLoadedAssets = model.paginationState.loadedAssets + paginatedResponse.count
-        reachedLimit = newLoadedAssets >= model.paginationState.maxAssetsToFetch
-        hasMoreToLoad = paginatedResponse.hasNextPage && not reachedLimit
+        newLoadedAssets =
+            model.paginationState.loadedAssets + paginatedResponse.count
+
+        reachedLimit =
+            newLoadedAssets >= model.paginationState.maxAssetsToFetch
+
+        hasMoreToLoad =
+            paginatedResponse.hasNextPage && not reachedLimit
     in
-    { model 
-        | paginationState = 
+    { model
+        | paginationState =
             { currentConfig = model.paginationState.currentConfig
             , currentQuery = model.paginationState.currentQuery
             , totalAssets = paginatedResponse.total
@@ -1482,23 +1653,31 @@ updatePaginationState paginatedResponse page model =
             }
     }
 
+
 appendFetchedAssets : List ImmichAsset -> Model -> Model
 appendFetchedAssets newAssets model =
     let
         updatedKnownAssets =
             Helpers.listOverrideDict newAssets (\a -> ( a.id, a )) model.knownAssets
-        
-        existingAssetIds = model.currentAssets
-        newAssetIds = List.map .id newAssets
-        combinedAssetIds = existingAssetIds ++ newAssetIds
+
+        existingAssetIds =
+            model.currentAssets
+
+        newAssetIds =
+            List.map .id newAssets
+
+        combinedAssetIds =
+            existingAssetIds ++ newAssetIds
     in
-    { model 
+    { model
         | knownAssets = updatedKnownAssets
         , currentAssets = combinedAssetIds
     }
 
 
+
 -- SUBSCRIPTIONS --
+
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =

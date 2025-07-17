@@ -1,19 +1,21 @@
 module ApiIntegrationTest exposing (..)
 
-import Expect exposing (Expectation)
-import Test exposing (..)
+import Expect
 import Fuzz exposing (..)
+import Immich exposing (..)
 import Json.Decode as Decode
 import Json.Encode as Encode
-import Date
-import Immich exposing (..)
-import Http
+import Test exposing (..)
 import Url exposing (percentEncode)
 
 
+
 -- Mock HTTP responses for integration testing
+
+
 mockAlbumResponse : String
-mockAlbumResponse = """
+mockAlbumResponse =
+    """
 [
     {
         "id": "album-1",
@@ -42,8 +44,10 @@ mockAlbumResponse = """
 ]
 """
 
+
 mockNestedAssetsResponse : String
-mockNestedAssetsResponse = """
+mockNestedAssetsResponse =
+    """
 {
     "assets": {
         "items": [
@@ -70,8 +74,10 @@ mockNestedAssetsResponse = """
 }
 """
 
+
 mockSingleAlbumResponse : String
-mockSingleAlbumResponse = """
+mockSingleAlbumResponse =
+    """
 {
     "id": "single-album-1",
     "albumName": "Test Album",
@@ -91,7 +97,11 @@ mockSingleAlbumResponse = """
 }
 """
 
+
+
 -- Test that API paths are correctly constructed
+
+
 suite : Test
 suite =
     describe "Immich API Integration Tests"
@@ -99,9 +109,14 @@ suite =
             [ test "getImmichApiPaths constructs all required endpoints" <|
                 \_ ->
                     let
-                        baseUrl = "https://my-immich.example.com"
-                        apiKey = "test-api-key-12345"
-                        apiPaths = getImmichApiPaths baseUrl apiKey
+                        baseUrl =
+                            "https://my-immich.example.com"
+
+                        apiKey =
+                            "test-api-key-12345"
+
+                        apiPaths =
+                            getImmichApiPaths baseUrl apiKey
                     in
                     Expect.all
                         [ \() -> Expect.equal apiPaths.apiKey apiKey
@@ -115,31 +130,36 @@ suite =
                         , \() -> Expect.equal (apiPaths.updateAsset "test-asset") "https://my-immich.example.com/api/assets/test-asset"
                         ]
                         ()
-
             , test "fetchMembershipForAsset constructs query URL correctly" <|
                 \_ ->
                     let
-                        baseUrl = "https://test.com"
-                        apiPaths = getImmichApiPaths baseUrl "key"
-                        result = apiPaths.fetchMembershipForAsset "asset123"
+                        baseUrl =
+                            "https://test.com"
+
+                        apiPaths =
+                            getImmichApiPaths baseUrl "key"
+
+                        result =
+                            apiPaths.fetchMembershipForAsset "asset123"
                     in
                     if String.contains "assetId=asset123" result then
                         Expect.pass
+
                     else
                         Expect.fail ("Expected URL to contain assetId query param, got: " ++ result)
             ]
-        
         , describe "Response Parsing Integration"
             [ test "AlbumsFetched response parsing with multiple albums" <|
                 \_ ->
                     let
-                        decoded = Decode.decodeString (Decode.list albumDecoder) mockAlbumResponse
+                        decoded =
+                            Decode.decodeString (Decode.list albumDecoder) mockAlbumResponse
                     in
                     case decoded of
                         Ok albums ->
                             Expect.all
                                 [ \() -> Expect.equal (List.length albums) 2
-                                , \() -> 
+                                , \() ->
                                     case List.head albums of
                                         Just firstAlbum ->
                                             Expect.all
@@ -149,6 +169,7 @@ suite =
                                                 , \() -> Expect.equal (List.length firstAlbum.assets) 1
                                                 ]
                                                 ()
+
                                         Nothing ->
                                             Expect.fail "Expected first album to exist"
                                 , \() ->
@@ -161,17 +182,19 @@ suite =
                                                 , \() -> Expect.equal (List.length secondAlbum.assets) 0
                                                 ]
                                                 ()
+
                                         Nothing ->
                                             Expect.fail "Expected second album to exist"
                                 ]
                                 ()
+
                         Err error ->
                             Expect.fail ("Failed to decode albums response: " ++ Decode.errorToString error)
-
             , test "NestedAssetsDecoder handles search metadata response" <|
                 \_ ->
                     let
-                        decoded = Decode.decodeString nestedAssetsDecoder mockNestedAssetsResponse
+                        decoded =
+                            Decode.decodeString nestedAssetsDecoder mockNestedAssetsResponse
                     in
                     case decoded of
                         Ok assets ->
@@ -187,6 +210,7 @@ suite =
                                                 , \() -> Expect.equal firstAsset.isArchived False
                                                 ]
                                                 ()
+
                                         Nothing ->
                                             Expect.fail "Expected first asset to exist"
                                 , \() ->
@@ -198,17 +222,19 @@ suite =
                                                 , \() -> Expect.equal secondAsset.isArchived True
                                                 ]
                                                 ()
+
                                         Nothing ->
                                             Expect.fail "Expected second asset to exist"
                                 ]
                                 ()
+
                         Err error ->
                             Expect.fail ("Failed to decode nested assets: " ++ Decode.errorToString error)
-
             , test "SingleAlbumFetched response parsing" <|
                 \_ ->
                     let
-                        decoded = Decode.decodeString albumDecoder mockSingleAlbumResponse
+                        decoded =
+                            Decode.decodeString albumDecoder mockSingleAlbumResponse
                     in
                     case decoded of
                         Ok album ->
@@ -221,14 +247,15 @@ suite =
                                     case List.head album.assets of
                                         Just asset ->
                                             Expect.equal asset.id "single-asset-1"
+
                                         Nothing ->
                                             Expect.fail "Expected album to have an asset"
                                 ]
                                 ()
+
                         Err error ->
                             Expect.fail ("Failed to decode single album: " ++ Decode.errorToString error)
             ]
-
         , describe "Request Body Construction"
             [ test "makeSearchBody generates correct JSON for different configurations" <|
                 \_ ->
@@ -246,109 +273,156 @@ suite =
                             ]
                     in
                     testCases
-                        |> List.map (\(config, expectedJson) ->
-                            let
-                                result = makeSearchBody config 1000 1
-                                resultJson = Encode.encode 0 result
-                            in
-                            Expect.equal resultJson expectedJson
-                        )
-                        |> List.foldl (\expectation acc ->
-                            Expect.all [(\() -> acc), (\() -> expectation)] ()) Expect.pass
+                        |> List.map
+                            (\( config, expectedJson ) ->
+                                let
+                                    result =
+                                        makeSearchBody config 1000 1
 
+                                    resultJson =
+                                        Encode.encode 0 result
+                                in
+                                Expect.equal resultJson expectedJson
+                            )
+                        |> List.foldl
+                            (\expectation acc ->
+                                Expect.all [ \() -> acc, \() -> expectation ] ()
+                            )
+                            Expect.pass
             , test "makeAssetIdsBody creates correct structure for album operations" <|
                 \_ ->
                     let
-                        assetIds = ["asset-1", "asset-2", "asset-3"]
-                        result = makeAssetIdsBody assetIds
-                        expectedJson = """{"ids":["asset-1","asset-2","asset-3"]}"""
-                        resultJson = Encode.encode 0 result
+                        assetIds =
+                            [ "asset-1", "asset-2", "asset-3" ]
+
+                        result =
+                            makeAssetIdsBody assetIds
+
+                        expectedJson =
+                            """{"ids":["asset-1","asset-2","asset-3"]}"""
+
+                        resultJson =
+                            Encode.encode 0 result
                     in
                     Expect.equal resultJson expectedJson
-
             , test "makeSimpleJsonBody handles various field types" <|
                 \_ ->
                     let
-                        fields = 
+                        fields =
                             [ ( "stringField", Encode.string "test" )
                             , ( "intField", Encode.int 42 )
                             , ( "boolField", Encode.bool True )
-                            , ( "listField", Encode.list Encode.string ["a", "b"] )
+                            , ( "listField", Encode.list Encode.string [ "a", "b" ] )
                             ]
-                        result = makeSimpleJsonBody fields
-                        resultJson = Encode.encode 0 result
-                        expectedJson = """{"stringField":"test","intField":42,"boolField":true,"listField":["a","b"]}"""
+
+                        result =
+                            makeSimpleJsonBody fields
+
+                        resultJson =
+                            Encode.encode 0 result
+
+                        expectedJson =
+                            """{"stringField":"test","intField":42,"boolField":true,"listField":["a","b"]}"""
                     in
                     Expect.equal resultJson expectedJson
             ]
-
         , describe "Error Handling Integration"
             [ test "Invalid JSON responses are properly handled" <|
                 \_ ->
                     let
-                        invalidJson = """{"id": "test", "missing_required_fields": true"""
-                        result = Decode.decodeString albumDecoder invalidJson
+                        invalidJson =
+                            """{"id": "test", "missing_required_fields": true"""
+
+                        result =
+                            Decode.decodeString albumDecoder invalidJson
                     in
                     case result of
                         Err _ ->
                             Expect.pass
+
                         Ok _ ->
                             Expect.fail "Expected invalid JSON to fail decoding"
-
             , test "Missing nested structure is handled gracefully" <|
                 \_ ->
                     let
-                        malformedNested = """{"assets": {"not_items": []}}"""
-                        result = Decode.decodeString nestedAssetsDecoder malformedNested
+                        malformedNested =
+                            """{"assets": {"not_items": []}}"""
+
+                        result =
+                            Decode.decodeString nestedAssetsDecoder malformedNested
                     in
                     case result of
                         Err _ ->
                             Expect.pass
+
                         Ok _ ->
                             Expect.fail "Expected malformed nested structure to fail"
             ]
-
         , describe "URL Construction Edge Cases"
             [ fuzz string "joinUrl handles various base URLs" <|
                 \baseUrl ->
                     if String.isEmpty baseUrl then
-                        Expect.pass -- Skip empty strings
+                        Expect.pass
+                        -- Skip empty strings
+
                     else
                         let
-                            result = joinUrl baseUrl ["api", "test"]
+                            result =
+                                joinUrl baseUrl [ "api", "test" ]
+
                             -- Should not have double slashes and should contain the path
-                            hasDoubleSlash = String.contains "//" (String.dropLeft 8 result) -- Skip "https://"
-                            containsPath = String.contains "/api/test" result
+                            hasDoubleSlash =
+                                String.contains "//" (String.dropLeft 8 result)
+
+                            -- Skip "https://"
+                            containsPath =
+                                String.contains "/api/test" result
                         in
                         if hasDoubleSlash then
                             Expect.fail ("URL contains double slashes: " ++ result)
+
                         else if not containsPath then
                             Expect.fail ("URL missing expected path: " ++ result)
+
                         else
                             Expect.pass
-
             , fuzz2 string (list string) "buildUrlWithQuery constructs valid query strings" <|
                 \baseUrl queryKeys ->
                     let
                         -- Filter out problematic characters and empty strings
-                        validKeys = List.filter (\key -> 
-                            not (String.isEmpty key) && 
-                            not (String.contains " " key) &&
-                            not (String.contains "%" key) &&
-                            String.length key > 0) queryKeys
+                        validKeys =
+                            List.filter
+                                (\key ->
+                                    not (String.isEmpty key)
+                                        && not (String.contains " " key)
+                                        && not (String.contains "%" key)
+                                        && String.length key
+                                        > 0
+                                )
+                                queryKeys
                     in
                     if String.isEmpty baseUrl || List.isEmpty validKeys then
-                        Expect.pass -- Skip edge cases
+                        Expect.pass
+                        -- Skip edge cases
+
                     else
                         let
-                            queryParams = List.map (\key -> (key, "value")) validKeys
-                            result = buildUrlWithQuery baseUrl ["api"] queryParams
+                            queryParams =
+                                List.map (\key -> ( key, "value" )) validKeys
+
+                            result =
+                                buildUrlWithQuery baseUrl [ "api" ] queryParams
+
                             -- Should contain all valid query keys (URL encoded keys might be different)
-                            resultContainsParams = List.any (\key -> String.contains key result || String.contains ("=" ++ percentEncode "value") result) validKeys
+                            resultContainsParams =
+                                List.any (\key -> String.contains key result || String.contains ("=" ++ percentEncode "value") result) validKeys
                         in
                         if resultContainsParams then
                             Expect.pass
+
                         else
-                            Expect.pass -- Accept URL encoding differences
+                            Expect.pass
+
+            -- Accept URL encoding differences
             ]
         ]

@@ -1,45 +1,22 @@
 module FilteringTest exposing (..)
 
-import Expect exposing (Expectation)
-import Test exposing (..)
-import Fuzz exposing (..)
-import Date
+-- Import the types from Immich and Menus modules
 
--- Import the types from Immich and Menus modules  
-import Menus exposing 
-    ( SearchContext(..)
-    , TimelineConfig
-    , SearchConfig
-    , AlbumConfig
-    , defaultTimelineConfig
-    , defaultSearchConfig
-    , defaultAlbumConfig
-    )
-import Immich exposing (ImmichAsset, ImmichAlbum, ImageOrder(..), CategorisationFilter(..), MediaTypeFilter(..), StatusFilter(..))
+import Expect
+import Immich exposing (CategorisationFilter(..), ImageOrder(..), MediaTypeFilter(..), StatusFilter(..))
+import Menus
+    exposing
+        ( SearchContext(..)
+        , defaultAlbumConfig
+        , defaultSearchConfig
+        , defaultTimelineConfig
+        )
+import Test exposing (..)
+
+
 
 -- Test data generators
-generateTestAsset : String -> String -> String -> Bool -> Bool -> ImmichAsset
-generateTestAsset id fileName mimeType isFavorite isArchived =
-    { id = id
-    , path = "/path/to/" ++ fileName
-    , title = fileName
-    , mimeType = mimeType
-    , isFavourite = isFavorite
-    , isArchived = isArchived
-    , albumMembership = []
-    , fileCreatedAt = Date.fromRataDie 737790 -- January 1, 2020
-    , thumbhash = Nothing
-    , duration = Nothing
-    }
 
-generateTestAlbum : String -> String -> Int -> ImmichAlbum
-generateTestAlbum id name assetCount =
-    { id = id
-    , albumName = name
-    , assetCount = assetCount
-    , assets = []
-    , createdAt = Date.fromRataDie 737790 -- January 1, 2020
-    }
 
 suite : Test
 suite =
@@ -48,7 +25,8 @@ suite =
             [ test "defaultTimelineConfig has expected values" <|
                 \_ ->
                     let
-                        config = defaultTimelineConfig
+                        config =
+                            defaultTimelineConfig
                     in
                     Expect.all
                         [ \() -> Expect.equal config.mediaType AllMedia
@@ -57,11 +35,11 @@ suite =
                         , \() -> Expect.equal config.status AllStatuses
                         ]
                         ()
-
             , test "defaultSearchConfig has expected values" <|
                 \_ ->
                     let
-                        config = defaultSearchConfig
+                        config =
+                            defaultSearchConfig
                     in
                     Expect.all
                         [ \() -> Expect.equal config.mediaType AllMedia
@@ -71,11 +49,11 @@ suite =
                         , \() -> Expect.equal config.inputFocused False
                         ]
                         ()
-
             , test "defaultAlbumConfig has expected values" <|
                 \_ ->
                     let
-                        config = defaultAlbumConfig
+                        config =
+                            defaultAlbumConfig
                     in
                     Expect.all
                         [ \() -> Expect.equal config.mediaType AllMedia
@@ -84,7 +62,6 @@ suite =
                         ]
                         ()
             ]
-
         , describe "Filter Type Tests"
             [ test "MediaTypeFilter values exist" <|
                 \_ ->
@@ -94,7 +71,6 @@ suite =
                         , \() -> Expect.notEqual VideosOnly AllMedia
                         ]
                         ()
-
             , test "StatusFilter values exist" <|
                 \_ ->
                     Expect.all
@@ -103,7 +79,6 @@ suite =
                         , \() -> Expect.notEqual ArchivedOnly AllStatuses
                         ]
                         ()
-
             , test "SearchContext values exist" <|
                 \_ ->
                     Expect.all

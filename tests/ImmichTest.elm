@@ -1,16 +1,19 @@
 module ImmichTest exposing (..)
 
-import Expect exposing (Expectation)
-import Test exposing (..)
+import Date
+import Expect
 import Fuzz exposing (..)
+import Http
+import Immich exposing (..)
 import Json.Decode as Decode
 import Json.Encode as Encode
-import Date
-import Immich exposing (..)
-import Http
+import Test exposing (..)
+
 
 
 -- Test data generators for random testing
+
+
 generateTestAlbum : String -> String -> Int -> ImmichAlbum
 generateTestAlbum id name assetCount =
     { id = id
@@ -19,6 +22,7 @@ generateTestAlbum id name assetCount =
     , assets = []
     , createdAt = Date.fromRataDie 737790 -- January 1, 2020
     }
+
 
 generateTestAsset : String -> String -> ImmichAsset
 generateTestAsset id fileName =
@@ -34,7 +38,11 @@ generateTestAsset id fileName =
     , duration = Nothing
     }
 
+
+
 -- JSON encoding/decoding tests
+
+
 suite : Test
 suite =
     describe "Immich API Module Tests"
@@ -42,65 +50,84 @@ suite =
             [ test "makeSimpleJsonBody creates correct JSON" <|
                 \_ ->
                     let
-                        result = makeSimpleJsonBody [ ( "key1", Encode.string "value1" ), ( "key2", Encode.int 42 ) ]
-                        expected = Encode.object [ ( "key1", Encode.string "value1" ), ( "key2", Encode.int 42 ) ]
+                        result =
+                            makeSimpleJsonBody [ ( "key1", Encode.string "value1" ), ( "key2", Encode.int 42 ) ]
+
+                        expected =
+                            Encode.object [ ( "key1", Encode.string "value1" ), ( "key2", Encode.int 42 ) ]
                     in
                     Expect.equal (Encode.encode 0 result) (Encode.encode 0 expected)
-            
             , test "makeAssetIdsBody creates correct asset IDs structure" <|
                 \_ ->
                     let
-                        assetIds = [ "asset1", "asset2", "asset3" ]
-                        result = makeAssetIdsBody assetIds
-                        expected = Encode.object [ ( "ids", Encode.list Encode.string assetIds ) ]
+                        assetIds =
+                            [ "asset1", "asset2", "asset3" ]
+
+                        result =
+                            makeAssetIdsBody assetIds
+
+                        expected =
+                            Encode.object [ ( "ids", Encode.list Encode.string assetIds ) ]
                     in
                     Expect.equal (Encode.encode 0 result) (Encode.encode 0 expected)
-            
             , test "makeSearchBody with Desc order and All categorisation" <|
                 \_ ->
                     let
-                        config = { order = Desc, categorisation = All, mediaType = AllMedia, status = AllStatuses }
-                        result = makeSearchBody config 1000 1
-                        expected = Encode.object 
-                            [ ( "order", Encode.string "desc" ) 
-                            , ( "size", Encode.int 1000 )
-                            , ( "page", Encode.int 1 )
-                            ]
+                        config =
+                            { order = Desc, categorisation = All, mediaType = AllMedia, status = AllStatuses }
+
+                        result =
+                            makeSearchBody config 1000 1
+
+                        expected =
+                            Encode.object
+                                [ ( "order", Encode.string "desc" )
+                                , ( "size", Encode.int 1000 )
+                                , ( "page", Encode.int 1 )
+                                ]
                     in
                     Expect.equal (Encode.encode 0 result) (Encode.encode 0 expected)
-            
             , test "makeSearchBody with Asc order and Uncategorised" <|
                 \_ ->
                     let
-                        config = { order = Asc, categorisation = Uncategorised, mediaType = AllMedia, status = AllStatuses }
-                        result = makeSearchBody config 1000 1
-                        expected = Encode.object 
-                            [ ( "order", Encode.string "asc" )
-                            , ( "isNotInAlbum", Encode.bool True )
-                            , ( "size", Encode.int 1000 )
-                            , ( "page", Encode.int 1 )
-                            ]
+                        config =
+                            { order = Asc, categorisation = Uncategorised, mediaType = AllMedia, status = AllStatuses }
+
+                        result =
+                            makeSearchBody config 1000 1
+
+                        expected =
+                            Encode.object
+                                [ ( "order", Encode.string "asc" )
+                                , ( "isNotInAlbum", Encode.bool True )
+                                , ( "size", Encode.int 1000 )
+                                , ( "page", Encode.int 1 )
+                                ]
                     in
                     Expect.equal (Encode.encode 0 result) (Encode.encode 0 expected)
-                    
             , test "makeSearchBody with Random order (no order field)" <|
                 \_ ->
                     let
-                        config = { order = Random, categorisation = All, mediaType = AllMedia, status = AllStatuses }
-                        result = makeSearchBody config 1000 1
-                        expected = Encode.object 
-                            [ ( "size", Encode.int 1000 )
-                            , ( "page", Encode.int 1 )
-                            ]
+                        config =
+                            { order = Random, categorisation = All, mediaType = AllMedia, status = AllStatuses }
+
+                        result =
+                            makeSearchBody config 1000 1
+
+                        expected =
+                            Encode.object
+                                [ ( "size", Encode.int 1000 )
+                                , ( "page", Encode.int 1 )
+                                ]
                     in
                     Expect.equal (Encode.encode 0 result) (Encode.encode 0 expected)
             ]
-        
         , describe "JSON Decoders"
             [ test "albumDecoder decodes valid album JSON" <|
                 \_ ->
                     let
-                        albumJson = """
+                        albumJson =
+                            """
                         {
                             "id": "album123",
                             "albumName": "Test Album",
@@ -109,8 +136,12 @@ suite =
                             "createdAt": "2020-01-01"
                         }
                         """
-                        result = Decode.decodeString albumDecoder albumJson
-                        expected = generateTestAlbum "album123" "Test Album" 5
+
+                        result =
+                            Decode.decodeString albumDecoder albumJson
+
+                        expected =
+                            generateTestAlbum "album123" "Test Album" 5
                     in
                     case result of
                         Ok album ->
@@ -120,13 +151,14 @@ suite =
                                 , \() -> Expect.equal album.assetCount expected.assetCount
                                 ]
                                 ()
+
                         Err _ ->
                             Expect.fail "Failed to decode album JSON"
-            
             , test "imageDecoder decodes valid asset JSON" <|
                 \_ ->
                     let
-                        assetJson = """
+                        assetJson =
+                            """
                         {
                             "id": "asset123",
                             "originalPath": "/path/to/test.jpg",
@@ -137,7 +169,9 @@ suite =
                             "fileCreatedAt": "2020-01-01"
                         }
                         """
-                        result = Decode.decodeString imageDecoder assetJson
+
+                        result =
+                            Decode.decodeString imageDecoder assetJson
                     in
                     case result of
                         Ok asset ->
@@ -150,13 +184,14 @@ suite =
                                 , \() -> Expect.equal asset.isArchived False
                                 ]
                                 ()
+
                         Err _ ->
                             Expect.fail "Failed to decode asset JSON"
-            
             , test "nestedAssetsDecoder handles nested asset structure" <|
                 \_ ->
                     let
-                        nestedJson = """
+                        nestedJson =
+                            """
                         {
                             "assets": {
                                 "items": [
@@ -173,42 +208,49 @@ suite =
                             }
                         }
                         """
-                        result = Decode.decodeString nestedAssetsDecoder nestedJson
+
+                        result =
+                            Decode.decodeString nestedAssetsDecoder nestedJson
                     in
                     case result of
                         Ok assets ->
                             case List.head assets of
                                 Just asset ->
                                     Expect.equal asset.id "asset1"
+
                                 Nothing ->
                                     Expect.fail "Expected at least one asset"
+
                         Err _ ->
                             Expect.fail "Failed to decode nested assets JSON"
             ]
-        
         , describe "URL Construction"
             [ test "joinUrl constructs correct URLs" <|
                 \_ ->
                     let
-                        result = joinUrl "https://example.com" ["api", "albums", "123"]
-                        expected = "https://example.com/api/albums/123"
+                        result =
+                            joinUrl "https://example.com" [ "api", "albums", "123" ]
+
+                        expected =
+                            "https://example.com/api/albums/123"
                     in
                     Expect.equal result expected
-            
             , test "buildUrlWithQuery constructs URLs with query parameters" <|
                 \_ ->
                     let
-                        result = buildUrlWithQuery "https://example.com" ["api", "albums"] [("assetId", "123"), ("count", "5")]
+                        result =
+                            buildUrlWithQuery "https://example.com" [ "api", "albums" ] [ ( "assetId", "123" ), ( "count", "5" ) ]
                     in
                     if String.contains "assetId=123" result && String.contains "count=5" result then
                         Expect.pass
+
                     else
                         Expect.fail ("Expected URL to contain query parameters, got: " ++ result)
-            
             , test "getImmichApiPaths generates correct API paths" <|
                 \_ ->
                     let
-                        apiPaths = getImmichApiPaths "https://example.com" "test-key"
+                        apiPaths =
+                            getImmichApiPaths "https://example.com" "test-key"
                     in
                     Expect.all
                         [ \() -> Expect.equal apiPaths.apiKey "test-key"
@@ -218,7 +260,6 @@ suite =
                         ]
                         ()
             ]
-        
         , describe "Error Handling"
             [ test "errorToString handles different HTTP errors" <|
                 \_ ->
@@ -232,62 +273,68 @@ suite =
                             ]
                     in
                     testCases
-                        |> List.map (\(error, expected) -> 
-                            Expect.equal (errorToString error) expected)
-                        |> List.foldl (\expectation acc -> 
-                            Expect.all [(\() -> acc), (\() -> expectation)] ()) (Expect.pass)
+                        |> List.map
+                            (\( error, expected ) ->
+                                Expect.equal (errorToString error) expected
+                            )
+                        |> List.foldl
+                            (\expectation acc ->
+                                Expect.all [ \() -> acc, \() -> expectation ] ()
+                            )
+                            Expect.pass
             ]
-        
         , describe "Duration Parsing"
             [ test "parseDurationToSeconds handles HH:MM:SS format" <|
                 \_ ->
                     let
-                        result = parseDurationToSeconds "01:23:45"
+                        result =
+                            parseDurationToSeconds "01:23:45"
                     in
                     Expect.equal result (Just (1 * 3600 + 23 * 60 + 45))
-            
             , test "parseDurationToSeconds handles HH:MM:SS.mmm format" <|
                 \_ ->
                     let
-                        result = parseDurationToSeconds "00:15:20.400"
+                        result =
+                            parseDurationToSeconds "00:15:20.400"
                     in
                     Expect.equal result (Just (15 * 60 + 20))
-            
             , test "parseDurationToSeconds handles MM:SS format" <|
                 \_ ->
                     let
-                        result = parseDurationToSeconds "23:45"
+                        result =
+                            parseDurationToSeconds "23:45"
                     in
                     Expect.equal result (Just (23 * 60 + 45))
-            
             , test "parseDurationToSeconds handles SS format" <|
                 \_ ->
                     let
-                        result = parseDurationToSeconds "45"
+                        result =
+                            parseDurationToSeconds "45"
                     in
                     Expect.equal result (Just 45)
-            
             , test "parseDurationToSeconds handles invalid format" <|
                 \_ ->
                     let
-                        result = parseDurationToSeconds "invalid"
+                        result =
+                            parseDurationToSeconds "invalid"
                     in
                     Expect.equal result Nothing
-            
             , test "parseDurationToSeconds handles empty string" <|
                 \_ ->
                     let
-                        result = parseDurationToSeconds ""
+                        result =
+                            parseDurationToSeconds ""
                     in
                     Expect.equal result Nothing
             ]
-        
         , describe "Integration Tests with Random Data"
             [ fuzz3 string string int "Album encoding/decoding roundtrip" <|
                 \id name count ->
                     let
-                        album = generateTestAlbum id name (abs count)
-                        encoded = 
+                        album =
+                            generateTestAlbum id name (abs count)
+
+                        encoded =
                             Encode.object
                                 [ ( "id", Encode.string album.id )
                                 , ( "albumName", Encode.string album.albumName )
@@ -295,7 +342,9 @@ suite =
                                 , ( "assets", Encode.list (always (Encode.object [])) album.assets )
                                 , ( "createdAt", Encode.string "2020-01-01" )
                                 ]
-                        decoded = Decode.decodeValue albumDecoder encoded
+
+                        decoded =
+                            Decode.decodeValue albumDecoder encoded
                     in
                     case decoded of
                         Ok decodedAlbum ->
@@ -305,14 +354,16 @@ suite =
                                 , \() -> Expect.equal decodedAlbum.assetCount album.assetCount
                                 ]
                                 ()
+
                         Err _ ->
                             Expect.fail "Roundtrip encoding/decoding failed"
-            
             , fuzz2 string string "Asset encoding/decoding roundtrip" <|
                 \id fileName ->
                     let
-                        asset = generateTestAsset id fileName
-                        encoded = 
+                        asset =
+                            generateTestAsset id fileName
+
+                        encoded =
                             Encode.object
                                 [ ( "id", Encode.string asset.id )
                                 , ( "originalPath", Encode.string asset.path )
@@ -322,7 +373,9 @@ suite =
                                 , ( "isArchived", Encode.bool asset.isArchived )
                                 , ( "fileCreatedAt", Encode.string "2020-01-01" )
                                 ]
-                        decoded = Decode.decodeValue imageDecoder encoded
+
+                        decoded =
+                            Decode.decodeValue imageDecoder encoded
                     in
                     case decoded of
                         Ok decodedAsset ->
@@ -332,20 +385,24 @@ suite =
                                 , \() -> Expect.equal decodedAsset.mimeType asset.mimeType
                                 ]
                                 ()
+
                         Err _ ->
                             Expect.fail "Asset roundtrip encoding/decoding failed"
-            
             , fuzz (list string) "makeAssetIdsBody handles various asset ID lists" <|
                 \assetIds ->
                     let
-                        result = makeAssetIdsBody assetIds
-                        decoded = Decode.decodeValue 
-                            (Decode.field "ids" (Decode.list Decode.string)) 
-                            result
+                        result =
+                            makeAssetIdsBody assetIds
+
+                        decoded =
+                            Decode.decodeValue
+                                (Decode.field "ids" (Decode.list Decode.string))
+                                result
                     in
                     case decoded of
                         Ok decodedIds ->
                             Expect.equal decodedIds assetIds
+
                         Err _ ->
                             Expect.fail "Asset IDs body construction failed"
             ]

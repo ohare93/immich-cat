@@ -11,11 +11,13 @@ This is an image categorization tool built with Elm that integrates with the Imm
 **Important Guidelines for Claude Code:**
 
 - **Always create tests when possible** - Add comprehensive unit, integration, and fuzz tests for new functionality
-- **Play a sound when finished** - Run my `beepcomplete` alias
 - **Use direct Elm commands** - Run `elm make` and `elm-test` directly instead of npm scripts (npm commands only work in devbox shell)
 - **Do not run the server** - The user will run the server, and usually is already doig so with elm-live
 - **Refer to the Immich api docs** - https://immich.app/docs/api/
 - **Use the example api return json files** - Located at `docs/immich-api/example-returns`
+- **When finished:**
+  - Play a sound when finished with `beepcomplete`
+  - Format the code with `elm-format src/ --yes`
 
 ## Development Commands
 

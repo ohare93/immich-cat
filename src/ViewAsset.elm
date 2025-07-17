@@ -1,40 +1,38 @@
 module ViewAsset exposing
     ( TimeViewMode(..)
-    , viewAsset
     , viewCreateAlbumConfirmation
     , viewEditAsset
     , viewEditAssetHelp
-    , viewImage
+    , viewGridAssets
     , viewKeybinding
     , viewLoadingAssets
-    , viewVideo
-    , viewGridAssets
-    , viewVideoConfirm
     )
 
 import Date exposing (Date)
 import Dict exposing (Dict)
-import Element exposing (Element, alignRight, alignTop, centerX, centerY, clipY, column, el, fill, fillPortion, height, minimum, paddingXY, px, row, text, width)
+import Element exposing (Element, alignRight, alignTop, centerX, centerY, column, el, fill, height, paddingXY, px, row, text, width)
 import Element.Background as Background
 import Element.Font as Font
-import Html exposing (Html, node)
+import Html exposing (node)
 import Html.Attributes
 import Immich exposing (ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..))
 import Time
-import ViewAlbums exposing (AssetWithActions, InputMode(..), PropertyChange(..), usefulColours)
-import ViewGrid exposing (GridState, GridMsg)
+import ViewAlbums exposing (AssetWithActions, InputMode(..), usefulColours)
+import ViewGrid exposing (GridMsg, GridState)
+
 
 type alias ImageIndex =
     Int
 
-type Msg
-    = NoOp -- Placeholder for now
+
 
 -- Helper types and functions for date-based asset counting
+
 
 type TimeViewMode
     = Absolute
     | Relative
+
 
 type alias AssetCounts =
     { today : Int
@@ -44,12 +42,17 @@ type alias AssetCounts =
     , all : Int
     }
 
+
+
 -- Calculate asset counts for different time periods with exclusive buckets
+
+
 calculateAssetCounts : TimeViewMode -> Date -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> AssetCounts
 calculateAssetCounts timeMode currentDate assetIds knownAssets =
     let
-        assets = List.filterMap (\id -> Dict.get id knownAssets) assetIds
-        
+        assets =
+            List.filterMap (\id -> Dict.get id knownAssets) assetIds
+
         -- Calculate date boundaries based on time mode
         dateBoundaries =
             case timeMode of
@@ -57,14 +60,14 @@ calculateAssetCounts timeMode currentDate assetIds knownAssets =
                     -- Calendar-based periods
                     { todayStart = currentDate
                     , todayEnd = Date.add Date.Days 1 currentDate
-                    , weekStart = Date.add Date.Days (-(Date.weekdayToNumber (Date.weekday currentDate) - 1)) currentDate
-                    , weekEnd = Date.add Date.Days 7 (Date.add Date.Days (-(Date.weekdayToNumber (Date.weekday currentDate) - 1)) currentDate)
+                    , weekStart = Date.add Date.Days -(Date.weekdayToNumber (Date.weekday currentDate) - 1) currentDate
+                    , weekEnd = Date.add Date.Days 7 (Date.add Date.Days -(Date.weekdayToNumber (Date.weekday currentDate) - 1) currentDate)
                     , monthStart = Date.fromCalendarDate (Date.year currentDate) (Date.month currentDate) 1
                     , monthEnd = Date.add Date.Months 1 (Date.fromCalendarDate (Date.year currentDate) (Date.month currentDate) 1)
                     , yearStart = Date.fromCalendarDate (Date.year currentDate) (Date.numberToMonth 1) 1
                     , yearEnd = Date.add Date.Years 1 (Date.fromCalendarDate (Date.year currentDate) (Date.numberToMonth 1) 1)
                     }
-                
+
                 Relative ->
                     -- Duration-based periods from current time
                     { todayStart = currentDate
@@ -76,34 +79,45 @@ calculateAssetCounts timeMode currentDate assetIds knownAssets =
                     , yearStart = Date.add Date.Days -365 currentDate
                     , yearEnd = currentDate
                     }
-        
+
         -- Helper function to check if asset is in date range
         isInRange asset startDate endDate =
             let
-                assetDate = asset.fileCreatedAt
-                afterStart = Date.compare assetDate startDate /= LT
-                beforeEnd = Date.compare assetDate endDate == LT
+                assetDate =
+                    asset.fileCreatedAt
+
+                afterStart =
+                    Date.compare assetDate startDate /= LT
+
+                beforeEnd =
+                    Date.compare assetDate endDate == LT
             in
             afterStart && beforeEnd
-        
+
         -- Categorize assets into exclusive time buckets (priority: Today > Week > Month > Year)
-        categorizedAssets = List.foldl
-            (\asset acc ->
-                if isInRange asset dateBoundaries.todayStart dateBoundaries.todayEnd then
-                    { acc | today = acc.today + 1 }
-                else if isInRange asset dateBoundaries.weekStart dateBoundaries.weekEnd then
-                    { acc | week = acc.week + 1 }
-                else if isInRange asset dateBoundaries.monthStart dateBoundaries.monthEnd then
-                    { acc | month = acc.month + 1 }
-                else if isInRange asset dateBoundaries.yearStart dateBoundaries.yearEnd then
-                    { acc | year = acc.year + 1 }
-                else
-                    acc
-            )
-            { today = 0, week = 0, month = 0, year = 0 }
-            assets
-        
-        allCount = List.length assets
+        categorizedAssets =
+            List.foldl
+                (\asset acc ->
+                    if isInRange asset dateBoundaries.todayStart dateBoundaries.todayEnd then
+                        { acc | today = acc.today + 1 }
+
+                    else if isInRange asset dateBoundaries.weekStart dateBoundaries.weekEnd then
+                        { acc | week = acc.week + 1 }
+
+                    else if isInRange asset dateBoundaries.monthStart dateBoundaries.monthEnd then
+                        { acc | month = acc.month + 1 }
+
+                    else if isInRange asset dateBoundaries.yearStart dateBoundaries.yearEnd then
+                        { acc | year = acc.year + 1 }
+
+                    else
+                        acc
+                )
+                { today = 0, week = 0, month = 0, year = 0 }
+                assets
+
+        allCount =
+            List.length assets
     in
     { today = categorizedAssets.today
     , week = categorizedAssets.week
@@ -112,51 +126,80 @@ calculateAssetCounts timeMode currentDate assetIds knownAssets =
     , all = allCount
     }
 
+
+
 -- Format asset counts as simple text "today/week/month/year/all (A/R)"
+
+
 viewAssetCountsText : AssetCounts -> TimeViewMode -> Element msg
 viewAssetCountsText counts timeMode =
     let
-        modeIndicator = case timeMode of
-            Absolute -> " (A)"
-            Relative -> " (R)"
+        modeIndicator =
+            case timeMode of
+                Absolute ->
+                    " (A)"
+
+                Relative ->
+                    " (R)"
     in
-    el [ alignRight, Font.size 12, Font.color (Element.rgb 0.6 0.6 0.6) ] 
-        (text (String.fromInt counts.today ++ "/" ++ 
-               String.fromInt counts.week ++ "/" ++ 
-               String.fromInt counts.month ++ "/" ++ 
-               String.fromInt counts.year ++ "/" ++ 
-               String.fromInt counts.all ++ modeIndicator))
+    el [ alignRight, Font.size 12, Font.color (Element.rgb 0.6 0.6 0.6) ]
+        (text
+            (String.fromInt counts.today
+                ++ "/"
+                ++ String.fromInt counts.week
+                ++ "/"
+                ++ String.fromInt counts.month
+                ++ "/"
+                ++ String.fromInt counts.year
+                ++ "/"
+                ++ String.fromInt counts.all
+                ++ modeIndicator
+            )
+        )
+
+
 
 -- Main asset view function
+
 
 viewAsset : ImmichApiPaths -> String -> AssetWithActions -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> Element msg
 viewAsset apiPaths apiKey assetWithActions currentAssets knownAssets imageIndex =
     let
-        asset = assetWithActions.asset
+        asset =
+            assetWithActions.asset
     in
     if asset.path == "" then
         text "No asset selected"
+
     else if String.startsWith "image/" asset.mimeType then
         viewImage asset apiPaths apiKey currentAssets knownAssets imageIndex
 
     else if String.startsWith "video/" asset.mimeType then
         if assetWithActions.isVideoLoaded then
             viewVideo asset apiPaths apiKey currentAssets knownAssets imageIndex
+
         else
             let
-                durationSeconds = 
+                durationSeconds =
                     case asset.duration of
-                        Just durStr -> Immich.parseDurationToSeconds durStr
-                        Nothing -> Nothing
-                        
+                        Just durStr ->
+                            Immich.parseDurationToSeconds durStr
+
+                        Nothing ->
+                            Nothing
+
                 -- Show confirmation dialog for videos longer than 5 minutes (300 seconds)
-                shouldShowConfirmation = 
+                shouldShowConfirmation =
                     case durationSeconds of
-                        Just seconds -> seconds > 300
-                        Nothing -> False
+                        Just seconds ->
+                            seconds > 300
+
+                        Nothing ->
+                            False
             in
             if shouldShowConfirmation then
                 viewVideoConfirm apiPaths apiKey asset durationSeconds
+
             else
                 viewVideo asset apiPaths apiKey currentAssets knownAssets imageIndex
 
@@ -164,7 +207,9 @@ viewAsset apiPaths apiKey assetWithActions currentAssets knownAssets imageIndex 
         text "Unknown asset type"
 
 
+
 -- Image view function
+
 
 viewImage : ImmichAsset -> ImmichApiPaths -> String -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> Element msg
 viewImage asset apiPaths apiKey currentAssets knownAssets imageIndex =
@@ -173,8 +218,10 @@ viewImage asset apiPaths apiKey currentAssets knownAssets imageIndex =
             let
                 currentIndex =
                     imageIndex
+
                 preloadIndices =
                     List.range (currentIndex - 5) (currentIndex + 5)
+
                 validIndices =
                     List.filter (\i -> i >= 0 && i < List.length currentAssets) preloadIndices
             in
@@ -215,7 +262,9 @@ viewImage asset apiPaths apiKey currentAssets knownAssets imageIndex =
         ]
 
 
+
 -- Video view function
+
 
 viewVideo : ImmichAsset -> ImmichApiPaths -> String -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> Element msg
 viewVideo asset apiPaths apiKey currentAssets knownAssets imageIndex =
@@ -224,8 +273,10 @@ viewVideo asset apiPaths apiKey currentAssets knownAssets imageIndex =
             let
                 currentIndex =
                     imageIndex
+
                 preloadIndices =
                     List.range (currentIndex - 2) (currentIndex + 2)
+
                 validIndices =
                     List.filter (\i -> i >= 0 && i < List.length currentAssets) preloadIndices
             in
@@ -268,15 +319,20 @@ viewVideo asset apiPaths apiKey currentAssets knownAssets imageIndex =
         ]
 
 
+
 -- Edit asset view function
+
 
 viewEditAsset : ImmichApiPaths -> String -> ImageIndex -> Int -> String -> AssetWithActions -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> TimeViewMode -> Element msg
 viewEditAsset apiPaths apiKey imageIndex totalAssets viewTitle currentAsset currentAssets knownAssets currentDateMillis timeMode =
     let
         -- Convert milliseconds to proper Date
-        currentDate = Date.fromPosix Time.utc (Time.millisToPosix currentDateMillis)
+        currentDate =
+            Date.fromPosix Time.utc (Time.millisToPosix currentDateMillis)
+
         -- Calculate asset counts for current date
-        counts = calculateAssetCounts timeMode currentDate currentAssets knownAssets
+        counts =
+            calculateAssetCounts timeMode currentDate currentAssets knownAssets
     in
     column [ width fill, height fill ]
         [ row [ width fill, alignTop, height (px 20) ]
@@ -287,15 +343,19 @@ viewEditAsset apiPaths apiKey imageIndex totalAssets viewTitle currentAsset curr
         ]
 
 
+
 -- Loading assets view
+
 
 viewLoadingAssets : ImmichLoadState -> Element msg
 viewLoadingAssets imagesLoadState =
     case imagesLoadState of
         ImmichLoading ->
             text "Loading images"
+
         ImmichLoadSuccess ->
             text "Loaded. Should move states...."
+
         ImmichLoadError error ->
             let
                 errorMessage =
@@ -304,7 +364,9 @@ viewLoadingAssets imagesLoadState =
             text errorMessage
 
 
+
 -- Album creation confirmation view
+
 
 viewCreateAlbumConfirmation : String -> Element msg
 viewCreateAlbumConfirmation albumName =
@@ -315,7 +377,9 @@ viewCreateAlbumConfirmation albumName =
         ]
 
 
+
 -- Edit asset help view
+
 
 viewEditAssetHelp : InputMode -> Element msg
 viewEditAssetHelp inputMode =
@@ -347,13 +411,16 @@ viewEditAssetHelp inputMode =
                 , viewKeybinding "Click" "Click album to add"
                 , viewKeybinding "Escape" "Exit search mode"
                 ]
+
           else
             Element.none
         , el [ Font.size 14, centerX ] (text "Press ? or Escape to close help")
         ]
 
 
+
 -- Keybinding display helper
+
 
 viewKeybinding : String -> String -> Element msg
 viewKeybinding key description =
@@ -362,38 +429,56 @@ viewKeybinding key description =
         , el [ width fill ] <| text description
         ]
 
+
+
 -- Grid view function
+
 
 viewGridAssets : ImmichApiPaths -> String -> GridState -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> (GridMsg -> msg) -> Element msg
 viewGridAssets apiPaths apiKey gridState currentAssets knownAssets toMsg =
     let
-        assets = List.filterMap (\id -> Dict.get id knownAssets) currentAssets
+        assets =
+            List.filterMap (\id -> Dict.get id knownAssets) currentAssets
     in
     ViewGrid.viewGrid apiPaths apiKey gridState assets toMsg
 
 
+
 -- Video confirmation dialog
+
 
 viewVideoConfirm : ImmichApiPaths -> String -> ImmichAsset -> Maybe Int -> Element msg
 viewVideoConfirm apiPaths apiKey asset duration =
     let
-        durationText = 
+        durationText =
             case duration of
-                Just seconds -> formatDuration seconds
-                Nothing -> "unknown length"
-        
+                Just seconds ->
+                    formatDuration seconds
+
+                Nothing ->
+                    "unknown length"
+
         formatDuration : Int -> String
         formatDuration seconds =
             let
-                minutes = seconds // 60
-                remainingSeconds = remainderBy 60 seconds
-                hours = minutes // 60
-                remainingMinutes = remainderBy 60 minutes
+                minutes =
+                    seconds // 60
+
+                remainingSeconds =
+                    remainderBy 60 seconds
+
+                hours =
+                    minutes // 60
+
+                remainingMinutes =
+                    remainderBy 60 minutes
             in
             if hours > 0 then
                 String.fromInt hours ++ "h " ++ String.fromInt remainingMinutes ++ "m " ++ String.fromInt remainingSeconds ++ "s"
+
             else if minutes > 0 then
                 String.fromInt minutes ++ "m " ++ String.fromInt remainingSeconds ++ "s"
+
             else
                 String.fromInt remainingSeconds ++ "s"
     in
@@ -419,8 +504,8 @@ viewVideoConfirm apiPaths apiKey asset duration =
                             , Html.Attributes.style "height" "150px"
                             ]
                             []
+
             Nothing ->
                 el [ centerX, width (px 200), height (px 150), Background.color (Element.rgb 0.9 0.9 0.9) ] <|
                     el [ centerX, centerY ] (text "No preview available")
         ]
-
