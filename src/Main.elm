@@ -417,7 +417,7 @@ viewMenuState model menuState =
 
 viewPaginationStatus : PaginationState -> Element Msg
 viewPaginationStatus paginationState =
-    if paginationState.isLoadingMore && paginationState.loadedAssets > 0 then
+    if paginationState.isLoadingMore then
         let
             progressText = 
                 "Loading assets: " ++ 
@@ -562,16 +562,26 @@ handleMenuResult menuResult model =
                     convertMenuAssetSource assetSource
                 loadModel =
                     createLoadStateForCurrentAssetSource mainAssetSource model
-                loadCmd =
+                
+                -- Set pagination state based on asset source
+                (modelWithPagination, loadCmd) =
                     case assetSource of
                         UpdateMenus.ImageSearch searchConfig ->
-                            Immich.fetchImages model.immichApiPaths searchConfig 1000 1 |> Cmd.map ImmichMsg
+                            let
+                                paginatedModel = { loadModel | paginationState = { currentConfig = Just searchConfig, currentQuery = Nothing, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = loadModel.paginationState.maxAssetsToFetch } }
+                                _ = Debug.log "MenuLoadAssets ImageSearch" { currentConfig = paginatedModel.paginationState.currentConfig, currentQuery = paginatedModel.paginationState.currentQuery }
+                            in
+                            ( paginatedModel, Immich.fetchImagesPaginated paginatedModel.immichApiPaths searchConfig 1000 1 |> Cmd.map ImmichMsg )
                         UpdateMenus.TextSearch query ->
-                            Immich.searchAssets model.immichApiPaths query AllMedia AllStatuses 1000 1 |> Cmd.map ImmichMsg
+                            let
+                                paginatedModel = { loadModel | paginationState = { currentConfig = Nothing, currentQuery = Just query, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = loadModel.paginationState.maxAssetsToFetch } }
+                                _ = Debug.log "MenuLoadAssets TextSearch" { currentConfig = paginatedModel.paginationState.currentConfig, currentQuery = paginatedModel.paginationState.currentQuery }
+                            in
+                            ( paginatedModel, Immich.searchAssetsPaginated paginatedModel.immichApiPaths query AllMedia AllStatuses 1000 1 |> Cmd.map ImmichMsg )
                         UpdateMenus.FilteredAlbum album config ->
-                            Immich.fetchAlbumAssetsWithFilters model.immichApiPaths album.id config.order config.mediaType config.status |> Cmd.map ImmichMsg
+                            ( loadModel, Immich.fetchAlbumAssetsWithFilters loadModel.immichApiPaths album.id config.order config.mediaType config.status |> Cmd.map ImmichMsg )
             in
-            ( loadModel, loadCmd )
+            ( modelWithPagination, loadCmd )
         MenuUpdateSearchInput focused ->
             -- Handle search input focus change
             case model.userMode of
@@ -601,7 +611,7 @@ handleAssetResult assetResult model =
                 loadModel =
                     createLoadStateForCurrentAssetSource mainAssetSource model
                 loadCmd =
-                    Immich.searchAssets model.immichApiPaths query AllMedia AllStatuses 1000 1 |> Cmd.map ImmichMsg
+                    Immich.searchAssetsPaginated model.immichApiPaths query AllMedia AllStatuses 1000 1 |> Cmd.map ImmichMsg
             in
             ( loadModel, loadCmd )
         AssetLoadAlbum album ->
@@ -942,9 +952,11 @@ update msg model =
                             in
                             let
                                 updatedModel = createLoadStateForCurrentAssetSource (ImageSearch searchConfig) model
+                                _ = Debug.log "LoadTimelineAssets updatedModel" { currentConfig = updatedModel.paginationState.currentConfig, currentQuery = updatedModel.paginationState.currentQuery }
                                 modelWithPagination = { updatedModel | paginationState = { currentConfig = Just searchConfig, currentQuery = Nothing, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = updatedModel.paginationState.maxAssetsToFetch } }
+                                _ = Debug.log "LoadTimelineAssets modelWithPagination" { currentConfig = modelWithPagination.paginationState.currentConfig, currentQuery = modelWithPagination.paginationState.currentQuery }
                             in
-                            ( modelWithPagination, Immich.fetchImagesPaginated model.immichApiPaths searchConfig 1000 1 |> Cmd.map ImmichMsg )
+                            ( modelWithPagination, Immich.fetchImagesPaginated modelWithPagination.immichApiPaths searchConfig 1000 1 |> Cmd.map ImmichMsg )
                         _ ->
                             ( model, Cmd.none )
                 _ ->
@@ -961,7 +973,7 @@ update msg model =
                                     updatedModel = createLoadStateForCurrentAssetSource (TextSearch config.query) model
                                     modelWithPagination = { updatedModel | paginationState = { currentConfig = Nothing, currentQuery = Just config.query, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = updatedModel.paginationState.maxAssetsToFetch } }
                                 in
-                                ( modelWithPagination, Immich.searchAssetsPaginated model.immichApiPaths config.query config.mediaType config.status 1000 1 |> Cmd.map ImmichMsg )
+                                ( modelWithPagination, Immich.searchAssetsPaginated modelWithPagination.immichApiPaths config.query config.mediaType config.status 1000 1 |> Cmd.map ImmichMsg )
                         _ ->
                             ( model, Cmd.none )
                 _ ->
@@ -1041,12 +1053,22 @@ update msg model =
                             updatedModel
 
                         Immich.PaginatedImagesFetched (Ok paginatedResponse) ->
-                            model
-                                |> handleFetchAssets paginatedResponse.assets
-                                |> handleUpdateLoadingState FetchedAssetList
-                                |> updatePaginationState paginatedResponse 1
+                            let
+                                _ = Debug.log "PaginatedImagesFetched" { count = paginatedResponse.count, total = paginatedResponse.total, hasNextPage = paginatedResponse.hasNextPage }
+                                _ = Debug.log "Initial pagination state" { currentConfig = model.paginationState.currentConfig, currentQuery = model.paginationState.currentQuery }
+                                afterFetch = model |> handleFetchAssets paginatedResponse.assets
+                                _ = Debug.log "After handleFetchAssets" { currentConfig = afterFetch.paginationState.currentConfig, currentQuery = afterFetch.paginationState.currentQuery }
+                                afterUpdate = afterFetch |> handleUpdateLoadingState FetchedAssetList
+                                _ = Debug.log "After handleUpdateLoadingState" { currentConfig = afterUpdate.paginationState.currentConfig, currentQuery = afterUpdate.paginationState.currentQuery }
+                                finalModel = afterUpdate |> updatePaginationState paginatedResponse 1
+                                _ = Debug.log "After updatePaginationState" { currentConfig = finalModel.paginationState.currentConfig, currentQuery = finalModel.paginationState.currentQuery }
+                            in
+                            finalModel
 
                         Immich.MoreImagesFetched page (Ok paginatedResponse) ->
+                            let
+                                _ = Debug.log "MoreImagesFetched" { page = page, count = paginatedResponse.count, total = paginatedResponse.total, hasNextPage = paginatedResponse.hasNextPage }
+                            in
                             model
                                 |> appendFetchedAssets paginatedResponse.assets
                                 |> updatePaginationState paginatedResponse page
@@ -1163,24 +1185,48 @@ update msg model =
                 Immich.PaginatedImagesFetched (Ok paginatedResponse) ->
                     -- Auto-fetch next page if there are more assets
                     let
-                        shouldFetchMore = newModel.paginationState.hasMorePages && not newModel.paginationState.isLoadingMore
+                        -- Clear loading state since we just received a response
+                        currentPaginationState1 = newModel.paginationState
+                        clearedPaginationState = { currentPaginationState1 | isLoadingMore = False }
+                        modelWithClearedLoading = 
+                            { newModel | paginationState = clearedPaginationState }
+                        
+                        -- Use the paginatedResponse data directly, not the processed model
+                        newLoadedAssets = modelWithClearedLoading.paginationState.loadedAssets
+                        reachedLimit = newLoadedAssets >= modelWithClearedLoading.paginationState.maxAssetsToFetch
+                        shouldFetchMore = paginatedResponse.hasNextPage && not reachedLimit
+                        
+                        _ = Debug.log "PaginatedImagesFetched shouldFetchMore" { shouldFetchMore = shouldFetchMore, hasNextPage = paginatedResponse.hasNextPage, loadedAssets = newLoadedAssets, reachedLimit = reachedLimit }
+                        
                         modelWithLoadingState = 
                             if shouldFetchMore then
                                 let
-                                    currentPaginationState = newModel.paginationState
-                                    updatedPaginationState = { currentPaginationState | isLoadingMore = True }
+                                    ps = modelWithClearedLoading.paginationState
                                 in
-                                { newModel | paginationState = updatedPaginationState }
+                                { modelWithClearedLoading | paginationState = { ps | isLoadingMore = True } }
                             else
-                                newModel
+                                modelWithClearedLoading
+                                
                         nextPageCmd = 
                             if shouldFetchMore then
-                                case (newModel.paginationState.currentConfig, newModel.paginationState.currentQuery) of
+                                let
+                                    _ = Debug.log "nextPageCmd logic" { currentConfig = modelWithClearedLoading.paginationState.currentConfig, currentQuery = modelWithClearedLoading.paginationState.currentQuery }
+                                in
+                                case (modelWithClearedLoading.paginationState.currentConfig, modelWithClearedLoading.paginationState.currentQuery) of
                                     (Just config, Nothing) ->
-                                        Immich.fetchMoreImages newModel.immichApiPaths config 1000 2 |> Cmd.map ImmichMsg
+                                        let
+                                            _ = Debug.log "Fetching Timeline page 2" config
+                                        in
+                                        Immich.fetchImagesPaginated modelWithClearedLoading.immichApiPaths config 1000 2 |> Cmd.map ImmichMsg
                                     (Nothing, Just query) ->
-                                        Immich.searchAssetsPaginated newModel.immichApiPaths query AllMedia AllStatuses 1000 2 |> Cmd.map ImmichMsg
+                                        let
+                                            _ = Debug.log "Fetching Search page 2" query
+                                        in
+                                        Immich.searchAssetsPaginated modelWithClearedLoading.immichApiPaths query AllMedia AllStatuses 1000 2 |> Cmd.map ImmichMsg
                                     _ ->
+                                        let
+                                            _ = Debug.log "nextPageCmd: No match" "Neither config nor query found"
+                                        in
                                         Cmd.none
                             else
                                 Cmd.none
@@ -1189,23 +1235,33 @@ update msg model =
                 Immich.MoreImagesFetched page (Ok paginatedResponse) ->
                     -- Auto-fetch next page if there are more assets
                     let
-                        shouldFetchMore = newModel.paginationState.hasMorePages && not newModel.paginationState.isLoadingMore
+                        -- Clear loading state since we just received a response
+                        currentPaginationState1 = newModel.paginationState
+                        clearedPaginationState = { currentPaginationState1 | isLoadingMore = False }
+                        modelWithClearedLoading = 
+                            { newModel | paginationState = clearedPaginationState }
+                        
+                        -- Use the paginatedResponse data directly, not the processed model
+                        newLoadedAssets = modelWithClearedLoading.paginationState.loadedAssets
+                        reachedLimit = newLoadedAssets >= modelWithClearedLoading.paginationState.maxAssetsToFetch
+                        shouldFetchMore = paginatedResponse.hasNextPage && not reachedLimit
+                        
                         modelWithLoadingState = 
                             if shouldFetchMore then
                                 let
-                                    currentPaginationState = newModel.paginationState
-                                    updatedPaginationState = { currentPaginationState | isLoadingMore = True }
+                                    ps = modelWithClearedLoading.paginationState
                                 in
-                                { newModel | paginationState = updatedPaginationState }
+                                { modelWithClearedLoading | paginationState = { ps | isLoadingMore = True } }
                             else
-                                newModel
+                                modelWithClearedLoading
+                                
                         nextPageCmd = 
                             if shouldFetchMore then
-                                case (newModel.paginationState.currentConfig, newModel.paginationState.currentQuery) of
+                                case (modelWithClearedLoading.paginationState.currentConfig, modelWithClearedLoading.paginationState.currentQuery) of
                                     (Just config, Nothing) ->
-                                        Immich.fetchMoreImages newModel.immichApiPaths config 1000 (page + 1) |> Cmd.map ImmichMsg
+                                        Immich.fetchImagesPaginated modelWithClearedLoading.immichApiPaths config 1000 (page + 1) |> Cmd.map ImmichMsg
                                     (Nothing, Just query) ->
-                                        Immich.searchAssetsPaginated newModel.immichApiPaths query AllMedia AllStatuses 1000 (page + 1) |> Cmd.map ImmichMsg
+                                        Immich.searchAssetsPaginated modelWithClearedLoading.immichApiPaths query AllMedia AllStatuses 1000 (page + 1) |> Cmd.map ImmichMsg
                                     _ ->
                                         Cmd.none
                             else
@@ -1235,7 +1291,12 @@ handleFetchAssetMembership assetWithMembership model =
 
 handleFetchAssets : List ImmichAsset -> Model -> Model
 handleFetchAssets assets model =
-    { model | knownAssets = Helpers.listOverrideDict assets (\a -> ( a.id, a )) model.knownAssets, currentAssets = List.map .id assets, imagesLoadState = ImmichLoadSuccess }
+    { model 
+        | knownAssets = Helpers.listOverrideDict assets (\a -> ( a.id, a )) model.knownAssets
+        , currentAssets = List.map .id assets
+        , imagesLoadState = ImmichLoadSuccess
+        -- Preserve paginationState - don't overwrite it
+    }
 
 
 
@@ -1433,7 +1494,7 @@ updatePaginationState paginatedResponse page model =
             , totalAssets = paginatedResponse.total
             , currentPage = page
             , hasMorePages = hasMoreToLoad
-            , isLoadingMore = False
+            , isLoadingMore = model.paginationState.isLoadingMore -- Keep existing loading state
             , loadedAssets = newLoadedAssets
             , maxAssetsToFetch = model.paginationState.maxAssetsToFetch
             }

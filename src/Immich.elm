@@ -335,6 +335,14 @@ searchAssets apiPaths searchText mediaType status size page =
 
 fetchImagesPaginated : ImmichApiPaths -> ImageSearchConfig -> Int -> Int -> Cmd Msg
 fetchImagesPaginated apiPaths config size page =
+    let
+        -- Use PaginatedImagesFetched for page 1, MoreImagesFetched for page 2+
+        messageConstructor = 
+            if page == 1 then
+                PaginatedImagesFetched
+            else
+                MoreImagesFetched page
+    in
     case config.order of
         Random ->
             let
@@ -367,7 +375,7 @@ fetchImagesPaginated apiPaths config size page =
                 apiPaths.searchRandom
                 randomBody
                 paginatedAssetsDecoder
-                PaginatedImagesFetched
+                messageConstructor
         
         _ ->
             makePostRequest
@@ -375,11 +383,18 @@ fetchImagesPaginated apiPaths config size page =
                 apiPaths.searchAssets
                 (makeSearchBody config size page)
                 paginatedAssetsDecoder
-                PaginatedImagesFetched
+                messageConstructor
 
 searchAssetsPaginated : ImmichApiPaths -> String -> MediaTypeFilter -> StatusFilter -> Int -> Int -> Cmd Msg
 searchAssetsPaginated apiPaths searchText mediaType status size page =
     let
+        -- Use PaginatedImagesFetched for page 1, MoreImagesFetched for page 2+
+        messageConstructor = 
+            if page == 1 then
+                PaginatedImagesFetched
+            else
+                MoreImagesFetched page
+                
         queryField = [ ( "query", Encode.string searchText ) ]
         
         mediaTypeField =
@@ -404,7 +419,7 @@ searchAssetsPaginated apiPaths searchText mediaType status size page =
         apiPaths.searchSmart
         (makeSimpleJsonBody (queryField ++ mediaTypeField ++ statusField ++ paginationFields))
         paginatedAssetsDecoder
-        PaginatedImagesFetched
+        messageConstructor
 
 fetchMoreImages : ImmichApiPaths -> ImageSearchConfig -> Int -> Int -> Cmd Msg
 fetchMoreImages apiPaths config size page =
@@ -525,12 +540,17 @@ nestedAssetsDecoder =
 
 paginatedAssetsDecoder : Decode.Decoder PaginatedAssetResponse
 paginatedAssetsDecoder =
-    Decode.map4 PaginatedAssetResponse
+    Decode.map3 (\assets total count -> 
+        let
+            -- Calculate if there are more pages based on count returned
+            -- If we got exactly 1000 items, there might be more
+            hasNext = count >= 1000
+        in
+        PaginatedAssetResponse assets total count hasNext
+    )
         (Decode.field "assets" (Decode.field "items" (Decode.list imageDecoder)))
         (Decode.field "assets" (Decode.field "total" Decode.int))
         (Decode.field "assets" (Decode.field "count" Decode.int))
-        (Decode.field "assets" (Decode.field "total" Decode.int)
-            |> Decode.map (\total -> total > 1000)) -- hasNextPage: true if total > current page size
 
 albumToAssetWithMembershipDecoder : ImmichAssetId -> Decode.Decoder AssetWithMembership
 albumToAssetWithMembershipDecoder assetId =
