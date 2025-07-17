@@ -200,12 +200,12 @@ makeAssetIdsBody : List ImmichAssetId -> Encode.Value
 makeAssetIdsBody assetIds =
     Encode.object [ ( "ids", Encode.list Encode.string assetIds ) ]
 
-makeSearchBody : ImageSearchConfig -> Encode.Value
-makeSearchBody config =
-    makeSearchBodyWithAlbum config Nothing
+makeSearchBody : ImageSearchConfig -> Int -> Int -> Encode.Value
+makeSearchBody config size page =
+    makeSearchBodyWithAlbum config Nothing size page
 
-makeSearchBodyWithAlbum : ImageSearchConfig -> Maybe ImmichAlbumId -> Encode.Value
-makeSearchBodyWithAlbum config maybeAlbumId =
+makeSearchBodyWithAlbum : ImageSearchConfig -> Maybe ImmichAlbumId -> Int -> Int -> Encode.Value
+makeSearchBodyWithAlbum config maybeAlbumId size page =
     let
         orderField = 
             case config.order of
@@ -234,8 +234,13 @@ makeSearchBodyWithAlbum config maybeAlbumId =
             case maybeAlbumId of
                 Nothing -> []
                 Just albumId -> [ ( "albumIds", Encode.list Encode.string [albumId] ) ]
+
+        paginationFields = 
+            [ ( "size", Encode.int size )
+            , ( "page", Encode.int page )
+            ]
     in
-    Encode.object (orderField ++ categorisationField ++ mediaTypeField ++ statusField ++ albumField)
+    Encode.object (orderField ++ categorisationField ++ mediaTypeField ++ statusField ++ albumField ++ paginationFields)
 
 -- API FUNCTIONS (REFACTORED)
 
@@ -255,8 +260,8 @@ getAlbum apiPaths albumId =
         albumDecoder
         SingleAlbumFetched
 
-fetchImages : ImmichApiPaths -> ImageSearchConfig -> Cmd Msg
-fetchImages apiPaths config =
+fetchImages : ImmichApiPaths -> ImageSearchConfig -> Int -> Int -> Cmd Msg
+fetchImages apiPaths config size page =
     case config.order of
         Random ->
             let
@@ -277,7 +282,12 @@ fetchImages apiPaths config =
                         FavoritesOnly -> [ ( "isFavorite", Encode.bool True ) ]
                         ArchivedOnly -> [ ( "isArchived", Encode.bool True ) ]
 
-                randomBody = Encode.object (categorisationField ++ mediaTypeField ++ statusField)
+                paginationFields = 
+                    [ ( "size", Encode.int size )
+                    , ( "page", Encode.int page )
+                    ]
+
+                randomBody = Encode.object (categorisationField ++ mediaTypeField ++ statusField ++ paginationFields)
             in
             makePostRequest
                 apiPaths.apiKey
@@ -290,12 +300,12 @@ fetchImages apiPaths config =
             makePostRequest
                 apiPaths.apiKey
                 apiPaths.searchAssets
-                (makeSearchBody config)
+                (makeSearchBody config size page)
                 nestedAssetsDecoder
                 ImagesFetched
 
-searchAssets : ImmichApiPaths -> String -> MediaTypeFilter -> StatusFilter -> Cmd Msg
-searchAssets apiPaths searchText mediaType status =
+searchAssets : ImmichApiPaths -> String -> MediaTypeFilter -> StatusFilter -> Int -> Int -> Cmd Msg
+searchAssets apiPaths searchText mediaType status size page =
     let
         queryField = [ ( "query", Encode.string searchText ) ]
         
@@ -310,13 +320,135 @@ searchAssets apiPaths searchText mediaType status =
                 AllStatuses -> []
                 FavoritesOnly -> [ ( "isFavorite", Encode.bool True ) ]
                 ArchivedOnly -> [ ( "isArchived", Encode.bool True ) ]
+
+        paginationFields = 
+            [ ( "size", Encode.int size )
+            , ( "page", Encode.int page )
+            ]
     in
     makePostRequest
         apiPaths.apiKey
         apiPaths.searchSmart
-        (makeSimpleJsonBody (queryField ++ mediaTypeField ++ statusField))
+        (makeSimpleJsonBody (queryField ++ mediaTypeField ++ statusField ++ paginationFields))
         nestedAssetsDecoder
         ImagesFetched
+
+fetchImagesPaginated : ImmichApiPaths -> ImageSearchConfig -> Int -> Int -> Cmd Msg
+fetchImagesPaginated apiPaths config size page =
+    case config.order of
+        Random ->
+            let
+                categorisationField = 
+                    case config.categorisation of
+                        Uncategorised -> [ ( "isNotInAlbum", Encode.bool True ) ]
+                        All -> []
+
+                mediaTypeField =
+                    case config.mediaType of
+                        AllMedia -> []
+                        ImagesOnly -> [ ( "type", Encode.string "IMAGE" ) ]
+                        VideosOnly -> [ ( "type", Encode.string "VIDEO" ) ]
+
+                statusField =
+                    case config.status of
+                        AllStatuses -> []
+                        FavoritesOnly -> [ ( "isFavorite", Encode.bool True ) ]
+                        ArchivedOnly -> [ ( "isArchived", Encode.bool True ) ]
+
+                paginationFields = 
+                    [ ( "size", Encode.int size )
+                    , ( "page", Encode.int page )
+                    ]
+
+                randomBody = Encode.object (categorisationField ++ mediaTypeField ++ statusField ++ paginationFields)
+            in
+            makePostRequest
+                apiPaths.apiKey
+                apiPaths.searchRandom
+                randomBody
+                paginatedAssetsDecoder
+                PaginatedImagesFetched
+        
+        _ ->
+            makePostRequest
+                apiPaths.apiKey
+                apiPaths.searchAssets
+                (makeSearchBody config size page)
+                paginatedAssetsDecoder
+                PaginatedImagesFetched
+
+searchAssetsPaginated : ImmichApiPaths -> String -> MediaTypeFilter -> StatusFilter -> Int -> Int -> Cmd Msg
+searchAssetsPaginated apiPaths searchText mediaType status size page =
+    let
+        queryField = [ ( "query", Encode.string searchText ) ]
+        
+        mediaTypeField =
+            case mediaType of
+                AllMedia -> []
+                ImagesOnly -> [ ( "type", Encode.string "IMAGE" ) ]
+                VideosOnly -> [ ( "type", Encode.string "VIDEO" ) ]
+
+        statusField =
+            case status of
+                AllStatuses -> []
+                FavoritesOnly -> [ ( "isFavorite", Encode.bool True ) ]
+                ArchivedOnly -> [ ( "isArchived", Encode.bool True ) ]
+
+        paginationFields = 
+            [ ( "size", Encode.int size )
+            , ( "page", Encode.int page )
+            ]
+    in
+    makePostRequest
+        apiPaths.apiKey
+        apiPaths.searchSmart
+        (makeSimpleJsonBody (queryField ++ mediaTypeField ++ statusField ++ paginationFields))
+        paginatedAssetsDecoder
+        PaginatedImagesFetched
+
+fetchMoreImages : ImmichApiPaths -> ImageSearchConfig -> Int -> Int -> Cmd Msg
+fetchMoreImages apiPaths config size page =
+    case config.order of
+        Random ->
+            let
+                categorisationField = 
+                    case config.categorisation of
+                        Uncategorised -> [ ( "isNotInAlbum", Encode.bool True ) ]
+                        All -> []
+
+                mediaTypeField =
+                    case config.mediaType of
+                        AllMedia -> []
+                        ImagesOnly -> [ ( "type", Encode.string "IMAGE" ) ]
+                        VideosOnly -> [ ( "type", Encode.string "VIDEO" ) ]
+
+                statusField =
+                    case config.status of
+                        AllStatuses -> []
+                        FavoritesOnly -> [ ( "isFavorite", Encode.bool True ) ]
+                        ArchivedOnly -> [ ( "isArchived", Encode.bool True ) ]
+
+                paginationFields = 
+                    [ ( "size", Encode.int size )
+                    , ( "page", Encode.int page )
+                    ]
+
+                randomBody = Encode.object (categorisationField ++ mediaTypeField ++ statusField ++ paginationFields)
+            in
+            makePostRequest
+                apiPaths.apiKey
+                apiPaths.searchRandom
+                randomBody
+                paginatedAssetsDecoder
+                (MoreImagesFetched page)
+        
+        _ ->
+            makePostRequest
+                apiPaths.apiKey
+                apiPaths.searchAssets
+                (makeSearchBody config size page)
+                paginatedAssetsDecoder
+                (MoreImagesFetched page)
 
 fetchAlbumAssetsWithFilters : ImmichApiPaths -> ImmichAlbumId -> ImageOrder -> MediaTypeFilter -> StatusFilter -> Cmd Msg
 fetchAlbumAssetsWithFilters apiPaths albumId order mediaType status =
@@ -390,6 +522,15 @@ albumDecoder =
 nestedAssetsDecoder : Decode.Decoder (List ImmichAsset)
 nestedAssetsDecoder =
     Decode.field "assets" (Decode.field "items" (Decode.list imageDecoder))
+
+paginatedAssetsDecoder : Decode.Decoder PaginatedAssetResponse
+paginatedAssetsDecoder =
+    Decode.map4 PaginatedAssetResponse
+        (Decode.field "assets" (Decode.field "items" (Decode.list imageDecoder)))
+        (Decode.field "assets" (Decode.field "total" Decode.int))
+        (Decode.field "assets" (Decode.field "count" Decode.int))
+        (Decode.field "assets" (Decode.field "total" Decode.int)
+            |> Decode.map (\total -> total > 1000)) -- hasNextPage: true if total > current page size
 
 albumToAssetWithMembershipDecoder : ImmichAssetId -> Decode.Decoder AssetWithMembership
 albumToAssetWithMembershipDecoder assetId =
@@ -473,10 +614,19 @@ type alias AssetWithMembership =
     , albumIds : List ImmichAlbumId
     }
 
+type alias PaginatedAssetResponse =
+    { assets : List ImmichAsset
+    , total : Int
+    , count : Int
+    , hasNextPage : Bool
+    }
+
 type Msg
     = AlbumsFetched (Result Http.Error (List ImmichAlbum))
     | SingleAlbumFetched (Result Http.Error ImmichAlbum)
     | ImagesFetched (Result Http.Error (List ImmichAsset))
+    | PaginatedImagesFetched (Result Http.Error PaginatedAssetResponse)
+    | MoreImagesFetched Int (Result Http.Error PaginatedAssetResponse) -- page number
     | AssetMembershipFetched (Result Http.Error AssetWithMembership)
     | AlbumAssetsChanged (Result Http.Error ())
     | AlbumCreated (Result Http.Error ImmichAlbum)

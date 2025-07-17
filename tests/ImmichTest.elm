@@ -59,8 +59,12 @@ suite =
                 \_ ->
                     let
                         config = { order = Desc, categorisation = All, mediaType = AllMedia, status = AllStatuses }
-                        result = makeSearchBody config
-                        expected = Encode.object [ ( "order", Encode.string "desc" ) ]
+                        result = makeSearchBody config 1000 1
+                        expected = Encode.object 
+                            [ ( "order", Encode.string "desc" ) 
+                            , ( "size", Encode.int 1000 )
+                            , ( "page", Encode.int 1 )
+                            ]
                     in
                     Expect.equal (Encode.encode 0 result) (Encode.encode 0 expected)
             
@@ -68,10 +72,12 @@ suite =
                 \_ ->
                     let
                         config = { order = Asc, categorisation = Uncategorised, mediaType = AllMedia, status = AllStatuses }
-                        result = makeSearchBody config
+                        result = makeSearchBody config 1000 1
                         expected = Encode.object 
                             [ ( "order", Encode.string "asc" )
                             , ( "isNotInAlbum", Encode.bool True )
+                            , ( "size", Encode.int 1000 )
+                            , ( "page", Encode.int 1 )
                             ]
                     in
                     Expect.equal (Encode.encode 0 result) (Encode.encode 0 expected)
@@ -80,8 +86,11 @@ suite =
                 \_ ->
                     let
                         config = { order = Random, categorisation = All, mediaType = AllMedia, status = AllStatuses }
-                        result = makeSearchBody config
-                        expected = Encode.object []
+                        result = makeSearchBody config 1000 1
+                        expected = Encode.object 
+                            [ ( "size", Encode.int 1000 )
+                            , ( "page", Encode.int 1 )
+                            ]
                     in
                     Expect.equal (Encode.encode 0 result) (Encode.encode 0 expected)
             ]

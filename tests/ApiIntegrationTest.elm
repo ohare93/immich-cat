@@ -235,20 +235,20 @@ suite =
                     let
                         testCases =
                             [ ( { order = Desc, categorisation = All, mediaType = AllMedia, status = AllStatuses }
-                              , """{"order":"desc"}"""
+                              , """{"order":"desc","size":1000,"page":1}"""
                               )
                             , ( { order = Asc, categorisation = Uncategorised, mediaType = AllMedia, status = AllStatuses }
-                              , """{"order":"asc","isNotInAlbum":true}"""
+                              , """{"order":"asc","isNotInAlbum":true,"size":1000,"page":1}"""
                               )
                             , ( { order = Random, categorisation = All, mediaType = AllMedia, status = AllStatuses }
-                              , """{}"""
+                              , """{"size":1000,"page":1}"""
                               )
                             ]
                     in
                     testCases
                         |> List.map (\(config, expectedJson) ->
                             let
-                                result = makeSearchBody config
+                                result = makeSearchBody config 1000 1
                                 resultJson = Encode.encode 0 result
                             in
                             Expect.equal resultJson expectedJson

@@ -513,9 +513,9 @@ handleMenuResult menuResult model =
                 loadCmd =
                     case assetSource of
                         UpdateMenus.ImageSearch searchConfig ->
-                            Immich.fetchImages model.immichApiPaths searchConfig |> Cmd.map ImmichMsg
+                            Immich.fetchImages model.immichApiPaths searchConfig 1000 1 |> Cmd.map ImmichMsg
                         UpdateMenus.TextSearch query ->
-                            Immich.searchAssets model.immichApiPaths query AllMedia AllStatuses |> Cmd.map ImmichMsg
+                            Immich.searchAssets model.immichApiPaths query AllMedia AllStatuses 1000 1 |> Cmd.map ImmichMsg
                         UpdateMenus.FilteredAlbum album config ->
                             Immich.fetchAlbumAssetsWithFilters model.immichApiPaths album.id config.order config.mediaType config.status |> Cmd.map ImmichMsg
             in
@@ -549,7 +549,7 @@ handleAssetResult assetResult model =
                 loadModel =
                     createLoadStateForCurrentAssetSource mainAssetSource model
                 loadCmd =
-                    Immich.searchAssets model.immichApiPaths query AllMedia AllStatuses |> Cmd.map ImmichMsg
+                    Immich.searchAssets model.immichApiPaths query AllMedia AllStatuses 1000 1 |> Cmd.map ImmichMsg
             in
             ( loadModel, loadCmd )
         AssetLoadAlbum album ->
@@ -888,7 +888,7 @@ update msg model =
                                 searchConfig =
                                     { order = config.order, categorisation = config.categorisation, mediaType = config.mediaType, status = config.status }
                             in
-                            ( createLoadStateForCurrentAssetSource (ImageSearch searchConfig) model, Immich.fetchImages model.immichApiPaths searchConfig |> Cmd.map ImmichMsg )
+                            ( createLoadStateForCurrentAssetSource (ImageSearch searchConfig) model, Immich.fetchImages model.immichApiPaths searchConfig 1000 1 |> Cmd.map ImmichMsg )
                         _ ->
                             ( model, Cmd.none )
                 _ ->
@@ -901,7 +901,7 @@ update msg model =
                             if String.isEmpty config.query then
                                 ( model, Cmd.none )
                             else
-                                ( createLoadStateForCurrentAssetSource (TextSearch config.query) model, Immich.searchAssets model.immichApiPaths config.query config.mediaType config.status |> Cmd.map ImmichMsg )
+                                ( createLoadStateForCurrentAssetSource (TextSearch config.query) model, Immich.searchAssets model.immichApiPaths config.query config.mediaType config.status 1000 1 |> Cmd.map ImmichMsg )
                         _ ->
                             ( model, Cmd.none )
                 _ ->
