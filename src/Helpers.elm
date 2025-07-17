@@ -43,6 +43,6 @@ isKeybindingLetter : String -> Bool
 isKeybindingLetter testString =
     let
         regex =
-            regexFromString "^[a-z0-9]$"
+            Regex.fromStringWith { caseInsensitive = False, multiline = False } "^[a-z0-9]$" |> Maybe.withDefault Regex.never
     in
     Regex.contains regex testString

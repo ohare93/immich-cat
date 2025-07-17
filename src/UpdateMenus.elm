@@ -19,7 +19,7 @@ import KeybindingGenerator exposing (generateAlbumKeybindings)
 import Menus exposing (SearchContext(..), TimelineConfig, SearchConfig, AlbumConfig, defaultTimelineConfig, defaultSearchConfig, defaultAlbumConfig, toggleMediaType, toggleCategorisation, toggleOrder, toggleStatus, toggleSearchContext)
 import Helpers exposing (isSupportedSearchLetter)
 import UpdateAlbums
-import ViewAlbums exposing (AlbumSearch, getAlbumSearchWithHeight)
+import ViewAlbums exposing (AlbumSearch, getAlbumSearchWithHeight, createAlbumSearchWithWarning)
 
 -- Define the menu state type that encapsulates all menu modes
 type MenuState
@@ -264,6 +264,12 @@ handleAlbumBrowseKeyPress key search knownAlbums screenHeight =
             StayInMenu (AlbumView album defaultAlbumConfig)
         UpdateAlbums.UpdateAlbumSearch newSearch ->
             StayInMenu (AlbumBrowse newSearch)
+        UpdateAlbums.InvalidKeybindingInput invalidInput clearedSearch ->
+            -- Invalid keybinding input - show warning and stay in current state
+            let
+                searchWithWarning = createAlbumSearchWithWarning clearedSearch invalidInput
+            in
+            StayInMenu (AlbumBrowse searchWithWarning)
         UpdateAlbums.NoAlbumAction ->
             StayInMenu (AlbumBrowse search)
 

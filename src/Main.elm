@@ -362,10 +362,25 @@ viewMenuState model menuState =
                       else
                         text ""
                     , if search.partialKeybinding /= "" then
-                        el [ Font.color <| Element.fromRgb { red = 1, green = 0.6, blue = 0, alpha = 1 } ] <|
-                            text ("Keybind: \"" ++ search.partialKeybinding ++ "\"")
+                        let
+                            nextChars = ViewAlbums.getNextAvailableCharacters search.partialKeybinding model.albumKeybindings
+                            nextCharString = String.fromList nextChars
+                        in
+                        column []
+                            [ el [ Font.color <| Element.fromRgb { red = 1, green = 0.6, blue = 0, alpha = 1 } ] <|
+                                text ("Keybind: \"" ++ search.partialKeybinding ++ "\"")
+                            , if List.isEmpty nextChars then
+                                el [ Font.color <| Element.fromRgb { red = 1, green = 0.2, blue = 0.2, alpha = 1 }, Font.size 12 ] <| text "No matches"
+                              else
+                                el [ Font.color <| Element.fromRgb { red = 0.5, green = 0.5, blue = 0.5, alpha = 1 }, Font.size 12 ] <| text ("Next: " ++ nextCharString)
+                            ]
                       else
                         text ""
+                    , case search.invalidInputWarning of
+                        Just warning ->
+                            el [ Font.color <| Element.fromRgb { red = 1, green = 0.2, blue = 0.2, alpha = 1 }, Font.size 12 ] <| text ("Invalid: \"" ++ warning ++ "\"")
+                        Nothing ->
+                            text ""
                     , text "Type album name or keybinding to filter"
                     ]
                 )
@@ -619,7 +634,7 @@ handleAssetResult assetResult model =
                                 isAddition =
                                     ViewAlbums.isAddingToAlbum newPropertyChange
                                 newSearch =
-                                    { search | partialKeybinding = "", pagination = ViewAlbums.resetPagination search.pagination }
+                                    { search | partialKeybinding = "", pagination = ViewAlbums.resetPagination search.pagination, invalidInputWarning = Nothing }
                             in
                             ( { model | userMode = ViewAssets (EditAsset NormalMode toggledAsset newSearch), pendingAlbumChange = Just ( album.id, isAddition ) }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
                         _ ->

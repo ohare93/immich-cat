@@ -8,14 +8,16 @@ module UpdateAlbums exposing
 import Dict exposing (Dict)
 import Helpers exposing (isSupportedSearchLetter, isKeybindingLetter)
 import Immich exposing (ImmichAlbum, ImmichAlbumId)
+import KeybindingValidation exposing (validateKeybindingInput, KeybindingValidationResult(..), couldStartKeybinding)
 import Menus exposing (AlbumConfig, defaultAlbumConfig)
-import ViewAlbums exposing (AlbumSearch, getAlbumByExactKeybinding, halfPageDown, halfPageUp, pageDown, pageUp, resetPagination, updateAlbumSearchString)
+import ViewAlbums exposing (AlbumSearch, getAlbumByExactKeybinding, halfPageDown, halfPageUp, pageDown, pageUp, resetPagination, updateAlbumSearchString, clearAlbumSearchWarning)
 
 -- Action type for album browsing
 type AlbumAction
     = ChangeToMainMenu
     | SelectAlbumForView ImmichAlbum
     | UpdateAlbumSearch AlbumSearch
+    | InvalidKeybindingInput String AlbumSearch -- New action for invalid input
     | NoAlbumAction
 
 -- Message type for album-related actions
@@ -94,37 +96,38 @@ handleAlbumBrowseInput key search albumKeybindings knownAlbums =
                     newSearch = { search | pagination = pageDown search.pagination }
                 in
                 UpdateAlbumSearch newSearch
-            else if isKeybindingLetter key then
-                -- Check if this could be a keybinding first
+            else if not (String.isEmpty search.searchString) && isSupportedSearchLetter key then
+                -- We're already in text search mode, continue with text search
                 let
-                    newPartialKeybinding = search.partialKeybinding ++ key
-                    maybeExactMatch = getAlbumByExactKeybinding newPartialKeybinding albumKeybindings knownAlbums
+                    newSearch = updateAlbumSearchString (search.searchString ++ key) search knownAlbums
                 in
-                case maybeExactMatch of
-                    Just album ->
-                        -- Exact keybinding match found - select the album
+                UpdateAlbumSearch newSearch
+            else if isKeybindingLetter key then
+                -- Always try keybinding mode for keybinding letters
+                let
+                    -- Clear any existing warning when typing ANY keybinding letter
+                    searchWithoutWarning = clearAlbumSearchWarning search
+                in
+                case validateKeybindingInput search.partialKeybinding key albumKeybindings knownAlbums of
+                    ExactMatch album ->
                         SelectAlbumForView album
-                    Nothing ->
-                        -- Check if any albums start with this partial keybinding
+                    ValidKeybinding newPartialKeybinding ->
                         let
-                            hasMatchingKeybindings =
-                                albumKeybindings
-                                    |> Dict.values
-                                    |> List.any (\keybinding -> String.startsWith newPartialKeybinding keybinding)
+                            newSearch = { searchWithoutWarning | partialKeybinding = newPartialKeybinding, pagination = resetPagination searchWithoutWarning.pagination }
                         in
-                        if hasMatchingKeybindings then
-                            -- Update partial keybinding and show matching albums
+                        UpdateAlbumSearch newSearch
+                    InvalidCharacter invalidChar ->
+                        -- Check if we have keybindings at all - if not, fall back to text search
+                        if Dict.isEmpty albumKeybindings then
                             let
-                                newSearch = { search | partialKeybinding = newPartialKeybinding, pagination = resetPagination search.pagination }
+                                newSearch = updateAlbumSearchString (searchWithoutWarning.searchString ++ key) searchWithoutWarning knownAlbums
                             in
                             UpdateAlbumSearch newSearch
                         else
-                            -- No keybinding match, treat as text search
-                            let
-                                newSearch = updateAlbumSearchString (search.searchString ++ key) search knownAlbums
-                            in
-                            UpdateAlbumSearch newSearch
+                            -- Reject invalid keybinding characters (but warning is already cleared)
+                            InvalidKeybindingInput invalidChar searchWithoutWarning
             else if isSupportedSearchLetter key then
+                -- Non-keybinding supported search letter, start text search
                 let
                     newSearch = updateAlbumSearchString (search.searchString ++ key) search knownAlbums
                 in
@@ -136,6 +139,7 @@ handleAlbumBrowseInput key search albumKeybindings knownAlbums =
                     let
                         newPartialKeybinding = String.slice 0 (String.length search.partialKeybinding - 1) search.partialKeybinding
                         newSearch = { search | partialKeybinding = newPartialKeybinding, pagination = resetPagination search.pagination }
+                            |> clearAlbumSearchWarning
                     in
                     UpdateAlbumSearch newSearch
                 else
@@ -143,6 +147,7 @@ handleAlbumBrowseInput key search albumKeybindings knownAlbums =
                     let
                         newSearchString = String.slice 0 (String.length search.searchString - 1) search.searchString
                         newSearch = updateAlbumSearchString newSearchString search knownAlbums
+                            |> clearAlbumSearchWarning
                     in
                     UpdateAlbumSearch newSearch
             else

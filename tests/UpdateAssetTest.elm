@@ -47,6 +47,7 @@ createTestAlbumSearch searchString partialKeybinding =
     , selectedIndex = 0
     , albumScores = Dict.empty
     , pagination = { currentPage = 1, itemsPerPage = 20, totalItems = 0 }
+    , invalidInputWarning = Nothing
     }
 
 -- Test data

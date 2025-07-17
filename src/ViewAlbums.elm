@@ -39,6 +39,11 @@ module ViewAlbums exposing
     , usefulColours
     , shittyFuzzyAlgorithmTest
     , flipPropertyChange
+    , getNextAvailableCharacters
+    , isValidNextCharacter
+    , formatKeybindingWithHighlight
+    , createAlbumSearchWithWarning
+    , clearAlbumSearchWarning
     )
 
 import Dict exposing (Dict)
@@ -70,6 +75,7 @@ type alias AlbumSearch =
     , selectedIndex : Int
     , partialKeybinding : String
     , pagination : AlbumPagination
+    , invalidInputWarning : Maybe String
     }
 
 type alias AlbumPagination =
@@ -136,9 +142,24 @@ viewSidebar asset search albumKeybindings albums maybeInputMode selectAlbumMsg =
           else
             Element.none
         , if search.partialKeybinding /= "" then
-            el [ alignTop, Font.color <| Element.fromRgb { red = 1, green = 0.5, blue = 0, alpha = 1 } ] <| text ("Keybind: \"" ++ search.partialKeybinding ++ "\"")
+            let
+                nextChars = getNextAvailableCharacters search.partialKeybinding albumKeybindings
+                nextCharString = String.fromList nextChars
+            in
+            column [ alignTop ]
+                [ el [ Font.color <| Element.fromRgb { red = 1, green = 0.5, blue = 0, alpha = 1 } ] <| text ("Keybind: \"" ++ search.partialKeybinding ++ "\"")
+                , if List.isEmpty nextChars then
+                    el [ Font.color <| usefulColours "red", Font.size 12 ] <| text "No matches"
+                  else
+                    el [ Font.color <| usefulColours "grey", Font.size 12 ] <| text ("Next: " ++ nextCharString)
+                ]
           else
             Element.none
+        , case search.invalidInputWarning of
+            Just warning ->
+                el [ alignTop, Font.color <| usefulColours "red", Font.size 12 ] <| text ("Invalid: \"" ++ warning ++ "\"")
+            Nothing ->
+                Element.none
         , row [ alignTop ]
             [ case asset.isFavourite of
                 ChangeToTrue ->
@@ -205,11 +226,25 @@ viewSidebarAlbums search albumKeybindings albums selectAlbumMsg =
                     keybinding = Dict.get album.id albumKeybindings |> Maybe.withDefault ""
                     isKeybindingMatch = 
                         search.partialKeybinding /= "" && String.startsWith search.partialKeybinding keybinding
-                    albumDisplayName = 
+                    
+                    albumDisplayElement = 
                         if keybinding == "" then
-                            album.albumName
+                            el [] (text album.albumName)
                         else
-                            album.albumName ++ " (" ++ keybinding ++ ")"
+                            let
+                                normalColor = usefulColours "black"
+                                highlightColor = Element.fromRgb { red = 0.8, green = 0.2, blue = 0.2, alpha = 1 }
+                                keybindingElements = 
+                                    if search.partialKeybinding /= "" && String.startsWith search.partialKeybinding keybinding then
+                                        formatKeybindingWithHighlight search.partialKeybinding keybinding normalColor highlightColor
+                                    else
+                                        [ el [ Font.color normalColor ] (text keybinding) ]
+                            in
+                            row [] 
+                                [ text (album.albumName ++ " (")
+                                , row [] keybindingElements
+                                , text ")"
+                                ]
                     
                     attrs = 
                         if isKeybindingMatch then
@@ -219,7 +254,7 @@ viewSidebarAlbums search albumKeybindings albums selectAlbumMsg =
                 in
                 row [ onClick (selectAlbumMsg album) ]
                     [ el [ paddingXY 5 0 ] <| text (String.fromInt album.assetCount)
-                    , el attrs <| text albumDisplayName
+                    , el attrs albumDisplayElement
                     ]
             ) paginatedAlbums
     in
@@ -287,21 +322,41 @@ viewSidebarAlbumsForCurrentAsset asset search albumKeybindings albums maybeInput
                     keybinding = Dict.get album.id albumKeybindings |> Maybe.withDefault ""
                     isKeybindingMatch = 
                         search.partialKeybinding /= "" && String.startsWith search.partialKeybinding keybinding
-                    albumDisplayName = 
+                    
+                    albumDisplayElement = 
                         if keybinding == "" then
-                            album.albumName
+                            el [] (text album.albumName)
                         else
-                            album.albumName ++ " (" ++ keybinding ++ ")"
+                            let
+                                normalColor = usefulColours "black"
+                                highlightColor = Element.fromRgb { red = 0.8, green = 0.2, blue = 0.2, alpha = 1 }
+                                keybindingElements = 
+                                    if search.partialKeybinding /= "" && String.startsWith search.partialKeybinding keybinding then
+                                        formatKeybindingWithHighlight search.partialKeybinding keybinding normalColor highlightColor
+                                    else
+                                        [ el [ Font.color normalColor ] (text keybinding) ]
+                            in
+                            row [] 
+                                [ text (album.albumName ++ " (")
+                                , row [] keybindingElements
+                                , text ")"
+                                ]
                     
                     finalAttrs = 
                         if isKeybindingMatch then
                             (Background.color <| Element.fromRgb { red = 1, green = 0.8, blue = 0.4, alpha = 0.8 }) :: attrs
                         else
                             attrs
+                    
+                    displayContent = 
+                        if isSelected then
+                            row [] [ text "► ", albumDisplayElement ]
+                        else
+                            albumDisplayElement
                 in
                 row [ onClick (selectAlbumMsg album) ]
                     [ el [ paddingXY 5 0 ] <| text (String.fromInt album.assetCount)
-                    , el finalAttrs <| text (if isSelected then "► " ++ albumDisplayName else albumDisplayName)
+                    , el finalAttrs displayContent
                     ]
             ) paginatedAlbums
     in
@@ -456,6 +511,7 @@ getAlbumSearch searchString albums =
         , itemsPerPage = itemsPerPage
         , totalItems = totalItems
         }
+    , invalidInputWarning = Nothing
     }
 
 getAlbumSearchWithHeight : String -> Dict ImmichAssetId ImmichAlbum -> Int -> AlbumSearch
@@ -474,6 +530,7 @@ getAlbumSearchWithHeight searchString albums screenHeight =
         , itemsPerPage = itemsPerPage
         , totalItems = totalItems
         }
+    , invalidInputWarning = Nothing
     }
 
 getAlbumSearchWithIndex : String -> Int -> Dict ImmichAssetId ImmichAlbum -> AlbumSearch
@@ -492,6 +549,7 @@ getAlbumSearchWithIndex searchString selectedIndex albums =
         , itemsPerPage = itemsPerPage
         , totalItems = totalItems
         }
+    , invalidInputWarning = Nothing
     }
 
 -- Asset functions
@@ -609,3 +667,58 @@ shittyFuzzyAlgorithmTest searchString textToBeSearched =
         totalScore = List.sum <| List.map scoreForRegex regexes
     in
     totalScore
+
+-- Helper functions for keybinding analysis and highlighting
+
+-- Create AlbumSearch with warning message
+createAlbumSearchWithWarning : AlbumSearch -> String -> AlbumSearch
+createAlbumSearchWithWarning search warning =
+    { search | invalidInputWarning = Just warning }
+
+-- Clear warning from AlbumSearch
+clearAlbumSearchWarning : AlbumSearch -> AlbumSearch
+clearAlbumSearchWarning search =
+    { search | invalidInputWarning = Nothing }
+
+-- Get the next available characters for a partial keybinding
+getNextAvailableCharacters : String -> Dict ImmichAlbumId String -> List Char
+getNextAvailableCharacters partialKeybinding albumKeybindings =
+    let
+        matchingKeybindings = 
+            albumKeybindings
+                |> Dict.values
+                |> List.filter (\keybinding -> String.startsWith partialKeybinding keybinding)
+                |> List.filter (\keybinding -> String.length keybinding > String.length partialKeybinding)
+        
+        nextCharacters = 
+            matchingKeybindings
+                |> List.map (\keybinding -> String.slice (String.length partialKeybinding) (String.length partialKeybinding + 1) keybinding)
+                |> List.filterMap (\char -> String.toList char |> List.head)
+                |> List.sort
+                |> List.foldr (\char acc -> if List.member char acc then acc else char :: acc) []
+    in
+    nextCharacters
+
+-- Check if a character is valid for the current partial keybinding
+isValidNextCharacter : String -> Char -> Dict ImmichAlbumId String -> Bool
+isValidNextCharacter partialKeybinding char albumKeybindings =
+    let
+        nextChars = getNextAvailableCharacters partialKeybinding albumKeybindings
+    in
+    List.member char nextChars
+
+-- Format keybinding with highlighted next available character
+formatKeybindingWithHighlight : String -> String -> Element.Color -> Element.Color -> List (Element msg)
+formatKeybindingWithHighlight partialKeybinding fullKeybinding normalColor highlightColor =
+    if String.length partialKeybinding >= String.length fullKeybinding then
+        [ el [ Font.color normalColor ] (text fullKeybinding) ]
+    else
+        let
+            matchedPart = String.slice 0 (String.length partialKeybinding) fullKeybinding
+            nextChar = String.slice (String.length partialKeybinding) (String.length partialKeybinding + 1) fullKeybinding
+            remainingPart = String.slice (String.length partialKeybinding + 1) (String.length fullKeybinding) fullKeybinding
+        in
+        [ el [ Font.color normalColor ] (text matchedPart)
+        , el [ Font.color highlightColor, Font.bold ] (text nextChar)
+        , el [ Font.color normalColor ] (text remainingPart)
+        ]

@@ -15,7 +15,8 @@ module UpdateAsset exposing
 import Dict exposing (Dict)
 import Helpers exposing (isKeybindingLetter, isSupportedSearchLetter, loopImageIndexOverArray)
 import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId)
-import ViewAlbums exposing (AlbumSearch, AssetWithActions, InputMode(..), PropertyChange(..), filterToOnlySearchedForAlbums, flipPropertyChange, getAlbumByExactKeybinding, getAlbumSearchWithHeight, getFilteredAlbumsList, getSelectedAlbumForAsset, halfPageDown, halfPageUp, isAddingToAlbum, isCurrentlyInAlbum, moveSelectionDownForAsset, moveSelectionUpForAsset, pageDown, pageUp, resetPagination, toggleAssetAlbum, updateAlbumSearchString)
+import KeybindingValidation exposing (validateKeybindingInput, KeybindingValidationResult(..), couldStartKeybinding)
+import ViewAlbums exposing (AlbumSearch, AssetWithActions, InputMode(..), PropertyChange(..), filterToOnlySearchedForAlbums, flipPropertyChange, getAlbumByExactKeybinding, getAlbumSearchWithHeight, getFilteredAlbumsList, getSelectedAlbumForAsset, halfPageDown, halfPageUp, isAddingToAlbum, isCurrentlyInAlbum, moveSelectionDownForAsset, moveSelectionUpForAsset, pageDown, pageUp, resetPagination, toggleAssetAlbum, updateAlbumSearchString, clearAlbumSearchWarning)
 import ViewGrid exposing (GridState, GridMsg)
 
 -- Define the asset state type that encapsulates all asset viewing/editing modes
@@ -74,6 +75,7 @@ type AssetAction
     | SwitchToGridView
     | SwitchToDetailView ImmichAssetId
     | UpdateGridState GridState
+    | InvalidKeybindingInput String AlbumSearch
     | NoAssetAction
 
 -- Legacy message type for asset-related actions
@@ -168,18 +170,24 @@ handleKeybindingModeInput : String -> InputMode -> AssetWithActions -> AlbumSear
 handleKeybindingModeInput key inputMode asset search albumKeybindings knownAlbums =
     if isKeybindingLetter key then
         let
-            newPartialKeybinding =
-                search.partialKeybinding ++ key
-            updatedSearch =
-                { search | partialKeybinding = newPartialKeybinding, pagination = resetPagination search.pagination }
-            maybeExactMatch =
-                getAlbumByExactKeybinding newPartialKeybinding albumKeybindings knownAlbums
+            -- Clear any existing warning when typing ANY keybinding letter
+            searchWithoutWarning = clearAlbumSearchWarning search
         in
-        case maybeExactMatch of
-            Just album ->
+        case validateKeybindingInput search.partialKeybinding key albumKeybindings knownAlbums of
+            ExactMatch album ->
                 ToggleAlbumMembership album
-            Nothing ->
+            ValidKeybinding newPartialKeybinding ->
+                let
+                    updatedSearch =
+                        { searchWithoutWarning | partialKeybinding = newPartialKeybinding, pagination = resetPagination searchWithoutWarning.pagination }
+                in
                 UpdateAssetSearch updatedSearch
+            InvalidCharacter invalidChar ->
+                -- Check if we have keybindings at all - if not, don't start keybinding mode
+                if Dict.isEmpty albumKeybindings then
+                    NoAssetAction
+                else
+                    InvalidKeybindingInput invalidChar searchWithoutWarning
     else
         case key of
             "Escape" ->
@@ -229,16 +237,24 @@ handleKeybindingModeInput key inputMode asset search albumKeybindings knownAlbum
 handleStartKeybindingMode : String -> AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AssetAction
 handleStartKeybindingMode partialKey asset search albumKeybindings knownAlbums =
     let
-        updatedSearch =
-            { search | partialKeybinding = partialKey, pagination = resetPagination search.pagination }
-        maybeExactMatch =
-            getAlbumByExactKeybinding partialKey albumKeybindings knownAlbums
+        -- Clear any existing warning when typing ANY keybinding letter
+        searchWithoutWarning = clearAlbumSearchWarning search
     in
-    case maybeExactMatch of
-        Just album ->
+    case validateKeybindingInput "" partialKey albumKeybindings knownAlbums of
+        ExactMatch album ->
             ToggleAlbumMembership album
-        Nothing ->
+        ValidKeybinding newPartialKeybinding ->
+            let
+                updatedSearch =
+                    { searchWithoutWarning | partialKeybinding = newPartialKeybinding, pagination = resetPagination searchWithoutWarning.pagination }
+            in
             UpdateAssetSearch updatedSearch
+        InvalidCharacter invalidChar ->
+            -- Check if we have keybindings at all - if not, don't start keybinding mode
+            if Dict.isEmpty albumKeybindings then
+                NoAssetAction
+            else
+                InvalidKeybindingInput invalidChar searchWithoutWarning
 
 
 -- Handle Normal Mode input
@@ -606,6 +622,12 @@ convertAssetActionToResult action inputMode asset search currentAssets =
             AssetSwitchToDetailView assetId
         UpdateGridState gridState ->
             AssetGridUpdate gridState
+        InvalidKeybindingInput invalidInput clearedSearch ->
+            -- Invalid keybinding input - show warning and stay in current state
+            let
+                searchWithWarning = ViewAlbums.createAlbumSearchWithWarning clearedSearch invalidInput
+            in
+            StayInAssets (EditAsset inputMode asset searchWithWarning)
         NoAssetAction ->
             StayInAssets (EditAsset inputMode asset search)
 
