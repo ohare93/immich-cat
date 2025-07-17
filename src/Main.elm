@@ -93,6 +93,8 @@ type alias PaginationState =
     , currentPage : Int
     , hasMorePages : Bool
     , isLoadingMore : Bool
+    , loadedAssets : Int
+    , maxAssetsToFetch : Int -- Configurable limit
     }
 
 
@@ -155,6 +157,8 @@ init flags =
           , currentPage = 1
           , hasMorePages = False
           , isLoadingMore = False
+          , loadedAssets = 0
+          , maxAssetsToFetch = 10000 -- Default limit of 10,000 assets
           }
       }
       -- , Cmd.none
@@ -353,13 +357,17 @@ viewWithInputBottomBar userMode viewMain =
 
 viewMainWindow : Model -> Element Msg
 viewMainWindow model =
-    case model.userMode of
-        MainMenu menuState ->
-            viewMenuState model menuState
-        ViewAssets assetState ->
-            viewAssetState model assetState
-        LoadingAssets _ ->
-            ViewAsset.viewLoadingAssets model.imagesLoadState
+    let
+        mainContent = 
+            case model.userMode of
+                MainMenu menuState ->
+                    viewMenuState model menuState
+                ViewAssets assetState ->
+                    viewAssetState model assetState
+                LoadingAssets _ ->
+                    ViewAsset.viewLoadingAssets model.imagesLoadState
+    in
+    Element.el [ width fill, height fill, Element.inFront (viewPaginationStatus model.paginationState) ] mainContent
 
 viewMenuState : Model -> MenuState -> Element Msg
 viewMenuState model menuState =
@@ -406,6 +414,32 @@ viewMenuState model menuState =
             Menus.viewAlbumView model album config LoadAlbumAssets
         Settings ->
             Menus.viewSettings model
+
+viewPaginationStatus : PaginationState -> Element Msg
+viewPaginationStatus paginationState =
+    if paginationState.isLoadingMore && paginationState.loadedAssets > 0 then
+        let
+            progressText = 
+                "Loading assets: " ++ 
+                String.fromInt paginationState.loadedAssets ++ 
+                " / " ++ 
+                (if paginationState.totalAssets > 0 then
+                    String.fromInt (min paginationState.totalAssets paginationState.maxAssetsToFetch)
+                else
+                    "?") ++ 
+                " (page " ++ String.fromInt paginationState.currentPage ++ ")"
+        in
+        el 
+            [ alignRight
+            , alignTop
+            , Element.padding 10
+            , Background.color (Element.rgba 0 0 0 0.8)
+            , Font.color (Element.rgb 1 1 1)
+            , Font.size 14
+            ]
+            (text progressText)
+    else
+        Element.none
 
 viewAssetState : Model -> AssetState -> Element Msg
 viewAssetState model assetState =
@@ -908,7 +942,7 @@ update msg model =
                             in
                             let
                                 updatedModel = createLoadStateForCurrentAssetSource (ImageSearch searchConfig) model
-                                modelWithPagination = { updatedModel | paginationState = { currentConfig = Just searchConfig, currentQuery = Nothing, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False } }
+                                modelWithPagination = { updatedModel | paginationState = { currentConfig = Just searchConfig, currentQuery = Nothing, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = updatedModel.paginationState.maxAssetsToFetch } }
                             in
                             ( modelWithPagination, Immich.fetchImagesPaginated model.immichApiPaths searchConfig 1000 1 |> Cmd.map ImmichMsg )
                         _ ->
@@ -925,7 +959,7 @@ update msg model =
                             else
                                 let
                                     updatedModel = createLoadStateForCurrentAssetSource (TextSearch config.query) model
-                                    modelWithPagination = { updatedModel | paginationState = { currentConfig = Nothing, currentQuery = Just config.query, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False } }
+                                    modelWithPagination = { updatedModel | paginationState = { currentConfig = Nothing, currentQuery = Just config.query, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = updatedModel.paginationState.maxAssetsToFetch } }
                                 in
                                 ( modelWithPagination, Immich.searchAssetsPaginated model.immichApiPaths config.query config.mediaType config.status 1000 1 |> Cmd.map ImmichMsg )
                         _ ->
@@ -1129,8 +1163,18 @@ update msg model =
                 Immich.PaginatedImagesFetched (Ok paginatedResponse) ->
                     -- Auto-fetch next page if there are more assets
                     let
+                        shouldFetchMore = newModel.paginationState.hasMorePages && not newModel.paginationState.isLoadingMore
+                        modelWithLoadingState = 
+                            if shouldFetchMore then
+                                let
+                                    currentPaginationState = newModel.paginationState
+                                    updatedPaginationState = { currentPaginationState | isLoadingMore = True }
+                                in
+                                { newModel | paginationState = updatedPaginationState }
+                            else
+                                newModel
                         nextPageCmd = 
-                            if paginatedResponse.hasNextPage && not newModel.paginationState.isLoadingMore then
+                            if shouldFetchMore then
                                 case (newModel.paginationState.currentConfig, newModel.paginationState.currentQuery) of
                                     (Just config, Nothing) ->
                                         Immich.fetchMoreImages newModel.immichApiPaths config 1000 2 |> Cmd.map ImmichMsg
@@ -1141,12 +1185,22 @@ update msg model =
                             else
                                 Cmd.none
                     in
-                    ( newModel, nextPageCmd )
+                    ( modelWithLoadingState, nextPageCmd )
                 Immich.MoreImagesFetched page (Ok paginatedResponse) ->
                     -- Auto-fetch next page if there are more assets
                     let
+                        shouldFetchMore = newModel.paginationState.hasMorePages && not newModel.paginationState.isLoadingMore
+                        modelWithLoadingState = 
+                            if shouldFetchMore then
+                                let
+                                    currentPaginationState = newModel.paginationState
+                                    updatedPaginationState = { currentPaginationState | isLoadingMore = True }
+                                in
+                                { newModel | paginationState = updatedPaginationState }
+                            else
+                                newModel
                         nextPageCmd = 
-                            if paginatedResponse.hasNextPage && not newModel.paginationState.isLoadingMore then
+                            if shouldFetchMore then
                                 case (newModel.paginationState.currentConfig, newModel.paginationState.currentQuery) of
                                     (Just config, Nothing) ->
                                         Immich.fetchMoreImages newModel.immichApiPaths config 1000 (page + 1) |> Cmd.map ImmichMsg
@@ -1157,7 +1211,7 @@ update msg model =
                             else
                                 Cmd.none
                     in
-                    ( newModel, nextPageCmd )
+                    ( modelWithLoadingState, nextPageCmd )
                 Immich.PaginatedImagesFetched (Err _) ->
                     checkIfLoadingComplete newModel
                 Immich.MoreImagesFetched _ (Err _) ->
@@ -1367,14 +1421,21 @@ getCurrentAssetWithActions model =
 
 updatePaginationState : Immich.PaginatedAssetResponse -> Int -> Model -> Model
 updatePaginationState paginatedResponse page model =
+    let
+        newLoadedAssets = model.paginationState.loadedAssets + paginatedResponse.count
+        reachedLimit = newLoadedAssets >= model.paginationState.maxAssetsToFetch
+        hasMoreToLoad = paginatedResponse.hasNextPage && not reachedLimit
+    in
     { model 
         | paginationState = 
             { currentConfig = model.paginationState.currentConfig
             , currentQuery = model.paginationState.currentQuery
             , totalAssets = paginatedResponse.total
             , currentPage = page
-            , hasMorePages = paginatedResponse.hasNextPage
+            , hasMorePages = hasMoreToLoad
             , isLoadingMore = False
+            , loadedAssets = newLoadedAssets
+            , maxAssetsToFetch = model.paginationState.maxAssetsToFetch
             }
     }
 
