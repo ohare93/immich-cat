@@ -76,6 +76,7 @@ type AssetAction
     | SwitchToDetailView ImmichAssetId
     | UpdateGridState GridState
     | InvalidKeybindingInput String AlbumSearch
+    | ExitToNormalMode
     | NoAssetAction
 
 -- Legacy message type for asset-related actions
@@ -120,7 +121,7 @@ handleInsertModeInput : String -> InputMode -> AssetWithActions -> AlbumSearch -
 handleInsertModeInput key inputMode asset search albumKeybindings knownAlbums =
     case key of
         "Escape" ->
-            ChangeInputMode NormalMode
+            ExitToNormalMode
         "Enter" ->
             applySelectedAlbum inputMode asset search albumKeybindings knownAlbums
         "ArrowUp" ->
@@ -191,7 +192,7 @@ handleKeybindingModeInput key inputMode asset search albumKeybindings knownAlbum
     else
         case key of
             "Escape" ->
-                ChangeInputMode NormalMode
+                ExitToNormalMode
             "Backspace" ->
                 let
                     newPartialKeybinding =
@@ -628,6 +629,18 @@ convertAssetActionToResult action inputMode asset search currentAssets =
                 searchWithWarning = ViewAlbums.createAlbumSearchWithWarning clearedSearch invalidInput
             in
             StayInAssets (EditAsset inputMode asset searchWithWarning)
+        ExitToNormalMode ->
+            -- Exit to normal mode and clear all search state
+            let
+                clearedSearch = 
+                    { search 
+                    | searchString = ""
+                    , partialKeybinding = ""
+                    , invalidInputWarning = Nothing
+                    , pagination = ViewAlbums.resetPagination search.pagination
+                    }
+            in
+            StayInAssets (EditAsset NormalMode asset clearedSearch)
         NoAssetAction ->
             StayInAssets (EditAsset inputMode asset search)
 

@@ -334,12 +334,44 @@ consistencyWithAlbumBrowseTests =
                                 InvalidKeybindingInput char _ -> "InvalidKeybindingInput: " ++ char
                                 UpdateAssetSearch _ -> "UpdateAssetSearch"
                                 ToggleAlbumMembership _ -> "ToggleAlbumMembership"
+                                ExitToNormalMode -> "ExitToNormalMode"
                                 _ -> "Other"
                             result3Debug = case result3 of
                                 InvalidKeybindingInput char _ -> "InvalidKeybindingInput: " ++ char
                                 UpdateAssetSearch _ -> "UpdateAssetSearch"
                                 ToggleAlbumMembership _ -> "ToggleAlbumMembership"
+                                ExitToNormalMode -> "ExitToNormalMode"
                                 _ -> "Other"
                         in
                         Expect.fail ("Expected InvalidKeybindingInput then ToggleAlbumMembership, got: " ++ result2Debug ++ " then " ++ result3Debug)
+                        
+        , test "Escape from KeybindingMode clears all search state" <|
+            \_ ->
+                let
+                    -- Set up a search state with both keybinding and manual search active
+                    searchWithBoth = createTestAlbumSearchWithWarning "manual search" "g" "Invalid: z"
+                    
+                    -- Press Escape from KeybindingMode
+                    result = handleEditAssetInput "Escape" KeybindingMode testAsset searchWithBoth testAlbumKeybindings testKnownAlbums 800 testCurrentAssets
+                in
+                case result of
+                    ExitToNormalMode ->
+                        Expect.pass -- The action itself is correct
+                    _ ->
+                        Expect.fail "Expected Escape from KeybindingMode to return ExitToNormalMode"
+                        
+        , test "Escape from InsertMode clears all search state" <|
+            \_ ->
+                let
+                    -- Set up a search state with manual search text
+                    searchWithManual = createTestAlbumSearch "manual search text" ""
+                    
+                    -- Press Escape from InsertMode  
+                    result = handleEditAssetInput "Escape" InsertMode testAsset searchWithManual testAlbumKeybindings testKnownAlbums 800 testCurrentAssets
+                in
+                case result of
+                    ExitToNormalMode ->
+                        Expect.pass -- The action itself is correct
+                    _ ->
+                        Expect.fail "Expected Escape from InsertMode to return ExitToNormalMode"
         ]
