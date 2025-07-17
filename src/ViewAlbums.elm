@@ -67,6 +67,7 @@ type alias AssetWithActions =
     , isFavourite : PropertyChange
     , isArchived : PropertyChange
     , albumMembership : Dict ImmichAlbumId PropertyChange
+    , isVideoLoaded : Bool
     }
 
 type alias AlbumSearch =
@@ -587,6 +588,17 @@ getAssetWithActions asset =
         else
             RemainFalse
     , albumMembership = Dict.fromList <| List.map (\a -> ( a, RemainTrue )) asset.albumMembership
+    , isVideoLoaded = 
+        -- For videos longer than 5 minutes, default to not loaded
+        if String.startsWith "video/" asset.mimeType then
+            case asset.duration of
+                Just durStr -> 
+                    case Immich.parseDurationToSeconds durStr of
+                        Just seconds -> seconds <= 300 -- 5 minutes in seconds
+                        Nothing -> True -- If parsing fails, assume it's safe to load
+                Nothing -> True -- If no duration info, assume it's safe to load
+        else
+            True -- Images are always "loaded"
     }
 
 -- Pagination functions

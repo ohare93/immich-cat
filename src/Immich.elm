@@ -96,6 +96,7 @@ type alias ImmichAsset =
     , albumMembership : List ImmichAlbumId
     , fileCreatedAt : Date
     , thumbhash : Maybe String
+    , duration : Maybe String -- Duration in HH:MM:SS.mmm format for video assets
     }
 
 
@@ -568,6 +569,34 @@ splitDateTimeToDate str =
         str
 
 
+-- Parse duration string in HH:MM:SS.mmm format to seconds
+parseDurationToSeconds : String -> Maybe Int
+parseDurationToSeconds durationStr =
+    let
+        -- Remove milliseconds if present (everything after the dot)
+        withoutMillis = 
+            if String.contains "." durationStr then
+                Maybe.withDefault durationStr (List.head (String.split "." durationStr))
+            else
+                durationStr
+        
+        -- Split by colon to get hours, minutes, seconds
+        parts = String.split ":" withoutMillis
+        
+        -- Convert each part to int
+        intParts = List.map String.toInt parts
+    in
+    case intParts of
+        [ Just hours, Just minutes, Just seconds ] ->
+            Just (hours * 3600 + minutes * 60 + seconds)
+        [ Just minutes, Just seconds ] ->
+            Just (minutes * 60 + seconds)
+        [ Just seconds ] ->
+            Just seconds
+        _ ->
+            Nothing
+
+
 dateDecoder : Decode.Decoder Date
 dateDecoder =
     Decode.string
@@ -594,6 +623,7 @@ imageDecoder =
         , albumMembership = albumMembership
         , fileCreatedAt = fileCreatedAt
         , thumbhash = Nothing
+        , duration = Nothing
         })
         (Decode.field "id" Decode.string)
         (Decode.field "originalPath" Decode.string)
@@ -604,8 +634,16 @@ imageDecoder =
         (Decode.succeed [])
         (Decode.field "fileCreatedAt" dateDecoder)
         |> Decode.andThen (\asset -> 
-            Decode.map (\thumbhash -> { asset | thumbhash = thumbhash })
+            Decode.map2 (\thumbhash duration -> { asset | thumbhash = thumbhash, duration = duration })
                 (Decode.maybe (Decode.field "thumbhash" Decode.string))
+                (Decode.oneOf
+                    [ Decode.maybe (Decode.field "duration" Decode.string)
+                    , Decode.maybe (Decode.field "videoDuration" Decode.string)
+                    , Decode.maybe (Decode.at ["metadata", "duration"] Decode.string)
+                    , Decode.maybe (Decode.at ["exifInfo", "duration"] Decode.string)
+                    , Decode.succeed Nothing
+                    ]
+                )
         )
 
 errorToString : Http.Error -> String

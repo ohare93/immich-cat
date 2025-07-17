@@ -21,6 +21,7 @@ createTestAsset id title =
     , albumMembership = []
     , fileCreatedAt = Date.fromRataDie 1
     , thumbhash = Nothing
+    , duration = Nothing
     }
 
 createTestAlbum : String -> String -> ImmichAlbum
@@ -38,6 +39,7 @@ createTestAssetWithActions id title =
     , isFavourite = RemainFalse
     , isArchived = RemainFalse
     , albumMembership = Dict.empty
+    , isVideoLoaded = True
     }
 
 createTestAlbumSearch : String -> String -> AlbumSearch

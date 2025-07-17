@@ -9,6 +9,7 @@ module ViewAsset exposing
     , viewLoadingAssets
     , viewVideo
     , viewGridAssets
+    , viewVideoConfirm
     )
 
 import Date exposing (Date)
@@ -128,15 +129,36 @@ viewAssetCountsText counts timeMode =
 
 -- Main asset view function
 
-viewAsset : ImmichApiPaths -> String -> ImmichAsset -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> Element msg
-viewAsset apiPaths apiKey asset currentAssets knownAssets imageIndex =
+viewAsset : ImmichApiPaths -> String -> AssetWithActions -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> Element msg
+viewAsset apiPaths apiKey assetWithActions currentAssets knownAssets imageIndex =
+    let
+        asset = assetWithActions.asset
+    in
     if asset.path == "" then
         text "No asset selected"
     else if String.startsWith "image/" asset.mimeType then
         viewImage asset apiPaths apiKey currentAssets knownAssets imageIndex
 
     else if String.startsWith "video/" asset.mimeType then
-        viewVideo asset apiPaths apiKey currentAssets knownAssets imageIndex
+        if assetWithActions.isVideoLoaded then
+            viewVideo asset apiPaths apiKey currentAssets knownAssets imageIndex
+        else
+            let
+                durationSeconds = 
+                    case asset.duration of
+                        Just durStr -> Immich.parseDurationToSeconds durStr
+                        Nothing -> Nothing
+                        
+                -- Show confirmation dialog for videos longer than 5 minutes (300 seconds)
+                shouldShowConfirmation = 
+                    case durationSeconds of
+                        Just seconds -> seconds > 300
+                        Nothing -> False
+            in
+            if shouldShowConfirmation then
+                viewVideoConfirm apiPaths apiKey asset durationSeconds
+            else
+                viewVideo asset apiPaths apiKey currentAssets knownAssets imageIndex
 
     else
         text "Unknown asset type"
@@ -261,7 +283,7 @@ viewEditAsset apiPaths apiKey imageIndex totalAssets viewTitle currentAsset curr
             [ el [] (text (String.fromInt (imageIndex + 1) ++ "/" ++ String.fromInt totalAssets ++ "    " ++ viewTitle))
             , viewAssetCountsText counts timeMode
             ]
-        , el [ width fill, height fill ] <| viewAsset apiPaths apiKey currentAsset.asset currentAssets knownAssets imageIndex
+        , el [ width fill, height fill ] <| viewAsset apiPaths apiKey currentAsset currentAssets knownAssets imageIndex
         ]
 
 
@@ -348,4 +370,57 @@ viewGridAssets apiPaths apiKey gridState currentAssets knownAssets toMsg =
         assets = List.filterMap (\id -> Dict.get id knownAssets) currentAssets
     in
     ViewGrid.viewGrid apiPaths apiKey gridState assets toMsg
+
+
+-- Video confirmation dialog
+
+viewVideoConfirm : ImmichApiPaths -> String -> ImmichAsset -> Maybe Int -> Element msg
+viewVideoConfirm apiPaths apiKey asset duration =
+    let
+        durationText = 
+            case duration of
+                Just seconds -> formatDuration seconds
+                Nothing -> "unknown length"
+        
+        formatDuration : Int -> String
+        formatDuration seconds =
+            let
+                minutes = seconds // 60
+                remainingSeconds = remainderBy 60 seconds
+                hours = minutes // 60
+                remainingMinutes = remainderBy 60 minutes
+            in
+            if hours > 0 then
+                String.fromInt hours ++ "h " ++ String.fromInt remainingMinutes ++ "m " ++ String.fromInt remainingSeconds ++ "s"
+            else if minutes > 0 then
+                String.fromInt minutes ++ "m " ++ String.fromInt remainingSeconds ++ "s"
+            else
+                String.fromInt remainingSeconds ++ "s"
+    in
+    column [ width fill, height fill, paddingXY 20 20, Element.spacingXY 0 20, centerX, centerY ]
+        [ el [ Font.size 18, Font.bold, centerX ] (text "Load Video?")
+        , el [ centerX ] (text ("Video: " ++ asset.title))
+        , el [ centerX ] (text ("Duration: " ++ durationText))
+        , el [ Font.size 14, centerX, paddingXY 0 10 ] (text "This video is longer than 5 minutes and may take time to load.")
+        , column [ Element.spacingXY 0 8, centerX ]
+            [ viewKeybinding "L" "Load video"
+            , viewKeybinding "Escape" "Cancel and return to previous view"
+            , viewKeybinding "← / →" "Navigate to previous/next asset"
+            ]
+        , case asset.thumbhash of
+            Just thumbhash ->
+                el [ centerX, width (px 200), height (px 150) ] <|
+                    Element.html <|
+                        Html.node "thumbhash-image"
+                            [ Html.Attributes.attribute "thumbhash" thumbhash
+                            , Html.Attributes.attribute "asset-url" (apiPaths.downloadAsset asset.id)
+                            , Html.Attributes.attribute "api-key" apiKey
+                            , Html.Attributes.style "width" "200px"
+                            , Html.Attributes.style "height" "150px"
+                            ]
+                            []
+            Nothing ->
+                el [ centerX, width (px 200), height (px 150), Background.color (Element.rgb 0.9 0.9 0.9) ] <|
+                    el [ centerX, centerY ] (text "No preview available")
+        ]
 

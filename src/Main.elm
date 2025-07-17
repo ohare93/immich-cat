@@ -1279,6 +1279,7 @@ handleFetchAssets assets model =
 -- All keybinding functions are now imported from KeybindingGenerator module
 
 
+
 handleFetchAlbums : List ImmichAlbum -> Model -> Model
 handleFetchAlbums albums model =
     let

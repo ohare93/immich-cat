@@ -31,6 +31,7 @@ generateTestAsset id fileName =
     , albumMembership = []
     , fileCreatedAt = Date.fromRataDie 737790 -- January 1, 2020
     , thumbhash = Nothing
+    , duration = Nothing
     }
 
 -- JSON encoding/decoding tests
@@ -235,6 +236,50 @@ suite =
                             Expect.equal (errorToString error) expected)
                         |> List.foldl (\expectation acc -> 
                             Expect.all [(\() -> acc), (\() -> expectation)] ()) (Expect.pass)
+            ]
+        
+        , describe "Duration Parsing"
+            [ test "parseDurationToSeconds handles HH:MM:SS format" <|
+                \_ ->
+                    let
+                        result = parseDurationToSeconds "01:23:45"
+                    in
+                    Expect.equal result (Just (1 * 3600 + 23 * 60 + 45))
+            
+            , test "parseDurationToSeconds handles HH:MM:SS.mmm format" <|
+                \_ ->
+                    let
+                        result = parseDurationToSeconds "00:15:20.400"
+                    in
+                    Expect.equal result (Just (15 * 60 + 20))
+            
+            , test "parseDurationToSeconds handles MM:SS format" <|
+                \_ ->
+                    let
+                        result = parseDurationToSeconds "23:45"
+                    in
+                    Expect.equal result (Just (23 * 60 + 45))
+            
+            , test "parseDurationToSeconds handles SS format" <|
+                \_ ->
+                    let
+                        result = parseDurationToSeconds "45"
+                    in
+                    Expect.equal result (Just 45)
+            
+            , test "parseDurationToSeconds handles invalid format" <|
+                \_ ->
+                    let
+                        result = parseDurationToSeconds "invalid"
+                    in
+                    Expect.equal result Nothing
+            
+            , test "parseDurationToSeconds handles empty string" <|
+                \_ ->
+                    let
+                        result = parseDurationToSeconds ""
+                    in
+                    Expect.equal result Nothing
             ]
         
         , describe "Integration Tests with Random Data"

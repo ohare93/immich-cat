@@ -77,6 +77,7 @@ type AssetAction
     | UpdateGridState GridState
     | InvalidKeybindingInput String AlbumSearch
     | ExitToNormalMode
+    | ToggleVideoLoaded
     | NoAssetAction
 
 -- Legacy message type for asset-related actions
@@ -105,6 +106,7 @@ handleEditAssetInput key inputMode asset search albumKeybindings knownAlbums scr
             "K" -> OpenInImmich
             "T" -> ToggleTimeView
             "G" -> SwitchToGridView
+            "L" -> ToggleVideoLoaded
             "?" -> ShowAssetHelp
             _ ->
                 if isKeybindingLetter key then
@@ -603,6 +605,11 @@ convertAssetActionToResult action inputMode asset search currentAssets =
             AssetToggleFavorite
         ToggleArchived ->
             AssetToggleArchived
+        ToggleVideoLoaded ->
+            let
+                updatedAsset = { asset | isVideoLoaded = True }
+            in
+            StayInAssets (EditAsset inputMode updatedAsset search)
         ToggleAlbumMembership album ->
             AssetToggleAlbumMembership album
         OpenInImmich ->
