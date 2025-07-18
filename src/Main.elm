@@ -11,7 +11,7 @@ import Helpers
 import Html exposing (Html)
 import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImageSearchConfig, ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..), MediaTypeFilter(..), StatusFilter(..), getAllAlbums, getImmichApiPaths)
 import Json.Decode as Decode
-import KeybindingGenerator exposing (generateAlbumKeybindings)
+import KeybindBranches exposing (generateAlbumKeybindings)
 import Menus exposing (AlbumConfig, SearchContext, defaultAlbumConfig, defaultSearchConfig, filterByMediaType, filterByStatus)
 import UpdateAlbums exposing (AlbumMsg)
 import UpdateAsset exposing (AssetMsg(..), AssetResult(..), AssetState(..), updateAsset)
@@ -1225,7 +1225,7 @@ update msg model =
                             case model.userMode of
                                 LoadingAssets _ ->
                                     getCurrentAssetWithActions model
-                                        |> Maybe.map (\( assetWithActions, search ) -> { model | userMode = ViewAssets (EditAsset InsertMode assetWithActions search) })
+                                        |> Maybe.map (\( assetWithActions, search ) -> { model | userMode = ViewAssets (EditAsset NormalMode assetWithActions search) })
                                         |> Maybe.withDefault model
 
                                 _ ->
@@ -1287,7 +1287,7 @@ update msg model =
                                                 ViewAlbums.toggleAssetAlbum assetWithActions album
 
                                             updatedModel =
-                                                { newModel | userMode = ViewAssets (EditAsset InsertMode updatedAsset (ViewAlbums.getAlbumSearch "" newModel.knownAlbums)) }
+                                                { newModel | userMode = ViewAssets (EditAsset NormalMode updatedAsset (ViewAlbums.getAlbumSearch "" newModel.knownAlbums)) }
                                         in
                                         ( { updatedModel | pendingAlbumChange = Just ( album.id, True ) }, Immich.albumChangeAssetMembership newModel.immichApiPaths album.id [ assetWithActions.asset.id ] True |> Cmd.map ImmichMsg )
                                     )

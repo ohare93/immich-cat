@@ -11,7 +11,7 @@ module UpdateMenus exposing
 import Dict exposing (Dict)
 import Helpers exposing (isSupportedSearchLetter)
 import Immich exposing (ImageSearchConfig, ImmichAlbum, ImmichAlbumId, ImmichApiPaths)
-import KeybindingGenerator exposing (generateAlbumKeybindings)
+import KeybindBranches exposing (generateAlbumKeybindings)
 import Menus exposing (AlbumConfig, SearchConfig, TimelineConfig, defaultAlbumConfig, defaultSearchConfig, defaultTimelineConfig, toggleCategorisation, toggleMediaType, toggleOrder, toggleSearchContext, toggleStatus)
 import UpdateAlbums
 import ViewAlbums exposing (AlbumSearch, createAlbumSearchWithWarning, getAlbumSearchWithHeight)

@@ -501,24 +501,6 @@ handleSelectAlbumInput key searchResults albumKeybindings knownAlbums =
 
 
 -- Handle CreateAlbumConfirmation
-
-
-handleCreateAlbumConfirmationInput : String -> AssetAction
-handleCreateAlbumConfirmationInput key =
-    case key of
-        "Enter" ->
-            NoAssetAction
-
-        -- Will trigger album creation in caller
-        "Escape" ->
-            NoAssetAction
-
-        -- Will return to EditAsset mode in caller
-        _ ->
-            NoAssetAction
-
-
-
 -- Handle ShowEditAssetHelp
 
 
@@ -668,20 +650,12 @@ handleSelectAlbumKeyPress key searchResults albumKeybindings knownAlbums =
 
 handleCreateAlbumConfirmationKeyPress : String -> InputMode -> AssetWithActions -> AlbumSearch -> String -> AssetResult msg
 handleCreateAlbumConfirmationKeyPress key inputMode asset search albumName =
-    let
-        action =
-            handleCreateAlbumConfirmationInput key
-    in
-    case action of
-        NoAssetAction ->
-            if key == "Enter" then
-                AssetCreateAlbum albumName
+    case key of
+        "Enter" ->
+            AssetCreateAlbum albumName
 
-            else if key == "Escape" then
-                StayInAssets (EditAsset inputMode asset search)
-
-            else
-                StayInAssets (CreateAlbumConfirmation inputMode asset search albumName)
+        "Escape" ->
+            StayInAssets (EditAsset inputMode asset search)
 
         _ ->
             StayInAssets (CreateAlbumConfirmation inputMode asset search albumName)

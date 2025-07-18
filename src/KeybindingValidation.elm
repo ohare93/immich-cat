@@ -15,26 +15,6 @@ type KeybindingValidationResult
 
 
 
--- Check if a character is valid as the next character in a partial keybinding
-
-
-isValidNextCharacter : String -> Char -> Dict ImmichAlbumId String -> Bool
-isValidNextCharacter partialKeybinding nextChar albumKeybindings =
-    let
-        targetString =
-            partialKeybinding ++ String.fromChar nextChar
-
-        keybindingList =
-            Dict.values albumKeybindings
-    in
-    List.any (String.startsWith targetString) keybindingList
-
-
-
--- Get all valid next characters for a partial keybinding
--- Remove duplicates from a list
--- Format a keybinding string with highlighting for next available characters
--- Check if a character could potentially start any keybinding
 -- Main validation function that determines the result of adding a character to a partial keybinding
 
 
@@ -52,6 +32,18 @@ validateKeybindingInput partialKeybinding inputChar albumKeybindings knownAlbums
 
         hasKeybindings =
             not (Dict.isEmpty albumKeybindings)
+
+        -- Check if a character is valid as the next character in a partial keybinding
+        isValidNextCharacter : String -> Char -> Dict ImmichAlbumId String -> Bool
+        isValidNextCharacter partialKb nextChar keybindings =
+            let
+                targetString =
+                    partialKb ++ String.fromChar nextChar
+
+                keybindingList =
+                    Dict.values keybindings
+            in
+            List.any (String.startsWith targetString) keybindingList
     in
     case maybeExactMatch of
         Just album ->
