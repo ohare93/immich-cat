@@ -39,7 +39,7 @@ type alias AssetCounts =
     , week : Int
     , month : Int
     , year : Int
-    , all : Int
+    , rest : Int
     }
 
 
@@ -111,19 +111,16 @@ calculateAssetCounts timeMode currentDate assetIds knownAssets =
                         { acc | year = acc.year + 1 }
 
                     else
-                        acc
+                        { acc | rest = acc.rest + 1 }
                 )
-                { today = 0, week = 0, month = 0, year = 0 }
+                { today = 0, week = 0, month = 0, year = 0, rest = 0 }
                 assets
-
-        allCount =
-            List.length assets
     in
     { today = categorizedAssets.today
     , week = categorizedAssets.week
     , month = categorizedAssets.month
     , year = categorizedAssets.year
-    , all = allCount
+    , rest = categorizedAssets.rest
     }
 
 
@@ -152,7 +149,7 @@ viewAssetCountsText counts timeMode =
                 ++ "/"
                 ++ String.fromInt counts.year
                 ++ "/"
-                ++ String.fromInt counts.all
+                ++ String.fromInt counts.rest
                 ++ modeIndicator
             )
         )
