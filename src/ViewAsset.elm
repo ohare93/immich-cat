@@ -156,6 +156,53 @@ viewAssetCountsText counts timeMode =
 
 
 
+-- Format time since upload as compact string like "4d", "1m 4d", or "1y 11m 30d"
+
+
+formatTimeSinceUpload : Date -> Date -> String
+formatTimeSinceUpload currentDate uploadDate =
+    let
+        totalDays =
+            Date.diff Date.Days uploadDate currentDate
+
+        years =
+            totalDays // 365
+
+        remainingDaysAfterYears =
+            remainderBy 365 totalDays
+
+        months =
+            remainingDaysAfterYears // 30
+
+        days =
+            remainderBy 30 remainingDaysAfterYears
+    in
+    if years > 0 then
+        if months > 0 then
+            if days > 0 then
+                String.fromInt years ++ "y " ++ String.fromInt months ++ "m " ++ String.fromInt days ++ "d"
+
+            else
+                String.fromInt years ++ "y " ++ String.fromInt months ++ "m"
+
+        else if days > 0 then
+            String.fromInt years ++ "y " ++ String.fromInt days ++ "d"
+
+        else
+            String.fromInt years ++ "y"
+
+    else if months > 0 then
+        if days > 0 then
+            String.fromInt months ++ "m " ++ String.fromInt days ++ "d"
+
+        else
+            String.fromInt months ++ "m"
+
+    else
+        String.fromInt days ++ "d"
+
+
+
 -- Main asset view function
 
 
@@ -254,8 +301,6 @@ viewImage asset apiPaths apiKey currentAssets knownAssets imageIndex =
                         ]
                         []
                     ]
-        , el [ width fill, height (px 20), Font.size 12 ] <|
-            text (asset.title ++ " - " ++ String.fromInt (Date.ordinalDay asset.fileCreatedAt))
         ]
 
 
@@ -311,8 +356,6 @@ viewVideo asset apiPaths apiKey currentAssets knownAssets imageIndex =
                         ]
                         []
                     ]
-        , el [ width fill, height (px 20), Font.size 12 ] <|
-            text (asset.title ++ " - " ++ String.fromInt (Date.ordinalDay asset.fileCreatedAt))
         ]
 
 
@@ -330,10 +373,15 @@ viewEditAsset apiPaths apiKey imageIndex totalAssets viewTitle currentAsset curr
         -- Calculate asset counts for current date
         counts =
             calculateAssetCounts timeMode currentDate currentAssets knownAssets
+
+        -- Format time since upload for current asset
+        timeSinceUpload =
+            formatTimeSinceUpload currentDate currentAsset.asset.fileCreatedAt
     in
     column [ width fill, height fill ]
         [ row [ width fill, alignTop, height (px 20) ]
             [ el [] (text (String.fromInt (imageIndex + 1) ++ "/" ++ String.fromInt totalAssets ++ "    " ++ viewTitle))
+            , el [ alignRight, Font.size 12, Font.color (Element.rgb 0.7 0.7 0.7) ] (text (timeSinceUpload ++ " - "))
             , viewAssetCountsText counts timeMode
             ]
         , el [ width fill, height fill ] <| viewAsset apiPaths apiKey currentAsset currentAssets knownAssets imageIndex
