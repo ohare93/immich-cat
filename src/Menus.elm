@@ -325,11 +325,17 @@ categorisationToString categorisation =
 orderToString : ImageOrder -> String
 orderToString order =
     case order of
-        Desc ->
-            "Newest"
+        CreatedDesc ->
+            "Newest Created"
 
-        Asc ->
-            "Oldest"
+        CreatedAsc ->
+            "Oldest Created"
+
+        ModifiedDesc ->
+            "Newest Modified"
+
+        ModifiedAsc ->
+            "Oldest Modified"
 
         Random ->
             "Random"
@@ -391,14 +397,20 @@ toggleCategorisation current =
 toggleOrder : ImageOrder -> ImageOrder
 toggleOrder current =
     case current of
-        Desc ->
-            Asc
+        CreatedDesc ->
+            CreatedAsc
 
-        Asc ->
+        CreatedAsc ->
+            ModifiedDesc
+
+        ModifiedDesc ->
+            ModifiedAsc
+
+        ModifiedAsc ->
             Random
 
         Random ->
-            Desc
+            CreatedDesc
 
 
 toggleStatus : StatusFilter -> StatusFilter
@@ -435,7 +447,7 @@ defaultTimelineConfig : TimelineConfig
 defaultTimelineConfig =
     { mediaType = AllMedia
     , categorisation = Uncategorised
-    , order = Desc
+    , order = CreatedDesc
     , status = AllStatuses
     }
 
@@ -453,7 +465,7 @@ defaultSearchConfig =
 defaultAlbumConfig : AlbumConfig
 defaultAlbumConfig =
     { mediaType = AllMedia
-    , order = Desc
+    , order = CreatedDesc
     , status = AllStatuses
     }
 

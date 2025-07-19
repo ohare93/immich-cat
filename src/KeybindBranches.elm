@@ -5,8 +5,6 @@ import Immich exposing (ImmichAlbum, ImmichAlbumId)
 import Regex
 
 
-
-
 generateBranches : String -> List String
 generateBranches albumName =
     let
@@ -86,8 +84,6 @@ generateBranches albumName =
                         |> List.map generateBranch
 
 
-
-
 createBranchDictionary : List ImmichAlbum -> Dict String ( ImmichAlbumId, Int )
 createBranchDictionary albums =
     let
@@ -132,11 +128,12 @@ createBranchDictionary albums =
     in
     finalDict
 
+
 resolvePrefixConflicts : Dict String ( ImmichAlbumId, Int ) -> Dict String ( ImmichAlbumId, Int )
 resolvePrefixConflicts branchDict =
-     let
+    let
         allBranches =
-             Dict.keys branchDict
+            Dict.keys branchDict
 
         findPrefixConflicts : List String -> List ( String, String )
         findPrefixConflicts branches =
@@ -192,9 +189,6 @@ resolvePrefixConflicts branchDict =
     resolvedDict
 
 
-
-
-
 removeDuplicates : List String -> List String
 removeDuplicates list =
     List.foldl
@@ -208,8 +202,6 @@ removeDuplicates list =
         []
         list
         |> List.reverse
-
-
 
 
 iterativeShortening : Dict String ( ImmichAlbumId, Int ) -> Dict String ( ImmichAlbumId, Int )
@@ -273,8 +265,7 @@ iterativeShortening branchDict =
 
                                         hasConflict =
                                             List.member shortenedKb allOtherKbs
-                                                || 
-                                                   List.any
+                                                || List.any
                                                     (\otherKb ->
                                                         (String.startsWith shortenedKb otherKb && shortenedKb /= otherKb)
                                                             || (String.startsWith otherKb shortenedKb && otherKb /= shortenedKb)
@@ -323,9 +314,6 @@ iterativeShortening branchDict =
         |> Dict.fromList
 
 
-
-
-
 assignFinalKeybinds : List ImmichAlbum -> Dict String ( ImmichAlbumId, Int ) -> Dict ImmichAlbumId String
 assignFinalKeybinds albums finishedDict =
     let
@@ -349,9 +337,6 @@ assignFinalKeybinds albums finishedDict =
             List.foldl assignKeybind Dict.empty keybindList
     in
     Dict.map (\_ ( keybind, _ ) -> keybind) albumKeybindMap
-
-
-
 
 
 processPriorityRound : Int -> List ImmichAlbum -> ( Dict ImmichAlbumId String, List ImmichAlbum )
@@ -387,9 +372,6 @@ processPriorityRound priority albums =
             List.filter (\album -> not (List.member album.id assignedAlbumIds)) albums
     in
     ( assignedKeybindings, remainingAlbums )
-
-
-
 
 
 generateAlbumKeybindings : List ImmichAlbum -> Dict ImmichAlbumId String

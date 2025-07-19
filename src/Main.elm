@@ -139,7 +139,7 @@ init flags =
       , currentAssetsSource = NoAssets
       , currentDateMillis = flags.currentDateMillis
       , imageIndex = 0
-      , imageSearchConfig = { order = Desc, categorisation = Uncategorised, mediaType = AllMedia, status = AllStatuses }
+      , imageSearchConfig = { order = CreatedDesc, categorisation = Uncategorised, mediaType = AllMedia, status = AllStatuses }
       , timeViewMode = Absolute
 
       -- Immich fields
@@ -177,11 +177,17 @@ createDetailedViewTitle assetSource =
             let
                 orderText =
                     case config.order of
-                        Desc ->
-                            "[desc]"
+                        CreatedDesc ->
+                            "[created desc]"
 
-                        Asc ->
-                            "[asc]"
+                        CreatedAsc ->
+                            "[created asc]"
+
+                        ModifiedDesc ->
+                            "[modified desc]"
+
+                        ModifiedAsc ->
+                            "[modified asc]"
 
                         Random ->
                             "[random]"
@@ -228,11 +234,17 @@ createDetailedViewTitle assetSource =
             let
                 orderText =
                     case config.order of
-                        Desc ->
-                            "[desc]"
+                        CreatedDesc ->
+                            "[created desc]"
 
-                        Asc ->
-                            "[asc]"
+                        CreatedAsc ->
+                            "[created asc]"
+
+                        ModifiedDesc ->
+                            "[modified desc]"
+
+                        ModifiedAsc ->
+                            "[modified asc]"
 
                         Random ->
                             "[random]"
@@ -260,7 +272,7 @@ createDetailedViewTitle assetSource =
                             " [archived]"
 
                 hasFilters =
-                    config.mediaType /= AllMedia || config.status /= AllStatuses || config.order /= Desc
+                    config.mediaType /= AllMedia || config.status /= AllStatuses || config.order /= CreatedDesc
             in
             if hasFilters then
                 "Album \"" ++ album.albumName ++ "\"" ++ statusText ++ mediaText ++ " " ++ orderText
@@ -1179,17 +1191,21 @@ update msg model =
                                         |> filterByMediaType mediaType
                                         |> filterByStatus status
                                         |> (case order of
-                                                Asc ->
+                                                CreatedAsc ->
                                                     List.sortBy (.fileCreatedAt >> Date.toRataDie)
 
-                                                -- Sort by date ascending
-                                                Desc ->
+                                                CreatedDesc ->
                                                     List.sortBy (.fileCreatedAt >> Date.toRataDie) >> List.reverse
 
-                                                -- Sort by date descending
+                                                ModifiedAsc ->
+                                                    List.sortBy (.fileModifiedAt >> Date.toRataDie)
+
+                                                ModifiedDesc ->
+                                                    List.sortBy (.fileModifiedAt >> Date.toRataDie) >> List.reverse
+
                                                 Random ->
                                                     identity
-                                            -- Keep riginal album order for now
+                                            -- Keep original album order for now
                                            )
 
                                 updatedModel =

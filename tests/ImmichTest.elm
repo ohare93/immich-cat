@@ -34,6 +34,7 @@ generateTestAsset id fileName =
     , isArchived = False
     , albumMembership = []
     , fileCreatedAt = Date.fromRataDie 737790 -- January 1, 2020
+    , fileModifiedAt = Date.fromRataDie 737791 -- January 2, 2020
     , thumbhash = Nothing
     , duration = Nothing
     }
@@ -70,11 +71,11 @@ suite =
                             Encode.object [ ( "ids", Encode.list Encode.string assetIds ) ]
                     in
                     Expect.equal (Encode.encode 0 result) (Encode.encode 0 expected)
-            , test "makeSearchBody with Desc order and All categorisation" <|
+            , test "makeSearchBody with CreatedDesc order and All categorisation" <|
                 \_ ->
                     let
                         config =
-                            { order = Desc, categorisation = All, mediaType = AllMedia, status = AllStatuses }
+                            { order = CreatedDesc, categorisation = All, mediaType = AllMedia, status = AllStatuses }
 
                         result =
                             makeSearchBody config 1000 1
@@ -82,16 +83,17 @@ suite =
                         expected =
                             Encode.object
                                 [ ( "order", Encode.string "desc" )
+                                , ( "orderBy", Encode.string "fileCreatedAt" )
                                 , ( "size", Encode.int 1000 )
                                 , ( "page", Encode.int 1 )
                                 ]
                     in
                     Expect.equal (Encode.encode 0 result) (Encode.encode 0 expected)
-            , test "makeSearchBody with Asc order and Uncategorised" <|
+            , test "makeSearchBody with CreatedAsc order and Uncategorised" <|
                 \_ ->
                     let
                         config =
-                            { order = Asc, categorisation = Uncategorised, mediaType = AllMedia, status = AllStatuses }
+                            { order = CreatedAsc, categorisation = Uncategorised, mediaType = AllMedia, status = AllStatuses }
 
                         result =
                             makeSearchBody config 1000 1
@@ -99,6 +101,7 @@ suite =
                         expected =
                             Encode.object
                                 [ ( "order", Encode.string "asc" )
+                                , ( "orderBy", Encode.string "fileCreatedAt" )
                                 , ( "isNotInAlbum", Encode.bool True )
                                 , ( "size", Encode.int 1000 )
                                 , ( "page", Encode.int 1 )
@@ -166,7 +169,8 @@ suite =
                             "originalMimeType": "image/jpeg",
                             "isFavorite": true,
                             "isArchived": false,
-                            "fileCreatedAt": "2020-01-01"
+                            "fileCreatedAt": "2020-01-01",
+                            "fileModifiedAt": "2020-01-02"
                         }
                         """
 
@@ -202,7 +206,8 @@ suite =
                                         "originalMimeType": "image/jpeg",
                                         "isFavorite": false,
                                         "isArchived": false,
-                                        "fileCreatedAt": "2020-01-01"
+                                        "fileCreatedAt": "2020-01-01",
+                                        "fileModifiedAt": "2020-01-02"
                                     }
                                 ]
                             }
@@ -372,6 +377,7 @@ suite =
                                 , ( "isFavorite", Encode.bool asset.isFavourite )
                                 , ( "isArchived", Encode.bool asset.isArchived )
                                 , ( "fileCreatedAt", Encode.string "2020-01-01" )
+                                , ( "fileModifiedAt", Encode.string "2020-01-02" )
                                 ]
 
                         decoded =

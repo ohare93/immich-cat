@@ -23,6 +23,7 @@ createTestAsset id title =
     , isArchived = False
     , albumMembership = []
     , fileCreatedAt = Date.fromRataDie 1
+    , fileModifiedAt = Date.fromRataDie 1
     , thumbhash = Nothing
     , duration = Nothing
     }

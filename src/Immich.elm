@@ -9,8 +9,10 @@ import Url.Builder exposing (crossOrigin, string)
 
 
 type ImageOrder
-    = Desc
-    | Asc
+    = CreatedDesc
+    | CreatedAsc
+    | ModifiedDesc
+    | ModifiedAsc
     | Random
 
 
@@ -109,6 +111,7 @@ type alias ImmichAsset =
     , isArchived : Bool
     , albumMembership : List ImmichAlbumId
     , fileCreatedAt : Date
+    , fileModifiedAt : Date
     , thumbhash : Maybe String
     , duration : Maybe String -- Duration in HH:MM:SS.mmm format for video assets
     }
@@ -228,11 +231,25 @@ makeSearchBodyWithAlbum config maybeAlbumId size page =
     let
         orderField =
             case config.order of
-                Desc ->
-                    [ ( "order", Encode.string "desc" ) ]
+                CreatedDesc ->
+                    [ ( "order", Encode.string "desc" )
+                    , ( "orderBy", Encode.string "fileCreatedAt" )
+                    ]
 
-                Asc ->
-                    [ ( "order", Encode.string "asc" ) ]
+                CreatedAsc ->
+                    [ ( "order", Encode.string "asc" )
+                    , ( "orderBy", Encode.string "fileCreatedAt" )
+                    ]
+
+                ModifiedDesc ->
+                    [ ( "order", Encode.string "desc" )
+                    , ( "orderBy", Encode.string "fileModifiedAt" )
+                    ]
+
+                ModifiedAsc ->
+                    [ ( "order", Encode.string "asc" )
+                    , ( "orderBy", Encode.string "fileModifiedAt" )
+                    ]
 
                 Random ->
                     []
@@ -592,7 +609,7 @@ dateDecoder =
 imageDecoder : Decode.Decoder ImmichAsset
 imageDecoder =
     Decode.map8
-        (\id path title mimeType isFavorite isArchived albumMembership fileCreatedAt ->
+        (\id path title mimeType isFavorite isArchived albumMembership ( fileCreatedAt, fileModifiedAt ) ->
             { id = id
             , path = path
             , title = title
@@ -601,6 +618,7 @@ imageDecoder =
             , isArchived = isArchived
             , albumMembership = albumMembership
             , fileCreatedAt = fileCreatedAt
+            , fileModifiedAt = fileModifiedAt
             , thumbhash = Nothing
             , duration = Nothing
             }
@@ -612,7 +630,10 @@ imageDecoder =
         (Decode.field "isFavorite" Decode.bool)
         (Decode.field "isArchived" Decode.bool)
         (Decode.succeed [])
-        (Decode.field "fileCreatedAt" dateDecoder)
+        (Decode.map2 Tuple.pair
+            (Decode.field "fileCreatedAt" dateDecoder)
+            (Decode.field "fileModifiedAt" dateDecoder)
+        )
         |> Decode.andThen
             (\asset ->
                 Decode.map2 (\thumbhash duration -> { asset | thumbhash = thumbhash, duration = duration })

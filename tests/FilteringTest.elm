@@ -31,7 +31,7 @@ suite =
                     Expect.all
                         [ \() -> Expect.equal config.mediaType AllMedia
                         , \() -> Expect.equal config.categorisation Uncategorised
-                        , \() -> Expect.equal config.order Desc
+                        , \() -> Expect.equal config.order CreatedDesc
                         , \() -> Expect.equal config.status AllStatuses
                         ]
                         ()
@@ -57,7 +57,7 @@ suite =
                     in
                     Expect.all
                         [ \() -> Expect.equal config.mediaType AllMedia
-                        , \() -> Expect.equal config.order Desc
+                        , \() -> Expect.equal config.order CreatedDesc
                         , \() -> Expect.equal config.status AllStatuses
                         ]
                         ()

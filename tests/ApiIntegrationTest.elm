@@ -29,7 +29,8 @@ mockAlbumResponse =
                 "originalMimeType": "image/jpeg",
                 "isFavorite": false,
                 "isArchived": false,
-                "fileCreatedAt": "2023-07-15"
+                "fileCreatedAt": "2023-07-15",
+                "fileModifiedAt": "2023-07-16"
             }
         ],
         "createdAt": "2023-07-15"
@@ -58,7 +59,8 @@ mockNestedAssetsResponse =
                 "originalMimeType": "image/jpeg",
                 "isFavorite": true,
                 "isArchived": false,
-                "fileCreatedAt": "2023-07-15"
+                "fileCreatedAt": "2023-07-15",
+                "fileModifiedAt": "2023-07-17"
             },
             {
                 "id": "nested-asset-2",
@@ -67,7 +69,8 @@ mockNestedAssetsResponse =
                 "originalMimeType": "image/jpeg", 
                 "isFavorite": false,
                 "isArchived": true,
-                "fileCreatedAt": "2023-07-16"
+                "fileCreatedAt": "2023-07-16",
+                "fileModifiedAt": "2023-07-18"
             }
         ]
     }
@@ -90,7 +93,8 @@ mockSingleAlbumResponse =
             "originalMimeType": "image/jpeg",
             "isFavorite": false,
             "isArchived": false,
-            "fileCreatedAt": "2023-08-01"
+            "fileCreatedAt": "2023-08-01",
+            "fileModifiedAt": "2023-08-02"
         }
     ],
     "createdAt": "2023-08-01"
@@ -261,11 +265,11 @@ suite =
                 \_ ->
                     let
                         testCases =
-                            [ ( { order = Desc, categorisation = All, mediaType = AllMedia, status = AllStatuses }
-                              , """{"order":"desc","size":1000,"page":1}"""
+                            [ ( { order = CreatedDesc, categorisation = All, mediaType = AllMedia, status = AllStatuses }
+                              , """{"order":"desc","orderBy":"fileCreatedAt","size":1000,"page":1}"""
                               )
-                            , ( { order = Asc, categorisation = Uncategorised, mediaType = AllMedia, status = AllStatuses }
-                              , """{"order":"asc","isNotInAlbum":true,"size":1000,"page":1}"""
+                            , ( { order = CreatedAsc, categorisation = Uncategorised, mediaType = AllMedia, status = AllStatuses }
+                              , """{"order":"asc","orderBy":"fileCreatedAt","isNotInAlbum":true,"size":1000,"page":1}"""
                               )
                             , ( { order = Random, categorisation = All, mediaType = AllMedia, status = AllStatuses }
                               , """{"size":1000,"page":1}"""
