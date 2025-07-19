@@ -97,6 +97,7 @@
           super();
           this.config = config;
           this.assetBlob = null;
+          this.currentVideo = null; // Track current video element for cleanup
         }
 
         connectedCallback() {
@@ -117,6 +118,8 @@
             this.assetUrl = newValue;
             // Clear existing blob when URL changes so new asset can load
             this.assetBlob = null;
+            // Stop and cleanup any existing video
+            this.cleanupCurrentVideo();
           } else if (name === "preload-urls") {
             this.preloadList = newValue;
           }
@@ -185,6 +188,66 @@
             this.innerHTML = this.config.renderLoading();
           }
         }
+
+        cleanupCurrentVideo() {
+          if (this.currentVideo) {
+            this.currentVideo.pause();
+            this.currentVideo.currentTime = 0;
+            this.currentVideo.src = "";
+            this.currentVideo.load(); // Reset the video element
+            this.currentVideo = null;
+          }
+        }
+
+        disconnectedCallback() {
+          // Clean up when element is removed from DOM
+          this.cleanupCurrentVideo();
+        }
+
+        showVideoError(message) {
+          this.innerHTML = `
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 200px; background: #ffebee; border: 2px solid #f44336; border-radius: 8px; padding: 20px; margin: 10px;">
+              <div style="color: #d32f2f; font-size: 18px; margin-bottom: 10px;">⚠️ Video Error</div>
+              <div style="color: #666; text-align: center; font-size: 14px; max-width: 400px;">${message}</div>
+              <div style="color: #999; text-align: center; font-size: 12px; margin-top: 10px;">
+                This video may have compatibility issues with this platform.
+              </div>
+            </div>
+          `;
+        }
+
+        showVideoWarning(message) {
+          // Create a warning overlay on top of the video
+          const warningDiv = document.createElement('div');
+          warningDiv.style.cssText = `
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(255, 152, 0, 0.9);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            max-width: 200px;
+            z-index: 1000;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+          `;
+          warningDiv.textContent = `⚠️ ${message}`;
+          
+          // Position the parent element relatively if not already
+          if (this.style.position !== 'relative') {
+            this.style.position = 'relative';
+          }
+          
+          this.appendChild(warningDiv);
+          
+          // Auto-hide warning after 8 seconds
+          setTimeout(() => {
+            if (warningDiv.parentNode) {
+              warningDiv.remove();
+            }
+          }, 8000);
+        }
       }
 
       customElements.define(
@@ -224,13 +287,27 @@
                 </div>
               `,
               postRender: (element) => {
-                // Force autoplay after render
-                setTimeout(() => {
-                  const video = element.querySelector("video");
-                  if (video) {
-                    video.play().catch(console.error);
-                  }
-                }, 100);
+                // Clean up any previous video first
+                element.cleanupCurrentVideo();
+                
+                // Use event-based approach instead of setTimeout for better QuteBrowser compatibility
+                const video = element.querySelector("video");
+                if (video) {
+                  // Track this video for cleanup
+                  element.currentVideo = video;
+                  
+                  video.addEventListener('loadeddata', () => {
+                    // Only try manual play if autoplay didn't work
+                    if (video.paused) {
+                      video.play().catch(console.error);
+                    }
+                  });
+                  
+                  // Log errors but don't show user warnings
+                  video.addEventListener('error', (e) => {
+                    console.error('Video error:', e.target.error);
+                  });
+                }
               },
             });
           }
