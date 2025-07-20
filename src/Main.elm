@@ -829,6 +829,38 @@ handleAssetResult assetResult model =
             -- Update grid state
             ( { model | userMode = ViewAssets (GridView gridState) }, Cmd.none )
 
+        AssetBulkFavorite assetIds isFavorite ->
+            -- Handle bulk favorite toggle
+            let
+                bulkCmd =
+                    Immich.bulkUpdateAssetsFavorite model.immichApiPaths assetIds isFavorite |> Cmd.map ImmichMsg
+            in
+            ( model, bulkCmd )
+
+        AssetBulkArchive assetIds isArchived ->
+            -- Handle bulk archive toggle
+            let
+                bulkCmd =
+                    Immich.bulkUpdateAssetsArchived model.immichApiPaths assetIds isArchived |> Cmd.map ImmichMsg
+            in
+            ( model, bulkCmd )
+
+        AssetBulkAddToAlbum assetIds albumId ->
+            -- Handle bulk add to album
+            let
+                bulkCmd =
+                    Immich.albumChangeAssetMembership model.immichApiPaths albumId assetIds True |> Cmd.map ImmichMsg
+            in
+            ( model, bulkCmd )
+
+        AssetBulkRemoveFromAlbum assetIds albumId ->
+            -- Handle bulk remove from album
+            let
+                bulkCmd =
+                    Immich.albumChangeAssetMembership model.immichApiPaths albumId assetIds False |> Cmd.map ImmichMsg
+            in
+            ( model, bulkCmd )
+
 
 
 -- Helper to convert UpdateMenus.AssetSource to Main.AssetSource
@@ -866,7 +898,7 @@ update msg model =
                     ( { model | configValidationMessage = Just errorMsg }, Cmd.none )
 
                 Nothing ->
-                    ( { model 
+                    ( { model
                         | configValidationMessage = Just "Saving configuration..."
                         , configuredApiUrl = Just url
                         , configuredApiKey = Just apiKey
@@ -877,7 +909,7 @@ update msg model =
                     , Cmd.batch
                         [ saveToStorage ( "immichApiUrl", url )
                         , saveToStorage ( "immichApiKey", apiKey )
-                        , Process.sleep 1000 
+                        , Process.sleep 1000
                             |> Task.perform (always (ConfigLoaded "saveSuccess" (Just "✅ Configuration saved successfully!")))
                         ]
                     )
@@ -953,8 +985,9 @@ update msg model =
 
                 autoClearCmd =
                     if key == "saveSuccess" && maybeValue /= Nothing then
-                        Process.sleep 3000 
+                        Process.sleep 3000
                             |> Task.perform (always (ConfigLoaded "clearSuccess" Nothing))
+
                     else
                         Cmd.none
             in
@@ -1421,6 +1454,17 @@ update msg model =
 
                         Immich.AssetUpdated (Ok updatedAsset) ->
                             { model | knownAssets = Dict.insert updatedAsset.id updatedAsset model.knownAssets }
+
+                        Immich.BulkAssetsUpdated (Ok updatedAssets) ->
+                            -- Update all bulk updated assets in knownAssets
+                            let
+                                updatedKnownAssets =
+                                    List.foldl
+                                        (\asset acc -> Dict.insert asset.id asset acc)
+                                        model.knownAssets
+                                        updatedAssets
+                            in
+                            { model | knownAssets = updatedKnownAssets }
 
                         Immich.AlbumsFetched (Err error) ->
                             { model | albumsLoadState = ImmichLoadError error }

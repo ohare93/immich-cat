@@ -10,7 +10,10 @@ module ViewGrid exposing
 
 import Dict exposing (Dict)
 import Element exposing (Element, column, el, fill, height, html, paddingXY, row, spacing, text, width)
+import Element.Background as Background
+import Element.Border as Border
 import Element.Font as Font
+import Element.Input as Input
 import Html exposing (Html)
 import Html.Attributes
 import Html.Events
@@ -40,6 +43,10 @@ type GridMsg
     | GridToggleMultiSelect
     | GridSelectAll
     | GridClearSelection
+    | GridBulkFavorite Bool
+    | GridBulkArchive Bool
+    | GridBulkAddToAlbum
+    | GridBulkRemoveFromAlbum
 
 
 type alias GridItem =
@@ -100,6 +107,18 @@ updateGridState msg state assets =
 
         GridClearSelection ->
             { state | selectedAssets = Dict.empty }
+
+        GridBulkFavorite _ ->
+            state
+
+        GridBulkArchive _ ->
+            state
+
+        GridBulkAddToAlbum ->
+            state
+
+        GridBulkRemoveFromAlbum ->
+            state
 
 
 
@@ -233,6 +252,23 @@ handleGridKeyPress key state assets =
         " " ->
             toggleSelection state
 
+        "Tab" ->
+            { state | multiSelectMode = not state.multiSelectMode }
+
+        "a" ->
+            if state.multiSelectMode then
+                { state | selectedAssets = Dict.fromList (List.map (\asset -> ( asset.id, True )) assets) }
+
+            else
+                state
+
+        "c" ->
+            if state.multiSelectMode then
+                { state | selectedAssets = Dict.empty }
+
+            else
+                state
+
         _ ->
             state
 
@@ -261,17 +297,48 @@ viewGrid apiPaths apiKey state assets toMsg =
 
                     else
                         "Single-select"
+
+                bulkActionsRow =
+                    if selectedCount > 0 then
+                        row [ spacing 10, paddingXY 0 5 ]
+                            [ viewBulkActionButton "Favorite" (toMsg (GridBulkFavorite True))
+                            , viewBulkActionButton "Unfavorite" (toMsg (GridBulkFavorite False))
+                            , viewBulkActionButton "Archive" (toMsg (GridBulkArchive True))
+                            , viewBulkActionButton "Unarchive" (toMsg (GridBulkArchive False))
+                            , viewBulkActionButton "Add to Album" (toMsg GridBulkAddToAlbum)
+                            , viewBulkActionButton "Remove from Album" (toMsg GridBulkRemoveFromAlbum)
+                            ]
+
+                    else
+                        Element.none
             in
-            row [ width fill, paddingXY 10 5, spacing 20 ]
-                [ el [ Font.size 14 ] (text (modeText ++ " mode"))
-                , el [ Font.size 14 ] (text (String.fromInt selectedCount ++ " of " ++ String.fromInt totalCount ++ " selected"))
-                , el [ Font.size 12, Font.color (usefulColours "darkgrey") ] (text "Press Space to select, Enter to view")
+            column [ width fill, spacing 5 ]
+                [ row [ width fill, paddingXY 10 5, spacing 20 ]
+                    [ el [ Font.size 14 ] (text (modeText ++ " mode"))
+                    , el [ Font.size 14 ] (text (String.fromInt selectedCount ++ " of " ++ String.fromInt totalCount ++ " selected"))
+                    , el [ Font.size 12, Font.color (usefulColours "darkgrey") ] (text "Press Space to select, Enter to view, Tab for multi-select")
+                    ]
+                , bulkActionsRow
                 ]
     in
     column [ width fill, height fill, spacing 5 ]
         [ headerInfo
         , el [ width fill, height fill ] (viewGridItems apiPaths apiKey state gridItems toMsg)
         ]
+
+
+viewBulkActionButton : String -> msg -> Element msg
+viewBulkActionButton label onPress =
+    Input.button
+        [ Background.color (usefulColours "lightblue")
+        , Font.color (usefulColours "white")
+        , paddingXY 12 6
+        , Border.rounded 4
+        , Font.size 12
+        ]
+        { onPress = Just onPress
+        , label = text label
+        }
 
 
 createGridItem : GridState -> Int -> ImmichAsset -> GridItem

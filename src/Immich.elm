@@ -57,6 +57,7 @@ type alias ImmichApiPaths =
     , putAlbumAssets : ImmichAlbumId -> String
     , createAlbum : String
     , updateAsset : ImmichAssetId -> String
+    , bulkUpdateAssets : String
     , apiKey : String
     }
 
@@ -90,6 +91,7 @@ getImmichApiPaths baseUrl immichApiKey =
     , putAlbumAssets = \id -> joinUrl baseUrl [ "api", "albums", id, "assets" ]
     , createAlbum = joinUrl baseUrl [ "api", "albums" ]
     , updateAsset = \id -> joinUrl baseUrl [ "api", "assets", id ]
+    , bulkUpdateAssets = joinUrl baseUrl [ "api", "assets" ]
     , apiKey = immichApiKey
     }
 
@@ -506,6 +508,40 @@ updateAssetArchived apiPaths assetId isArchived =
         AssetUpdated
 
 
+bulkUpdateAssetsFavorite : ImmichApiPaths -> List ImmichAssetId -> Bool -> Cmd Msg
+bulkUpdateAssetsFavorite apiPaths assetIds isFavorite =
+    let
+        body =
+            Encode.object
+                [ ( "ids", Encode.list Encode.string assetIds )
+                , ( "isFavorite", Encode.bool isFavorite )
+                ]
+    in
+    makePutRequest
+        apiPaths.apiKey
+        apiPaths.bulkUpdateAssets
+        body
+        (Decode.list imageDecoder)
+        BulkAssetsUpdated
+
+
+bulkUpdateAssetsArchived : ImmichApiPaths -> List ImmichAssetId -> Bool -> Cmd Msg
+bulkUpdateAssetsArchived apiPaths assetIds isArchived =
+    let
+        body =
+            Encode.object
+                [ ( "ids", Encode.list Encode.string assetIds )
+                , ( "isArchived", Encode.bool isArchived )
+                ]
+    in
+    makePutRequest
+        apiPaths.apiKey
+        apiPaths.bulkUpdateAssets
+        body
+        (Decode.list imageDecoder)
+        BulkAssetsUpdated
+
+
 albumDecoder : Decode.Decoder ImmichAlbum
 albumDecoder =
     Decode.map5 ImmichAlbum
@@ -696,4 +732,5 @@ type Msg
     | AlbumAssetsChanged (Result Http.Error ())
     | AlbumCreated (Result Http.Error ImmichAlbum)
     | AssetUpdated (Result Http.Error ImmichAsset)
+    | BulkAssetsUpdated (Result Http.Error (List ImmichAsset))
     | AlbumFetchedForFiltering ImageOrder MediaTypeFilter StatusFilter (Result Http.Error ImmichAlbum)

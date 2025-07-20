@@ -57,6 +57,10 @@ type AssetResult msg
     | AssetSwitchToGridView
     | AssetSwitchToDetailView ImmichAssetId
     | AssetGridUpdate GridState
+    | AssetBulkFavorite (List ImmichAssetId) Bool
+    | AssetBulkArchive (List ImmichAssetId) Bool
+    | AssetBulkAddToAlbum (List ImmichAssetId) ImmichAlbumId
+    | AssetBulkRemoveFromAlbum (List ImmichAssetId) ImmichAlbumId
 
 
 
@@ -862,11 +866,44 @@ handleGridViewMessage gridMsg gridState currentAssets knownAssets =
 
         updatedGridState =
             ViewGrid.updateGridState gridMsg gridState assets
+
+        selectedAssetIds =
+            Dict.keys updatedGridState.selectedAssets
     in
     case gridMsg of
         ViewGrid.GridItemClicked assetId ->
             -- Single click switches to detail view
             AssetSwitchToDetailView assetId
+
+        ViewGrid.GridBulkFavorite isFavorite ->
+            if List.isEmpty selectedAssetIds then
+                StayInAssets (GridView updatedGridState)
+
+            else
+                AssetBulkFavorite selectedAssetIds isFavorite
+
+        ViewGrid.GridBulkArchive isArchived ->
+            if List.isEmpty selectedAssetIds then
+                StayInAssets (GridView updatedGridState)
+
+            else
+                AssetBulkArchive selectedAssetIds isArchived
+
+        ViewGrid.GridBulkAddToAlbum ->
+            if List.isEmpty selectedAssetIds then
+                StayInAssets (GridView updatedGridState)
+
+            else
+                -- Switch to album selection for bulk add
+                StayInAssets (SelectAlbumInput (ViewAlbums.getAlbumSearch "" Dict.empty))
+
+        ViewGrid.GridBulkRemoveFromAlbum ->
+            if List.isEmpty selectedAssetIds then
+                StayInAssets (GridView updatedGridState)
+
+            else
+                -- Switch to album selection for bulk remove
+                StayInAssets (SelectAlbumInput (ViewAlbums.getAlbumSearch "" Dict.empty))
 
         _ ->
             StayInAssets (GridView updatedGridState)
