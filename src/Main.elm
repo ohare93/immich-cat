@@ -31,6 +31,18 @@ import ViewGrid
 port openUrl : String -> Cmd msg
 
 
+port saveToStorage : ( String, String ) -> Cmd msg
+
+
+port loadFromStorage : String -> Cmd msg
+
+
+port clearStorage : () -> Cmd msg
+
+
+port storageLoaded : (( String, Maybe String ) -> msg) -> Sub msg
+
+
 type Msg
     = KeyPress String
     | ImmichMsg Immich.Msg
@@ -54,6 +66,13 @@ type Msg
     | LoadAlbumAssets ImmichAlbum
     | SearchInputFocused
     | SearchInputBlurred
+      -- Config-related messages
+    | SaveConfig String String
+    | LoadConfig String
+    | ConfigLoaded String (Maybe String)
+    | ClearConfig
+    | UpdateSettingsApiUrl String
+    | UpdateSettingsApiKey String
       -- Module-specific messages
     | MenuMsg MenuMsg
     | AlbumMsg AlbumMsg
@@ -76,6 +95,13 @@ type alias Model =
     , imageSearchConfig : ImageSearchConfig
     , timeViewMode : TimeViewMode
     , reloadFeedback : Maybe String
+
+    -- Configuration fields
+    , configuredApiUrl : Maybe String
+    , configuredApiKey : Maybe String
+    , settingsApiUrl : String
+    , settingsApiKey : String
+    , configValidationMessage : Maybe String
 
     -- Immich fields
     , currentAssets : List ImmichAssetId
@@ -148,6 +174,13 @@ init flags =
       , timeViewMode = Absolute
       , reloadFeedback = Nothing
 
+      -- Configuration fields
+      , configuredApiUrl = Nothing
+      , configuredApiKey = Nothing
+      , settingsApiUrl = flags.immichApiUrl
+      , settingsApiKey = flags.immichApiKey
+      , configValidationMessage = Nothing
+
       -- Immich fields
       , currentAssets = []
       , knownAssets = Dict.empty
@@ -171,8 +204,10 @@ init flags =
             , maxAssetsToFetch = 10000 -- Default limit of 10,000 assets
             }
       }
-      -- , Cmd.none
-    , getAllAlbums flags.immichApiUrl flags.immichApiKey |> Cmd.map ImmichMsg
+    , Cmd.batch
+        [ loadFromStorage "immichApiUrl"
+        , loadFromStorage "immichApiKey"
+        ]
     )
 
 
@@ -384,7 +419,7 @@ viewMenuState model menuState =
             Menus.viewAlbumView model album config LoadAlbumAssets
 
         Settings ->
-            Menus.viewSettings model
+            Menus.viewSettings model UpdateSettingsApiUrl UpdateSettingsApiKey SaveConfig ClearConfig
 
 
 viewPaginationStatus : PaginationState -> Element Msg
@@ -821,6 +856,123 @@ update msg model =
         ClearReloadFeedback ->
             ( { model | reloadFeedback = Nothing }, Cmd.none )
 
+        SaveConfig url apiKey ->
+            let
+                validation =
+                    validateConfig url apiKey
+            in
+            case validation of
+                Just errorMsg ->
+                    ( { model | configValidationMessage = Just errorMsg }, Cmd.none )
+
+                Nothing ->
+                    ( { model 
+                        | configValidationMessage = Just "Saving configuration..."
+                        , configuredApiUrl = Just url
+                        , configuredApiKey = Just apiKey
+                        , baseUrl = url
+                        , apiKey = apiKey
+                        , immichApiPaths = getImmichApiPaths url apiKey
+                      }
+                    , Cmd.batch
+                        [ saveToStorage ( "immichApiUrl", url )
+                        , saveToStorage ( "immichApiKey", apiKey )
+                        , Process.sleep 1000 
+                            |> Task.perform (always (ConfigLoaded "saveSuccess" (Just "✅ Configuration saved successfully!")))
+                        ]
+                    )
+
+        LoadConfig key ->
+            ( model, loadFromStorage key )
+
+        ConfigLoaded key maybeValue ->
+            let
+                updatedModel =
+                    case key of
+                        "immichApiUrl" ->
+                            { model
+                                | configuredApiUrl = maybeValue
+                                , settingsApiUrl = maybeValue |> Maybe.withDefault model.settingsApiUrl
+                                , configValidationMessage =
+                                    if maybeValue /= Nothing then
+                                        Just "✅ Configuration saved successfully!"
+
+                                    else
+                                        Nothing
+                            }
+
+                        "immichApiKey" ->
+                            { model
+                                | configuredApiKey = maybeValue
+                                , settingsApiKey = maybeValue |> Maybe.withDefault model.settingsApiKey
+                                , configValidationMessage =
+                                    if maybeValue /= Nothing then
+                                        Just "✅ Configuration loaded from storage"
+
+                                    else
+                                        Nothing
+                            }
+
+                        "saveSuccess" ->
+                            { model
+                                | configValidationMessage = maybeValue
+                            }
+
+                        "clearSuccess" ->
+                            { model
+                                | configValidationMessage = Nothing
+                            }
+
+                        _ ->
+                            model
+
+                -- If we have both URL and API key configured, initialize Immich
+                shouldInitializeImmich =
+                    case ( updatedModel.configuredApiUrl, updatedModel.configuredApiKey ) of
+                        ( Just url, Just apiKey ) ->
+                            True
+
+                        _ ->
+                            False
+
+                -- Use configured values if available, otherwise fall back to flags
+                finalUrl =
+                    updatedModel.configuredApiUrl
+                        |> Maybe.withDefault model.baseUrl
+
+                finalApiKey =
+                    updatedModel.configuredApiKey
+                        |> Maybe.withDefault model.apiKey
+
+                finalModel =
+                    { updatedModel
+                        | baseUrl = finalUrl
+                        , apiKey = finalApiKey
+                        , immichApiPaths = getImmichApiPaths finalUrl finalApiKey
+                    }
+
+                autoClearCmd =
+                    if key == "saveSuccess" && maybeValue /= Nothing then
+                        Process.sleep 3000 
+                            |> Task.perform (always (ConfigLoaded "clearSuccess" Nothing))
+                    else
+                        Cmd.none
+            in
+            if shouldInitializeImmich && model.albumsLoadState == ImmichLoading then
+                ( finalModel, Cmd.batch [ getAllAlbums finalUrl finalApiKey |> Cmd.map ImmichMsg, autoClearCmd ] )
+
+            else
+                ( finalModel, autoClearCmd )
+
+        ClearConfig ->
+            ( { model | configuredApiUrl = Nothing, configuredApiKey = Nothing }, clearStorage () )
+
+        UpdateSettingsApiUrl url ->
+            ( { model | settingsApiUrl = url, configValidationMessage = Nothing }, Cmd.none )
+
+        UpdateSettingsApiKey apiKey ->
+            ( { model | settingsApiKey = apiKey, configValidationMessage = Nothing }, Cmd.none )
+
         SelectAlbum album ->
             case model.userMode of
                 ViewAssets assetState ->
@@ -865,7 +1017,15 @@ update msg model =
                     handleAssetResult (updateAsset (AssetKeyPress key) assetState model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets model.knownAssets) model
 
                 LoadingAssets _ ->
-                    ( model, Cmd.none )
+                    case key of
+                        "Escape" ->
+                            ( { model | userMode = MainMenu MainMenuHome }, Cmd.none )
+
+                        "g" ->
+                            ( { model | userMode = MainMenu Settings }, Cmd.none )
+
+                        _ ->
+                            ( model, Cmd.none )
 
         WindowResize width height ->
             let
@@ -1742,6 +1902,28 @@ appendFetchedAssets newAssets model =
 
 
 
+-- VALIDATION --
+
+
+validateConfig : String -> String -> Maybe String
+validateConfig url apiKey =
+    if String.isEmpty (String.trim url) then
+        Just "URL cannot be empty"
+
+    else if String.isEmpty (String.trim apiKey) then
+        Just "API key cannot be empty"
+
+    else if not (String.startsWith "http" url) then
+        Just "URL must start with http:// or https://"
+
+    else if String.length apiKey < 10 then
+        Just "API key appears to be too short"
+
+    else
+        Nothing
+
+
+
 -- SUBSCRIPTIONS --
 
 
@@ -1750,6 +1932,7 @@ subscriptions _ =
     Sub.batch
         [ onKeyDown (Decode.map KeyPress (Decode.field "key" Decode.string))
         , onResize WindowResize
+        , storageLoaded (\( key, value ) -> ConfigLoaded key value)
         ]
 
 

@@ -485,9 +485,81 @@
         },
       });
 
+      // Diagnostic logging
+      console.log('ENV available:', !!window.ENV);
+      console.log('storageAPI available:', !!window.storageAPI);
+      console.log('Current location:', window.location.href);
+
+      // Fallback storageAPI if not injected by dev server
+      if (!window.storageAPI) {
+        console.warn('storageAPI not found, creating fallback implementation');
+        console.warn('This suggests you are loading the file directly instead of through the dev server');
+        window.storageAPI = {
+          save: function(key, value) {
+            try {
+              localStorage.setItem(key, value);
+              console.log('Saved to localStorage (fallback):', key);
+            } catch (error) {
+              console.error('Failed to save to localStorage:', error);
+            }
+          },
+          load: function(key) {
+            try {
+              return localStorage.getItem(key);
+            } catch (error) {
+              console.error('Failed to load from localStorage:', error);
+              return null;
+            }
+          },
+          clear: function() {
+            try {
+              localStorage.removeItem('immichApiUrl');
+              localStorage.removeItem('immichApiKey');
+              console.log('Cleared localStorage (fallback)');
+            } catch (error) {
+              console.error('Failed to clear localStorage:', error);
+            }
+          }
+        };
+      }
+
       // Port subscriptions
       app.ports.openUrl.subscribe(function (url) {
         window.open(url, "_blank");
+      });
+
+      // localStorage port connections
+      app.ports.saveToStorage.subscribe(function (data) {
+        const [key, value] = data;
+        if (window.storageAPI.save.constructor.name === 'AsyncFunction') {
+          // Handle async version (with encryption)
+          window.storageAPI.save(key, value).catch(function(error) {
+            console.error('Error saving to storage:', error);
+          });
+        } else {
+          // Handle sync version (fallback)
+          window.storageAPI.save(key, value);
+        }
+      });
+
+      app.ports.loadFromStorage.subscribe(function (key) {
+        if (window.storageAPI.load.constructor.name === 'AsyncFunction') {
+          // Handle async version (with encryption)
+          window.storageAPI.load(key).then(function(value) {
+            app.ports.storageLoaded.send([key, value]);
+          }).catch(function(error) {
+            console.error('Error loading from storage:', error);
+            app.ports.storageLoaded.send([key, null]);
+          });
+        } else {
+          // Handle sync version (fallback)
+          const value = window.storageAPI.load(key);
+          app.ports.storageLoaded.send([key, value]);
+        }
+      });
+
+      app.ports.clearStorage.subscribe(function () {
+        window.storageAPI.clear();
       });
     </script>
   </body>

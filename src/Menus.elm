@@ -23,7 +23,7 @@ module Menus exposing
 import Dict exposing (Dict)
 import Element exposing (Element, centerX, centerY, column, el, fill, fillPortion, height, minimum, paddingXY, px, row, text, width)
 import Element.Font as Font
-import Element.Input exposing (button)
+import Element.Input as Input exposing (button)
 import HelpText exposing (AlbumBrowseState(..), ViewContext(..), viewContextHelp)
 import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImmichAlbum, ImmichAsset, ImmichAssetId, ImmichLoadState(..), MediaTypeFilter(..), StatusFilter(..))
 
@@ -197,20 +197,102 @@ checkForEmptyFilterResults model config album =
 -- Settings view
 
 
-viewSettings : { a | albumKeybindings : Dict ImmichAssetId String, currentAssets : List ImmichAssetId, imagesLoadState : ImmichLoadState, knownAlbums : Dict ImmichAssetId ImmichAlbum } -> Element msg
-viewSettings model =
-    column [ width fill, height fill, paddingXY 20 20, Element.spacingXY 0 20 ]
-        [ el [ Font.size 24, Font.bold ] (text "⚙️ Settings")
-        , column [ Element.spacingXY 0 15 ]
-            [ el [ Font.size 18, Font.bold ] (text "Default Preferences")
-            , text "• Timeline default filters"
-            , text "• Search default context"
-            , text "• Album default sorting"
-            , text "• Keybinding customization"
+viewSettings : { a | albumKeybindings : Dict ImmichAssetId String, currentAssets : List ImmichAssetId, imagesLoadState : ImmichLoadState, knownAlbums : Dict ImmichAssetId ImmichAlbum, configuredApiUrl : Maybe String, configuredApiKey : Maybe String, settingsApiUrl : String, settingsApiKey : String, configValidationMessage : Maybe String } -> (String -> msg) -> (String -> msg) -> (String -> String -> msg) -> msg -> Element msg
+viewSettings model onUrlChange onApiKeyChange onSaveConfig onClearConfig =
+    row [ width fill, height fill ]
+        [ column [ width (fillPortion 3 |> minimum 400), height fill, paddingXY 20 20, Element.spacingXY 0 20 ]
+            [ el [ Font.size 24, Font.bold ] (text "⚙️ Settings")
+            , column [ Element.spacingXY 0 20 ]
+                [ -- Immich Configuration Section
+                  column [ Element.spacingXY 0 15 ]
+                    [ el [ Font.size 18, Font.bold ] (text "Immich Configuration")
+                    , el [ Font.size 14 ] (text "Configure your Immich server connection:")
+                    , column [ Element.spacingXY 0 10 ]
+                        [ Input.text [ width fill ]
+                            { onChange = onUrlChange
+                            , text = model.settingsApiUrl
+                            , placeholder = Just (Input.placeholder [] (text "https://your-immich-server.com"))
+                            , label = Input.labelAbove [] (text "Immich Server URL")
+                            }
+                        , Input.currentPassword [ width fill ]
+                            { onChange = onApiKeyChange
+                            , text = model.settingsApiKey
+                            , placeholder = Just (Input.placeholder [] (text "Your API key"))
+                            , label = Input.labelAbove [] (text "API Key")
+                            , show = False
+                            }
+                        ]
+                    ]
+                , -- Action Buttons
+                  row [ Element.spacingXY 15 0 ]
+                    [ button []
+                        { onPress = Just (onSaveConfig model.settingsApiUrl model.settingsApiKey)
+                        , label = text "Save Configuration"
+                        }
+                    , button []
+                        { onPress = Just onClearConfig
+                        , label = text "Clear Configuration"
+                        }
+                    ]
+                , -- Validation message
+                  case model.configValidationMessage of
+                    Just message ->
+                        el
+                            [ Font.size 14
+                            , Font.color
+                                (if String.startsWith "✅" message then
+                                    Element.rgb 0.2 0.7 0.2
+
+                                 else
+                                    Element.rgb 0.8 0.2 0.2
+                                )
+                            ]
+                            (text message)
+
+                    Nothing ->
+                        Element.none
+                , -- Current Configuration Status
+                  column [ Element.spacingXY 0 8 ]
+                    [ el [ Font.size 16, Font.bold ] (text "Current Configuration")
+                    , case ( model.configuredApiUrl, model.configuredApiKey ) of
+                        ( Just url, Just _ ) ->
+                            column [ Element.spacingXY 0 5 ]
+                                [ el [ Font.size 14 ] (text ("✅ Connected to: " ++ url))
+                                , el [ Font.size 14 ] (text "✅ API key configured")
+                                ]
+
+                        _ ->
+                            el [ Font.size 14, Font.color (Element.rgb 0.7 0.5 0.1) ] (text "⚠️ Using development server configuration")
+                    ]
+                ]
+            , -- Other Settings (placeholder)
+              column [ Element.spacingXY 0 15 ]
+                [ el [ Font.size 18, Font.bold ] (text "Other Preferences")
+                , el [ Font.size 14 ] (text "Coming soon:")
+                , text "• Timeline default filters"
+                , text "• Search default context"
+                , text "• Album default sorting"
+                , text "• Keybinding customization"
+                ]
+            , el [ Font.size 12 ] (text "Press Escape to return to main menu")
             ]
-        , el [ Font.size 14 ] (text "Settings configuration coming soon...")
-        , el [ Font.size 12 ] (text "Press Escape to return to main menu")
+        , column [ width (fillPortion 2 |> minimum 300), height fill, paddingXY 15 15 ]
+            [ viewContextHelp HelpText.SettingsContext
+            ]
         ]
+
+
+maskApiKey : String -> String
+maskApiKey apiKey =
+    let
+        keyLength =
+            String.length apiKey
+    in
+    if keyLength > 5 then
+        String.left 5 apiKey ++ String.repeat (keyLength - 5) "*"
+
+    else
+        apiKey
 
 
 

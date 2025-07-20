@@ -406,7 +406,22 @@ viewLoadingAssets imagesLoadState =
                 errorMessage =
                     Immich.errorToString error
             in
-            text errorMessage
+            column [ width fill, height fill, paddingXY 20 20, Element.spacingXY 0 20, centerX, centerY ]
+                [ el [ Font.size 20, Font.bold, Font.color (Element.rgb 0.8 0.2 0.2), centerX ] (text "⚠️ Connection Error")
+                , el [ Font.size 16, centerX ] (text errorMessage)
+                , column [ Element.spacingXY 0 10, centerX ]
+                    [ el [ Font.size 14 ] (text "Possible solutions:")
+                    , el [ Font.size 13 ] (text "• Check your internet connection")
+                    , el [ Font.size 13 ] (text "• Verify Immich server URL in settings")
+                    , el [ Font.size 13 ] (text "• Check API key configuration")
+                    , el [ Font.size 13 ] (text "• Ensure Immich server is running")
+                    ]
+                , column [ Element.spacingXY 0 8, centerX ]
+                    [ el [ Font.size 14, Font.bold ] (text "Navigation:")
+                    , el [ Font.size 13 ] (text "Press Escape to return to main menu")
+                    , el [ Font.size 13 ] (text "Press 'g' to go to settings")
+                    ]
+                ]
 
 
 

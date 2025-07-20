@@ -22,6 +22,7 @@ type ViewContext
     | AlbumBrowseContext AlbumBrowseState
     | AlbumViewContext
     | AssetViewContext InputMode
+    | SettingsContext
 
 
 type AlbumBrowseState
@@ -53,6 +54,9 @@ viewContextHelp context =
 
         AssetViewContext inputMode ->
             viewAssetViewHelp inputMode
+
+        SettingsContext ->
+            viewSettingsHelp
 
 
 
@@ -246,6 +250,36 @@ viewAssetViewHelp inputMode =
 
           else
             Element.none
+        ]
+
+
+
+-- Settings Help
+
+
+viewSettingsHelp : Element msg
+viewSettingsHelp =
+    column [ width fill, Element.spacingXY 0 15 ]
+        [ el [ Font.size 18, Font.bold ] (text "Settings Help")
+        , column [ Element.spacingXY 0 8 ]
+            [ el [ Font.size 16, Font.bold ] (text "Immich Configuration")
+            , el [ Font.size 14 ] (text "Set up your Immich server connection:")
+            , viewKeybinding "URL" "Enter your Immich server URL (e.g., https://immich.example.com)"
+            , viewKeybinding "API Key" "Enter your Immich API key from User Settings → API Keys"
+            , viewKeybinding "Save" "Click to save configuration to browser storage"
+            , viewKeybinding "Clear" "Click to remove saved configuration"
+            ]
+        , column [ Element.spacingXY 0 8 ]
+            [ el [ Font.size 16, Font.bold ] (text "Security Notes")
+            , el [ Font.size 13 ] (text "• Configuration is stored in your browser's localStorage")
+            , el [ Font.size 13 ] (text "• API keys are encrypted before storage")
+            , el [ Font.size 13 ] (text "• Data persists across browser sessions")
+            , el [ Font.size 13 ] (text "• Clear configuration to remove stored data")
+            ]
+        , column [ Element.spacingXY 0 8 ]
+            [ el [ Font.size 16, Font.bold ] (text "Navigation")
+            , viewKeybinding "Escape" "Return to main menu"
+            ]
         ]
 
 

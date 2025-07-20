@@ -54,6 +54,141 @@ function getHtmlWithEnvVars() {
         IMMICH_API_KEY: '${process.env.IMMICH_API_KEY || ''}',
         IMMICH_URL: '${process.env.IMMICH_URL || 'https://localhost/api'}'
       };
+
+      // Encryption key management (stored in sessionStorage, cleared on browser close)
+      let encryptionKey = null;
+
+      // Generate or retrieve encryption key
+      async function getEncryptionKey() {
+        if (encryptionKey) return encryptionKey;
+        
+        const stored = sessionStorage.getItem('encKey');
+        if (stored) {
+          encryptionKey = await window.crypto.subtle.importKey(
+            'raw',
+            new Uint8Array(JSON.parse(stored)),
+            { name: 'AES-GCM' },
+            false,
+            ['encrypt', 'decrypt']
+          );
+          return encryptionKey;
+        }
+
+        // Generate new key
+        encryptionKey = await window.crypto.subtle.generateKey(
+          { name: 'AES-GCM', length: 256 },
+          true,
+          ['encrypt', 'decrypt']
+        );
+
+        // Store key in sessionStorage
+        const exported = await window.crypto.subtle.exportKey('raw', encryptionKey);
+        sessionStorage.setItem('encKey', JSON.stringify(Array.from(new Uint8Array(exported))));
+        
+        return encryptionKey;
+      }
+
+      // Encrypt text using AES-GCM
+      async function encryptText(text) {
+        if (!text) return text;
+        
+        const key = await getEncryptionKey();
+        const iv = window.crypto.getRandomValues(new Uint8Array(12));
+        const encoder = new TextEncoder();
+        
+        const encrypted = await window.crypto.subtle.encrypt(
+          { name: 'AES-GCM', iv: iv },
+          key,
+          encoder.encode(text)
+        );
+        
+        // Combine IV and encrypted data
+        const combined = new Uint8Array(iv.length + encrypted.byteLength);
+        combined.set(iv);
+        combined.set(new Uint8Array(encrypted), iv.length);
+        
+        // Return as base64
+        return btoa(String.fromCharCode(...combined));
+      }
+
+      // Decrypt text using AES-GCM
+      async function decryptText(encryptedText) {
+        if (!encryptedText) return encryptedText;
+        
+        try {
+          const key = await getEncryptionKey();
+          const combined = new Uint8Array(atob(encryptedText).split('').map(c => c.charCodeAt(0)));
+          
+          const iv = combined.slice(0, 12);
+          const encrypted = combined.slice(12);
+          
+          const decrypted = await window.crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv: iv },
+            key,
+            encrypted
+          );
+          
+          const decoder = new TextDecoder();
+          return decoder.decode(decrypted);
+        } catch (error) {
+          console.error('Decryption failed:', error);
+          return encryptedText; // Return original if decryption fails
+        }
+      }
+
+      // localStorage interface functions for Elm ports
+      console.log('Creating storageAPI...');
+      try {
+        window.storageAPI = {
+        save: async function(key, value) {
+          try {
+            let finalValue = value;
+            
+            // Encrypt API keys
+            if (key === 'immichApiKey' && value) {
+              finalValue = await encryptText(value);
+            }
+            
+            localStorage.setItem(key, finalValue);
+            console.log('Saved to localStorage:', key);
+          } catch (error) {
+            console.error('Failed to save to localStorage:', error);
+          }
+        },
+
+        load: async function(key) {
+          try {
+            const value = localStorage.getItem(key);
+            if (!value) return null;
+            
+            // Decrypt API keys
+            if (key === 'immichApiKey') {
+              return await decryptText(value);
+            }
+            
+            return value;
+          } catch (error) {
+            console.error('Failed to load from localStorage:', error);
+            return null;
+          }
+        },
+
+        clear: function() {
+          try {
+            localStorage.removeItem('immichApiUrl');
+            localStorage.removeItem('immichApiKey');
+            sessionStorage.removeItem('encKey');
+            encryptionKey = null;
+            console.log('Cleared localStorage configuration');
+          } catch (error) {
+            console.error('Failed to clear localStorage:', error);
+          }
+        }
+      };
+      console.log('storageAPI created successfully');
+      } catch (error) {
+        console.error('Error creating storageAPI:', error);
+      }
     </script>`;
 
   // Insert the environment script at the very beginning of <head> to ensure it loads first
