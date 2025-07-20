@@ -54,6 +54,7 @@ type GridMsg
     | GridBulkAddToAlbum
     | GridBulkRemoveFromAlbum
     | GridScrolled Float
+    | GridRequestLoadMore
 
 
 type alias GridItem =
@@ -158,6 +159,9 @@ updateGridState msg state assets =
 
         GridScrolled scrollTop ->
             { state | scrollTop = scrollTop, programmaticScroll = False }
+
+        GridRequestLoadMore ->
+            state
 
 
 
@@ -274,6 +278,27 @@ calculateScrollToItem state itemIndex =
     else
         -- Item is already visible, no scroll needed
         state.scrollTop
+
+
+{-| Check if we're near the bottom and should load more content
+-}
+shouldLoadMore : GridState -> Int -> Bool
+shouldLoadMore state totalItems =
+    let
+        totalHeight =
+            calculateTotalHeight state totalItems
+
+        viewportHeight =
+            toFloat state.screenHeight
+
+        scrollBottom =
+            state.scrollTop + viewportHeight
+
+        -- Trigger load more when within 2 viewport heights of the bottom
+        loadMoreThreshold =
+            totalHeight - (viewportHeight * 2)
+    in
+    scrollBottom >= loadMoreThreshold && totalHeight > viewportHeight
 
 
 {-| Decode scroll position from scroll event
@@ -436,8 +461,8 @@ handleGridKeyPress key state assets =
 -- VIEW
 
 
-viewGrid : ImmichApiPaths -> String -> GridState -> List ImmichAsset -> (GridMsg -> msg) -> Element msg
-viewGrid apiPaths apiKey state assets toMsg =
+viewGrid : ImmichApiPaths -> String -> GridState -> List ImmichAsset -> Bool -> Bool -> (GridMsg -> msg) -> Element msg
+viewGrid apiPaths apiKey state assets hasMorePages isLoadingMore toMsg =
     let
         gridItems =
             List.indexedMap (createGridItem state) assets
@@ -482,7 +507,7 @@ viewGrid apiPaths apiKey state assets toMsg =
     in
     column [ width fill, height fill, spacing 5 ]
         [ headerInfo
-        , el [ width fill, height fill ] (viewGridItems apiPaths apiKey state gridItems toMsg)
+        , el [ width fill, height fill ] (viewGridItems apiPaths apiKey state gridItems hasMorePages isLoadingMore toMsg)
         ]
 
 
@@ -509,8 +534,8 @@ createGridItem state index asset =
     }
 
 
-viewGridItems : ImmichApiPaths -> String -> GridState -> List GridItem -> (GridMsg -> msg) -> Element msg
-viewGridItems apiPaths apiKey state gridItems toMsg =
+viewGridItems : ImmichApiPaths -> String -> GridState -> List GridItem -> Bool -> Bool -> (GridMsg -> msg) -> Element msg
+viewGridItems apiPaths apiKey state gridItems hasMorePages isLoadingMore toMsg =
     let
         totalItems =
             List.length gridItems
@@ -534,12 +559,34 @@ viewGridItems apiPaths apiKey state gridItems toMsg =
         topOffset =
             toFloat visibleRange.startRow * rowHeight
 
+        -- Check if we should trigger load more
+        shouldTriggerLoadMore =
+            shouldLoadMore state totalItems && hasMorePages && not isLoadingMore
+
         -- Container styles for virtual scrolling
         containerStyle =
             [ Html.Attributes.style "position" "relative"
             , Html.Attributes.style "height" "100%"
             , Html.Attributes.style "overflow-y" "auto"
-            , Html.Events.on "scroll" (Html.Events.targetValue |> Json.Decode.andThen decodeScrollTop |> Json.Decode.map (toMsg << GridScrolled))
+            , Html.Events.on "scroll"
+                (Json.Decode.map2
+                    (\scrollTop scrollHeight ->
+                        let
+                            updatedState =
+                                { state | scrollTop = scrollTop }
+
+                            shouldLoad =
+                                shouldLoadMore updatedState totalItems && hasMorePages && not isLoadingMore
+                        in
+                        if shouldLoad then
+                            toMsg GridRequestLoadMore
+
+                        else
+                            toMsg (GridScrolled scrollTop)
+                    )
+                    (Json.Decode.at [ "target", "scrollTop" ] Json.Decode.float)
+                    (Json.Decode.at [ "target", "scrollHeight" ] Json.Decode.float)
+                )
             ]
                 ++ -- Only set scrollTop property for programmatic scrolls to avoid feedback loops
                    (if state.programmaticScroll then
@@ -569,11 +616,34 @@ viewGridItems apiPaths apiKey state gridItems toMsg =
 
         visibleItemsHtml =
             List.map (viewGridItem apiPaths apiKey toMsg) visibleItems
+
+        loadingIndicator =
+            if isLoadingMore then
+                [ Html.div
+                    [ Html.Attributes.style "position" "absolute"
+                    , Html.Attributes.style "bottom" "20px"
+                    , Html.Attributes.style "left" "50%"
+                    , Html.Attributes.style "transform" "translateX(-50%)"
+                    , Html.Attributes.style "background" "rgba(74, 144, 226, 0.9)"
+                    , Html.Attributes.style "color" "white"
+                    , Html.Attributes.style "padding" "8px 16px"
+                    , Html.Attributes.style "border-radius" "20px"
+                    , Html.Attributes.style "font-size" "12px"
+                    , Html.Attributes.style "font-weight" "500"
+                    , Html.Attributes.style "box-shadow" "0 2px 8px rgba(0,0,0,0.15)"
+                    , Html.Attributes.style "z-index" "1000"
+                    , Html.Attributes.style "animation" "pulse 1.5s ease-in-out infinite"
+                    ]
+                    [ Html.text "Loading more..." ]
+                ]
+
+            else
+                []
     in
     html
         (Html.div containerStyle
             [ Html.div innerContainerStyle
-                [ Html.div gridStyle visibleItemsHtml ]
+                ([ Html.div gridStyle visibleItemsHtml ] ++ loadingIndicator)
             ]
         )
 
@@ -587,7 +657,8 @@ viewGridItem apiPaths apiKey toMsg item =
             , Html.Attributes.style "border-radius" "8px"
             , Html.Attributes.style "overflow" "hidden"
             , Html.Attributes.style "cursor" "pointer"
-            , Html.Attributes.style "transition" "all 0.2s ease"
+            , Html.Attributes.style "transition" "all 0.2s ease-out"
+            , Html.Attributes.style "transform-origin" "center"
             , Html.Attributes.style "border"
                 (if item.isFocused then
                     "3px solid #4A90E2"
@@ -596,19 +667,21 @@ viewGridItem apiPaths apiKey toMsg item =
                     "2px solid #50C878"
 
                  else
-                    "1px solid #ccc"
+                    "1px solid #e0e0e0"
                 )
             , Html.Attributes.style "box-shadow"
                 (if item.isFocused then
-                    "0 0 10px rgba(74, 144, 226, 0.5)"
+                    "0 4px 20px rgba(74, 144, 226, 0.4), 0 0 0 1px rgba(74, 144, 226, 0.1)"
 
                  else if item.isSelected then
-                    "0 0 5px rgba(80, 200, 120, 0.5)"
+                    "0 4px 12px rgba(80, 200, 120, 0.3), 0 0 0 1px rgba(80, 200, 120, 0.1)"
 
                  else
-                    "0 2px 4px rgba(0,0,0,0.1)"
+                    "0 2px 8px rgba(0,0,0,0.1)"
                 )
+            , Html.Attributes.style "background" "#f8f9fa"
             ]
+                ++ [ Html.Attributes.style ":hover" "transform: scale(1.02); box-shadow: 0 6px 20px rgba(0,0,0,0.15)" ]
 
         overlayStyle =
             [ Html.Attributes.style "position" "absolute"
@@ -631,17 +704,59 @@ viewGridItem apiPaths apiKey toMsg item =
             ]
 
         metadataStyle =
-            [ Html.Attributes.style "background" "rgba(0,0,0,0.7)"
+            [ Html.Attributes.style "background" "linear-gradient(to top, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.6) 50%, transparent 100%)"
             , Html.Attributes.style "color" "white"
-            , Html.Attributes.style "padding" "2px 5px"
-            , Html.Attributes.style "border-radius" "3px"
+            , Html.Attributes.style "padding" "8px 6px 4px 6px"
+            , Html.Attributes.style "border-radius" "0 0 8px 8px"
             , Html.Attributes.style "font-size" "11px"
             , Html.Attributes.style "text-align" "center"
-            , Html.Attributes.style "max-width" "90%"
+            , Html.Attributes.style "position" "absolute"
+            , Html.Attributes.style "bottom" "0"
+            , Html.Attributes.style "left" "0"
+            , Html.Attributes.style "right" "0"
             , Html.Attributes.style "overflow" "hidden"
             , Html.Attributes.style "text-overflow" "ellipsis"
             , Html.Attributes.style "white-space" "nowrap"
+            , Html.Attributes.style "text-shadow" "0 1px 2px rgba(0,0,0,0.8)"
             ]
+
+        mediaTypeIndicator =
+            case item.asset.mimeType of
+                mimeType ->
+                    if String.startsWith "video/" mimeType then
+                        [ Html.Attributes.style "position" "absolute"
+                        , Html.Attributes.style "top" "8px"
+                        , Html.Attributes.style "left" "8px"
+                        , Html.Attributes.style "background" "rgba(0,0,0,0.7)"
+                        , Html.Attributes.style "color" "white"
+                        , Html.Attributes.style "padding" "2px 6px"
+                        , Html.Attributes.style "border-radius" "3px"
+                        , Html.Attributes.style "font-size" "10px"
+                        , Html.Attributes.style "font-weight" "500"
+                        ]
+
+                    else
+                        [ Html.Attributes.style "display" "none" ]
+
+        favoriteIndicator =
+            if item.asset.isFavourite then
+                [ Html.Attributes.style "position" "absolute"
+                , Html.Attributes.style "top" "8px"
+                , Html.Attributes.style "left"
+                    (if String.startsWith "video/" item.asset.mimeType then
+                        "50px"
+
+                     else
+                        "8px"
+                    )
+                , Html.Attributes.style "color" "#FFD700"
+                , Html.Attributes.style "font-size" "14px"
+                , Html.Attributes.style "text-shadow" "0 1px 2px rgba(0,0,0,0.8)"
+                , Html.Attributes.style "pointer-events" "none"
+                ]
+
+            else
+                [ Html.Attributes.style "display" "none" ]
 
         selectionIndicatorStyle =
             [ Html.Attributes.style "position" "absolute"
@@ -704,9 +819,18 @@ viewGridItem apiPaths apiKey toMsg item =
                ]
         )
         [ thumbhashComponent
-        , Html.div overlayStyle
-            [ Html.div metadataStyle [ Html.text item.asset.title ]
+        , Html.div mediaTypeIndicator
+            [ Html.text
+                (if String.startsWith "video/" item.asset.mimeType then
+                    "VIDEO"
+
+                 else
+                    ""
+                )
             ]
+        , Html.div favoriteIndicator
+            [ Html.text "★" ]
+        , Html.div metadataStyle [ Html.text item.asset.title ]
         , Html.div selectionIndicatorStyle
             [ Html.text
                 (if item.isSelected then

@@ -454,13 +454,13 @@ viewEditAssetHelp inputMode =
 -- Grid view function
 
 
-viewGridAssets : ImmichApiPaths -> String -> GridState -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> (GridMsg -> msg) -> Element msg
-viewGridAssets apiPaths apiKey gridState currentAssets knownAssets toMsg =
+viewGridAssets : ImmichApiPaths -> String -> GridState -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Bool -> Bool -> (GridMsg -> msg) -> Element msg
+viewGridAssets apiPaths apiKey gridState currentAssets knownAssets hasMorePages isLoadingMore toMsg =
     let
         assets =
             List.filterMap (\id -> Dict.get id knownAssets) currentAssets
     in
-    ViewGrid.viewGrid apiPaths apiKey gridState assets toMsg
+    ViewGrid.viewGrid apiPaths apiKey gridState assets hasMorePages isLoadingMore toMsg
 
 
 

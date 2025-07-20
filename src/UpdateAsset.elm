@@ -61,6 +61,7 @@ type AssetResult msg
     | AssetBulkArchive (List ImmichAssetId) Bool
     | AssetBulkAddToAlbum (List ImmichAssetId) ImmichAlbumId
     | AssetBulkRemoveFromAlbum (List ImmichAssetId) ImmichAlbumId
+    | AssetRequestLoadMore
 
 
 
@@ -908,6 +909,10 @@ handleGridViewMessage gridMsg gridState currentAssets knownAssets =
         ViewGrid.GridScrolled _ ->
             -- Scroll events are handled by updateGridState
             StayInAssets (GridView updatedGridState)
+
+        ViewGrid.GridRequestLoadMore ->
+            -- Trigger load more request - this will be handled by Main.elm
+            AssetRequestLoadMore
 
         _ ->
             StayInAssets (GridView updatedGridState)

@@ -486,7 +486,7 @@ viewAssetState model assetState =
             ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) SelectAlbum) (ViewAsset.viewEditAssetHelp inputMode)
 
         GridView gridState ->
-            ViewAsset.viewGridAssets model.immichApiPaths model.apiKey gridState model.currentAssets model.knownAssets (AssetMsg << AssetGridMsg)
+            ViewAsset.viewGridAssets model.immichApiPaths model.apiKey gridState model.currentAssets model.knownAssets model.paginationState.hasMorePages model.paginationState.isLoadingMore (AssetMsg << AssetGridMsg)
 
 
 viewInputMode : UserMode -> Element msg
@@ -860,6 +860,33 @@ handleAssetResult assetResult model =
                     Immich.albumChangeAssetMembership model.immichApiPaths albumId assetIds False |> Cmd.map ImmichMsg
             in
             ( model, bulkCmd )
+
+        AssetRequestLoadMore ->
+            -- Handle infinite scroll load more request
+            let
+                paginationState =
+                    model.paginationState
+
+                nextPage =
+                    paginationState.currentPage + 1
+
+                loadMoreCmd =
+                    case ( paginationState.currentConfig, paginationState.currentQuery ) of
+                        ( Just config, Nothing ) ->
+                            -- Load more for image search
+                            Immich.searchAssetsPaginated model.immichApiPaths "" config.mediaType config.status 1000 nextPage |> Cmd.map ImmichMsg
+
+                        ( Nothing, Just query ) ->
+                            -- Load more for text search
+                            Immich.searchAssetsPaginated model.immichApiPaths query AllMedia AllStatuses 1000 nextPage |> Cmd.map ImmichMsg
+
+                        _ ->
+                            Cmd.none
+
+                updatedPaginationState =
+                    { paginationState | isLoadingMore = True }
+            in
+            ( { model | paginationState = updatedPaginationState }, loadMoreCmd )
 
 
 
