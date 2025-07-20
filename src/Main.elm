@@ -4,9 +4,10 @@ import Browser exposing (element)
 import Browser.Events exposing (onKeyDown, onResize)
 import Date
 import Dict exposing (Dict)
-import Element exposing (Element, alignRight, alignTop, clipY, column, el, fill, height, minimum, px, text, width)
+import Element exposing (Element, alignRight, alignTop, clipY, column, el, fill, fillPortion, height, minimum, paddingXY, px, text, width)
 import Element.Background as Background
 import Element.Font as Font
+import HelpText exposing (AlbumBrowseState(..), ViewContext(..), viewContextHelp)
 import Helpers
 import Html exposing (Html)
 import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImageSearchConfig, ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..), MediaTypeFilter(..), StatusFilter(..), getAllAlbums, getImmichApiPaths)
@@ -329,10 +330,9 @@ viewMenuState model menuState =
             Menus.viewSearchView model config ExecuteSearch
 
         AlbumBrowse search ->
-            ViewAlbums.viewWithSidebar
-                (ViewAlbums.viewSidebarAlbums search model.albumKeybindings model.knownAlbums SelectAlbum)
-                (column []
-                    [ text "Browse Albums"
+            Element.row [ width fill, height fill ]
+                [ Element.column [ width (fillPortion 4 |> minimum 280), height fill, paddingXY 15 15, Element.spacingXY 0 15 ]
+                    [ el [ Font.size 20, Font.bold ] (text "📁 Browse Albums")
                     , if search.searchString /= "" then
                         text ("Search: \"" ++ search.searchString ++ "\"")
 
@@ -364,9 +364,16 @@ viewMenuState model menuState =
 
                         Nothing ->
                             text ""
-                    , text "Type album name or keybinding to filter"
+                    , ViewAlbums.viewSidebarAlbums search model.albumKeybindings model.knownAlbums SelectAlbum
                     ]
-                )
+                , Element.column [ width (fillPortion 5), height fill, paddingXY 20 20 ]
+                    [ el [ Font.size 16 ] (text "Select an album from the left to configure and view its contents.")
+                    , el [ Font.size 14, Font.color <| Element.fromRgb { red = 0.6, green = 0.6, blue = 0.6, alpha = 1 } ] (text "Type album name or keybinding to filter the list.")
+                    ]
+                , Element.column [ width (fillPortion 4 |> minimum 300), height fill, paddingXY 15 15 ]
+                    [ viewContextHelp (AlbumBrowseContext SelectingAlbum)
+                    ]
+                ]
 
         AlbumView album config ->
             Menus.viewAlbumView model album config LoadAlbumAssets
@@ -463,7 +470,7 @@ viewInputMode userMode =
                                 NormalMode
 
                         AlbumBrowse _ ->
-                            InsertMode
+                            KeybindingMode
 
                         AlbumView _ _ ->
                             NormalMode

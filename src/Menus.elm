@@ -21,11 +21,11 @@ module Menus exposing
     )
 
 import Dict exposing (Dict)
-import Element exposing (Element, centerX, centerY, column, el, fill, fillPortion, height, paddingXY, px, row, text, width)
+import Element exposing (Element, centerX, centerY, column, el, fill, fillPortion, height, minimum, paddingXY, px, row, text, width)
 import Element.Font as Font
 import Element.Input exposing (button)
+import HelpText exposing (AlbumBrowseState(..), ViewContext(..), viewContextHelp)
 import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImmichAlbum, ImmichAsset, ImmichAssetId, ImmichLoadState(..), MediaTypeFilter(..), StatusFilter(..))
-import ViewAsset exposing (viewKeybinding)
 
 
 
@@ -83,7 +83,7 @@ viewMainMenu loadDataMsg =
                 , el [ Font.size 12 ] (text "Press the highlighted key or click to navigate")
                 ]
             ]
-        , el [ width <| fillPortion 1, height fill ] <| viewInstructions
+        , el [ width <| fillPortion 1, height fill, paddingXY 20 20 ] <| viewContextHelp MainMenuContext
         ]
 
 
@@ -98,32 +98,6 @@ viewMainMenuOption key title description =
         ]
 
 
-viewInstructions : Element msg
-viewInstructions =
-    column [ width fill, height fill, paddingXY 20 20, Element.spacingXY 0 10 ]
-        [ el [ Font.size 18, Font.bold ] <| text "Keybindings"
-        , column [ Element.spacingXY 0 8 ]
-            [ el [ Font.size 16, Font.bold ] <| text "Main Menu"
-            , viewKeybinding "o" "Cycle order (desc/asc/random)"
-            , viewKeybinding "c" "Cycle categorisation (all/uncategorised)"
-            , viewKeybinding "l" "Load with current settings"
-            , viewKeybinding "a" "Browse and select albums"
-            , viewKeybinding "s" "Search assets"
-            ]
-        , column [ Element.spacingXY 0 8 ]
-            [ el [ Font.size 16, Font.bold ] <| text "Asset Navigation (Normal Mode)"
-            , viewKeybinding "←" "Previous image"
-            , viewKeybinding "→" "Next image"
-            , viewKeybinding "Space" "Next image"
-            , viewKeybinding "Escape" "Return to main menu"
-            , viewKeybinding "I" "Enter insert mode (album search)"
-            , viewKeybinding "D" "Toggle delete/archive"
-            , viewKeybinding "F" "Toggle favorite"
-            , viewKeybinding "?" "Show help"
-            ]
-        ]
-
-
 
 -- Timeline view
 
@@ -131,19 +105,16 @@ viewInstructions =
 viewTimelineView : { a | albumKeybindings : Dict ImmichAssetId String, currentAssets : List ImmichAssetId, imagesLoadState : ImmichLoadState, knownAlbums : Dict ImmichAssetId ImmichAlbum, knownAssets : Dict ImmichAssetId ImmichAsset, imageIndex : Int } -> TimelineConfig -> msg -> msg -> Element msg
 viewTimelineView model config loadDataMsg loadTimelineAssetsMsg =
     row [ width fill, height fill ]
-        [ column [ width (px 300), height fill, paddingXY 15 15, Element.spacingXY 0 15 ]
+        [ column [ width (fillPortion 3 |> minimum 220), height fill, paddingXY 15 15, Element.spacingXY 0 15 ]
             [ el [ Font.size 20, Font.bold ] (text "📅 Timeline View")
             , viewTimelineFilters config
             , button [] { onPress = Just loadTimelineAssetsMsg, label = text "[Enter/Space] Load & View Assets" }
-            , column [ Element.spacingXY 0 5 ]
-                [ el [ Font.size 12, Font.bold ] (text "Filters:")
-                , el [ Font.size 11 ] (text "[m] Media Type  [c] Categorisation  [o] Order  [s] Status")
-                , el [ Font.size 12, Font.bold ] (text "Actions:")
-                , el [ Font.size 11 ] (text "[Enter/Space] Load & View Assets  [Escape] Back to Menu")
-                ]
             ]
-        , column [ width fill, height fill ]
+        , column [ width (fillPortion 6), height fill ]
             [ el [ paddingXY 10 10 ] (text "Timeline assets will appear here") -- TODO: implement asset display
+            ]
+        , column [ width (fillPortion 4 |> minimum 300), height fill, paddingXY 15 15 ]
+            [ viewContextHelp TimelineContext
             ]
         ]
 
@@ -155,30 +126,17 @@ viewTimelineView model config loadDataMsg loadTimelineAssetsMsg =
 viewSearchView : { a | albumKeybindings : Dict ImmichAssetId String, currentAssets : List ImmichAssetId, imagesLoadState : ImmichLoadState, knownAlbums : Dict ImmichAssetId ImmichAlbum } -> SearchConfig -> msg -> Element msg
 viewSearchView model config executeSearchMsg =
     row [ width fill, height fill ]
-        [ column [ width (px 300), height fill, paddingXY 15 15, Element.spacingXY 0 15 ]
+        [ column [ width (fillPortion 3 |> minimum 220), height fill, paddingXY 15 15, Element.spacingXY 0 15 ]
             [ el [ Font.size 20, Font.bold ] (text "🔍 Search Assets")
             , viewSearchFilters config
             , el [] (text ("Search Query: " ++ config.query))
             , button [] { onPress = Just executeSearchMsg, label = text "[Enter/Space] Search & View Results" }
-            , column [ Element.spacingXY 0 5 ]
-                [ el [ Font.size 12, Font.bold ] (text "Filters:")
-                , el [ Font.size 11 ] (text "[m] Media Type  [c] Search Context  [s] Status")
-                , el [ Font.size 12, Font.bold ] (text "Input Mode:")
-                , el [ Font.size 11 ]
-                    (text
-                        (if config.inputFocused then
-                            "[Escape] Exit input mode"
-
-                         else
-                            "[i] Enter input mode to type"
-                        )
-                    )
-                , el [ Font.size 12, Font.bold ] (text "Actions:")
-                , el [ Font.size 11 ] (text "[Enter/Space] Search & View Results  [Escape] Back to Menu")
-                ]
             ]
-        , column [ width fill, height fill ]
+        , column [ width (fillPortion 6), height fill ]
             [ text "Search results will appear here" -- TODO: implement search results
+            ]
+        , column [ width (fillPortion 4 |> minimum 300), height fill, paddingXY 15 15 ]
+            [ viewContextHelp (SearchContext { inputFocused = config.inputFocused })
             ]
         ]
 
@@ -190,20 +148,17 @@ viewSearchView model config executeSearchMsg =
 viewAlbumView : { a | albumKeybindings : Dict ImmichAssetId String, currentAssets : List ImmichAssetId, imagesLoadState : ImmichLoadState, knownAlbums : Dict ImmichAssetId ImmichAlbum } -> ImmichAlbum -> AlbumConfig -> (ImmichAlbum -> msg) -> Element msg
 viewAlbumView model album config loadAlbumAssetsMsg =
     row [ width fill, height fill ]
-        [ column [ width (px 300), height fill, paddingXY 15 15, Element.spacingXY 0 15 ]
+        [ column [ width (fillPortion 3 |> minimum 220), height fill, paddingXY 15 15, Element.spacingXY 0 15 ]
             [ el [ Font.size 20, Font.bold ] (text ("📁 " ++ album.albumName))
             , el [ Font.size 14 ] (text (String.fromInt album.assetCount ++ " assets"))
             , viewAlbumFilters config
             , button [] { onPress = Just (loadAlbumAssetsMsg album), label = text "[Enter/Space] Load & View Assets" }
-            , column [ Element.spacingXY 0 5 ]
-                [ el [ Font.size 12, Font.bold ] (text "Filters:")
-                , el [ Font.size 11 ] (text "[m] Media Type  [o] Order  [s] Status")
-                , el [ Font.size 12, Font.bold ] (text "Actions:")
-                , el [ Font.size 11 ] (text "[Enter/Space] Load & View Assets  [Escape] Back to Albums")
-                ]
             ]
-        , column [ width fill, height fill ]
+        , column [ width (fillPortion 6), height fill ]
             [ checkForEmptyFilterResults model config album
+            ]
+        , column [ width (fillPortion 4 |> minimum 300), height fill, paddingXY 15 15 ]
+            [ viewContextHelp (AlbumBrowseContext ConfiguringView)
             ]
         ]
 

@@ -4,7 +4,6 @@ module ViewAsset exposing
     , viewEditAsset
     , viewEditAssetHelp
     , viewGridAssets
-    , viewKeybinding
     , viewLoadingAssets
     )
 
@@ -13,6 +12,7 @@ import Dict exposing (Dict)
 import Element exposing (Element, alignRight, alignTop, centerX, centerY, column, el, fill, height, paddingXY, px, row, text, width)
 import Element.Background as Background
 import Element.Font as Font
+import HelpText exposing (ViewContext(..), viewContextHelp, viewKeybinding)
 import Html exposing (node)
 import Html.Attributes
 import Immich exposing (ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..))
@@ -428,54 +428,14 @@ viewCreateAlbumConfirmation albumName =
 
 viewEditAssetHelp : InputMode -> Element msg
 viewEditAssetHelp inputMode =
-    column [ width fill, height fill, paddingXY 20 20, Element.spacingXY 0 20, centerX, centerY ]
-        [ el [ Font.size 18, Font.bold, centerX ] (text "Asset Navigation Help")
-        , column [ Element.spacingXY 0 8 ]
-            [ el [ Font.size 16, Font.bold ] <| text "Navigation"
-            , viewKeybinding "←" "Previous image"
-            , viewKeybinding "→" "Next image"
-            , viewKeybinding "Space" "Next image"
-            , viewKeybinding "Escape" "Return to main menu"
-            ]
-        , column [ Element.spacingXY 0 8 ]
-            [ el [ Font.size 16, Font.bold ] <| text "Asset Actions"
-            , viewKeybinding "D" "Toggle delete/archive"
-            , viewKeybinding "F" "Toggle favorite"
-            , viewKeybinding "K" "Open in Immich (new tab)"
-            , viewKeybinding "I" "Enter album search mode"
-            , viewKeybinding "T" "Toggle time view (Absolute/Relative)"
-            , viewKeybinding "G" "Switch to grid view"
-            ]
-        , if inputMode == InsertMode then
-            column [ Element.spacingXY 0 8 ]
-                [ el [ Font.size 16, Font.bold ] <| text "Album Search (Insert Mode)"
-                , viewKeybinding "Type" "Search albums by name"
-                , viewKeybinding "↑↓" "Navigate through results"
-                , viewKeybinding "Enter" "Add to highlighted album"
-                , viewKeybinding "Tab" "Create new album"
-                , viewKeybinding "Click" "Click album to add"
-                , viewKeybinding "Escape" "Exit search mode"
-                ]
-
-          else
-            Element.none
-        , el [ Font.size 14, centerX ] (text "Press ? or Escape to close help")
+    column [ width fill, height fill, paddingXY 20 20, centerX, centerY ]
+        [ viewContextHelp (AssetViewContext inputMode)
+        , el [ Font.size 14, centerX, Element.paddingXY 0 10 ] (text "Press ? or Escape to close help")
         ]
 
 
 
--- Keybinding display helper
-
-
-viewKeybinding : String -> String -> Element msg
-viewKeybinding key description =
-    row [ width fill, Element.spacingXY 10 0 ]
-        [ el [ width <| Element.px 120, Font.family [ Font.monospace ], Background.color <| usefulColours "grey", paddingXY 8 4 ] <| text key
-        , el [ width fill ] <| text description
-        ]
-
-
-
+-- Note: viewKeybinding is now imported from HelpText module for consistency
 -- Grid view function
 
 
