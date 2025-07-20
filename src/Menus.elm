@@ -66,8 +66,8 @@ type alias AlbumConfig =
 -- Main menu view
 
 
-viewMainMenu : msg -> Element msg
-viewMainMenu loadDataMsg =
+viewMainMenu : Maybe String -> Element msg
+viewMainMenu reloadFeedback =
     row [ width fill, height fill ]
         [ column [ width <| fillPortion 1, height fill, Element.spacingXY 0 20, paddingXY 20 20 ]
             [ el [ Font.size 24, Font.bold ] (text "Image Categorizer")
@@ -76,10 +76,16 @@ viewMainMenu loadDataMsg =
                 , viewMainMenuOption "t" "📅 Timeline View" "Browse all assets with timeline filters"
                 , viewMainMenuOption "s" "🔍 Search Assets" "Smart search with context options"
                 , viewMainMenuOption "a" "📁 Browse Albums" "Select and view album contents"
+                , viewMainMenuOption "r" "↻ Reload Albums" "Refresh album list from server"
                 , viewMainMenuOption "g" "⚙️ Settings" "Configure preferences and options"
                 ]
             , column [ Element.spacingXY 0 10 ]
-                [ button [] { onPress = Just loadDataMsg, label = text "↻ Reload Albums" }
+                [ case reloadFeedback of
+                    Just message ->
+                        el [ Font.size 14, Font.color (Element.rgb 0.2 0.6 1.0) ] (text message)
+
+                    Nothing ->
+                        Element.none
                 , el [ Font.size 12 ] (text "Press the highlighted key or click to navigate")
                 ]
             ]

@@ -46,6 +46,7 @@ type MenuResult msg
     = StayInMenu MenuState
     | MenuLoadAssets AssetSource
     | MenuUpdateSearchInput Bool
+    | MenuReloadAlbums
 
 
 
@@ -56,6 +57,7 @@ type MenuAction
     = ChangeMode LegacyUserMode
     | LoadAssets AssetSource
     | UpdateSearchInput Bool
+    | ReloadAlbums
     | NoMenuAction
 
 
@@ -96,6 +98,9 @@ handleMainMenuInput key knownAlbums screenHeight =
 
         "g" ->
             ChangeMode LegacySettings
+
+        "r" ->
+            ReloadAlbums
 
         _ ->
             NoMenuAction
@@ -303,6 +308,9 @@ handleMainMenuKeyPress key knownAlbums screenHeight =
 
         LoadAssets assetSource ->
             MenuLoadAssets assetSource
+
+        ReloadAlbums ->
+            MenuReloadAlbums
 
         _ ->
             StayInMenu MainMenuHome

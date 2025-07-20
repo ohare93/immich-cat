@@ -68,6 +68,7 @@ viewMainMenuHelp =
             , el [ Font.size 14 ] (text "• Timeline: Browse all your assets chronologically")
             , el [ Font.size 14 ] (text "• Search: Find specific assets with smart search")
             , el [ Font.size 14 ] (text "• Albums: Browse and organize your photo albums")
+            , el [ Font.size 14 ] (text "• Reload Albums: Refresh album list from server")
             , el [ Font.size 14 ] (text "• Settings: Configure your preferences")
             ]
         , column [ Element.spacingXY 0 8 ]

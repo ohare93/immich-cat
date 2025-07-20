@@ -14,6 +14,8 @@ import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImageSearchCon
 import Json.Decode as Decode
 import KeybindBranches exposing (generateAlbumKeybindings)
 import Menus exposing (AlbumConfig, SearchContext, defaultAlbumConfig, defaultSearchConfig, filterByMediaType, filterByStatus)
+import Process
+import Task
 import UpdateAlbums exposing (AlbumMsg)
 import UpdateAsset exposing (AssetMsg(..), AssetResult(..), AssetState(..), updateAsset)
 import UpdateMenus exposing (MenuMsg(..), MenuResult(..), MenuState(..), updateMenus)
@@ -33,6 +35,7 @@ type Msg
     = KeyPress String
     | ImmichMsg Immich.Msg
     | LoadDataAgain
+    | ClearReloadFeedback
     | SelectAlbum ImmichAlbum
     | WindowResize Int Int
     | ChangeTimelineMediaType MediaTypeFilter
@@ -72,6 +75,7 @@ type alias Model =
     , imageIndex : ImageIndex
     , imageSearchConfig : ImageSearchConfig
     , timeViewMode : TimeViewMode
+    , reloadFeedback : Maybe String
 
     -- Immich fields
     , currentAssets : List ImmichAssetId
@@ -142,6 +146,7 @@ init flags =
       , imageIndex = 0
       , imageSearchConfig = { order = CreatedDesc, categorisation = Uncategorised, mediaType = AllMedia, status = AllStatuses }
       , timeViewMode = Absolute
+      , reloadFeedback = Nothing
 
       -- Immich fields
       , currentAssets = []
@@ -321,7 +326,7 @@ viewMenuState : Model -> MenuState -> Element Msg
 viewMenuState model menuState =
     case menuState of
         MainMenuHome ->
-            Menus.viewMainMenu LoadDataAgain
+            Menus.viewMainMenu model.reloadFeedback
 
         TimelineView config ->
             Menus.viewTimelineView model config LoadDataAgain LoadTimelineAssets
@@ -553,6 +558,9 @@ handleMenuResult menuResult model =
                             ( loadModel, Immich.fetchAlbumAssetsWithFilters loadModel.immichApiPaths album.id config.order config.mediaType config.status |> Cmd.map ImmichMsg )
             in
             ( modelWithPagination, loadCmd )
+
+        MenuReloadAlbums ->
+            ( model, Immich.getAllAlbums model.baseUrl model.apiKey |> Cmd.map ImmichMsg )
 
         MenuUpdateSearchInput focused ->
             -- Handle search input focus change
@@ -809,6 +817,9 @@ update msg model =
     case msg of
         LoadDataAgain ->
             ( model, Immich.getAllAlbums model.baseUrl model.apiKey |> Cmd.map ImmichMsg )
+
+        ClearReloadFeedback ->
+            ( { model | reloadFeedback = Nothing }, Cmd.none )
 
         SelectAlbum album ->
             case model.userMode of
@@ -1151,8 +1162,18 @@ update msg model =
                                 |> handleUpdateLoadingState FetchedAssetList
 
                         Immich.AlbumsFetched (Ok albums) ->
-                            model
-                                |> handleFetchAlbums albums
+                            let
+                                updatedModel =
+                                    model |> handleFetchAlbums albums
+
+                                clearFeedbackCmd =
+                                    if updatedModel.reloadFeedback /= Nothing then
+                                        Process.sleep 3000 |> Task.perform (always ClearReloadFeedback)
+
+                                    else
+                                        Cmd.none
+                            in
+                            updatedModel
 
                         Immich.AlbumCreated (Ok album) ->
                             let
@@ -1298,6 +1319,17 @@ update msg model =
                 Immich.AlbumAssetsChanged (Err _) ->
                     -- Album membership change failed, clear pending change and re-fetch to get correct state
                     switchToEditIfAssetFound { model | pendingAlbumChange = Nothing } model.imageIndex
+
+                Immich.AlbumsFetched (Ok albums) ->
+                    let
+                        clearFeedbackCmd =
+                            if newModel.reloadFeedback /= Nothing then
+                                Process.sleep 3000 |> Task.perform (always ClearReloadFeedback)
+
+                            else
+                                Cmd.none
+                    in
+                    ( newModel, clearFeedbackCmd )
 
                 Immich.AlbumCreated (Ok album) ->
                     case model.userMode of
@@ -1472,11 +1504,22 @@ handleFetchAlbums albums model =
 
         albumKeybindings =
             generateAlbumKeybindings allAlbums
+
+        albumCount =
+            List.length albums
+
+        feedbackMessage =
+            if albumCount > 0 then
+                Just ("Reloaded " ++ String.fromInt albumCount ++ " albums")
+
+            else
+                Just "No albums found"
     in
     { model
         | knownAlbums = updatedKnownAlbums
         , albumsLoadState = ImmichLoadSuccess
         , albumKeybindings = albumKeybindings
+        , reloadFeedback = feedbackMessage
     }
 
 
