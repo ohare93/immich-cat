@@ -19,6 +19,7 @@ import Html.Attributes
 import Html.Events
 import Immich exposing (ImmichApiPaths, ImmichAsset, ImmichAssetId)
 import Json.Decode
+import Json.Encode
 import ViewAlbums exposing (usefulColours)
 
 
@@ -36,6 +37,7 @@ type alias GridState =
     , scrollTop : Float
     , itemHeight : Float
     , bufferSize : Int
+    , programmaticScroll : Bool -- True when scroll was triggered programmatically
     }
 
 
@@ -91,6 +93,7 @@ initGridState screenWidth screenHeight =
     , scrollTop = 0.0
     , itemHeight = itemHeight
     , bufferSize = 5 -- Number of extra rows to render above/below viewport
+    , programmaticScroll = False
     }
 
 
@@ -154,7 +157,7 @@ updateGridState msg state assets =
             state
 
         GridScrolled scrollTop ->
-            { state | scrollTop = scrollTop }
+            { state | scrollTop = scrollTop, programmaticScroll = False }
 
 
 
@@ -228,6 +231,49 @@ calculateTotalHeight state totalItems =
         -- 8px gap between rows
     in
     toFloat totalRows * rowHeight
+
+
+{-| Calculate scroll position needed to show a specific item index
+-}
+calculateScrollToItem : GridState -> Int -> Float
+calculateScrollToItem state itemIndex =
+    let
+        rowIndex =
+            itemIndex // state.gridColumns
+
+        rowHeight =
+            state.itemHeight + 8
+
+        itemTop =
+            toFloat rowIndex * rowHeight
+
+        itemBottom =
+            itemTop + state.itemHeight
+
+        viewportHeight =
+            toFloat state.screenHeight
+
+        currentScrollTop =
+            state.scrollTop
+
+        currentScrollBottom =
+            currentScrollTop + viewportHeight
+
+        -- Add some padding for better visibility
+        padding =
+            state.itemHeight * 0.2
+    in
+    if itemTop < currentScrollTop + padding then
+        -- Item is above viewport, scroll up
+        max 0 (itemTop - padding)
+
+    else if itemBottom > currentScrollBottom - padding then
+        -- Item is below viewport, scroll down
+        itemBottom - viewportHeight + padding
+
+    else
+        -- Item is already visible, no scroll needed
+        state.scrollTop
 
 
 {-| Decode scroll position from scroll event
@@ -307,8 +353,24 @@ moveSelection direction state assets =
         newFocusedAssetId =
             List.drop newIndex assetIds
                 |> List.head
+
+        -- Calculate new scroll position to keep focused item visible
+        newScrollTop =
+            if newIndex /= currentIndex then
+                calculateScrollToItem state newIndex
+
+            else
+                state.scrollTop
+
+        -- Check if scroll position actually changed
+        scrollChanged =
+            newScrollTop /= state.scrollTop
     in
-    { state | focusedAssetId = newFocusedAssetId }
+    { state
+        | focusedAssetId = newFocusedAssetId
+        , scrollTop = newScrollTop
+        , programmaticScroll = scrollChanged
+    }
 
 
 toggleSelection : GridState -> GridState
@@ -479,6 +541,13 @@ viewGridItems apiPaths apiKey state gridItems toMsg =
             , Html.Attributes.style "overflow-y" "auto"
             , Html.Events.on "scroll" (Html.Events.targetValue |> Json.Decode.andThen decodeScrollTop |> Json.Decode.map (toMsg << GridScrolled))
             ]
+                ++ -- Only set scrollTop property for programmatic scrolls to avoid feedback loops
+                   (if state.programmaticScroll then
+                        [ Html.Attributes.property "scrollTop" (Json.Encode.float state.scrollTop) ]
+
+                    else
+                        []
+                   )
 
         -- Inner container with total height to maintain scrollbar
         innerContainerStyle =
