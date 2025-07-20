@@ -18,6 +18,7 @@ import Html exposing (Html)
 import Html.Attributes
 import Html.Events
 import Immich exposing (ImmichApiPaths, ImmichAsset, ImmichAssetId)
+import Json.Decode
 import ViewAlbums exposing (usefulColours)
 
 
@@ -32,6 +33,9 @@ type alias GridState =
     , multiSelectMode : Bool
     , screenWidth : Int
     , screenHeight : Int
+    , scrollTop : Float
+    , itemHeight : Float
+    , bufferSize : Int
     }
 
 
@@ -47,6 +51,7 @@ type GridMsg
     | GridBulkArchive Bool
     | GridBulkAddToAlbum
     | GridBulkRemoveFromAlbum
+    | GridScrolled Float
 
 
 type alias GridItem =
@@ -63,12 +68,29 @@ type alias GridItem =
 
 initGridState : Int -> Int -> GridState
 initGridState screenWidth screenHeight =
+    let
+        -- Calculate item height based on grid columns and available width
+        columns =
+            calculateGridColumns screenWidth
+
+        itemWidth =
+            (screenWidth - 20 - (8 * (columns - 1))) // columns
+
+        -- Account for padding and gaps
+        itemHeight =
+            toFloat itemWidth
+
+        -- Square aspect ratio
+    in
     { selectedAssets = Dict.empty
     , focusedAssetId = Nothing
-    , gridColumns = calculateGridColumns screenWidth
+    , gridColumns = columns
     , multiSelectMode = False
     , screenWidth = screenWidth
     , screenHeight = screenHeight
+    , scrollTop = 0.0
+    , itemHeight = itemHeight
+    , bufferSize = 5 -- Number of extra rows to render above/below viewport
     }
 
 
@@ -93,10 +115,21 @@ updateGridState msg state assets =
             handleGridKeyPress key state assets
 
         GridResized width height ->
+            let
+                newColumns =
+                    calculateGridColumns width
+
+                itemWidth =
+                    (width - 20 - (8 * (newColumns - 1))) // newColumns
+
+                newItemHeight =
+                    toFloat itemWidth
+            in
             { state
                 | screenWidth = width
                 , screenHeight = height
-                , gridColumns = calculateGridColumns width
+                , gridColumns = newColumns
+                , itemHeight = newItemHeight
             }
 
         GridToggleMultiSelect ->
@@ -120,6 +153,9 @@ updateGridState msg state assets =
         GridBulkRemoveFromAlbum ->
             state
 
+        GridScrolled scrollTop ->
+            { state | scrollTop = scrollTop }
+
 
 
 -- HELPER FUNCTIONS
@@ -138,6 +174,67 @@ calculateGridColumns screenWidth =
             screenWidth // minItemWidth
     in
     max 2 (min maxColumns calculatedColumns)
+
+
+{-| Calculate which items are visible based on scroll position and viewport size
+-}
+calculateVisibleRange : GridState -> Int -> { startIndex : Int, endIndex : Int, startRow : Int, endRow : Int }
+calculateVisibleRange state totalItems =
+    let
+        -- Calculate row height (item height + gap)
+        rowHeight =
+            state.itemHeight + 8
+
+        -- 8px gap between rows
+        -- Calculate total rows needed
+        totalRows =
+            (totalItems + state.gridColumns - 1) // state.gridColumns
+
+        -- Calculate visible rows
+        viewportHeight =
+            toFloat state.screenHeight
+
+        startRow =
+            max 0 (floor (state.scrollTop / rowHeight) - state.bufferSize)
+
+        endRow =
+            min totalRows (ceiling ((state.scrollTop + viewportHeight) / rowHeight) + state.bufferSize)
+
+        -- Convert rows to item indices
+        startIndex =
+            startRow * state.gridColumns
+
+        endIndex =
+            min totalItems ((endRow + 1) * state.gridColumns)
+    in
+    { startIndex = startIndex
+    , endIndex = endIndex
+    , startRow = startRow
+    , endRow = endRow
+    }
+
+
+{-| Calculate the total height needed for all items
+-}
+calculateTotalHeight : GridState -> Int -> Float
+calculateTotalHeight state totalItems =
+    let
+        totalRows =
+            (totalItems + state.gridColumns - 1) // state.gridColumns
+
+        rowHeight =
+            state.itemHeight + 8
+
+        -- 8px gap between rows
+    in
+    toFloat totalRows * rowHeight
+
+
+{-| Decode scroll position from scroll event
+-}
+decodeScrollTop : String -> Json.Decode.Decoder Float
+decodeScrollTop _ =
+    Json.Decode.at [ "target", "scrollTop" ] Json.Decode.float
 
 
 toggleAssetSelection : ImmichAssetId -> Dict ImmichAssetId Bool -> Dict ImmichAssetId Bool
@@ -353,19 +450,63 @@ createGridItem state index asset =
 viewGridItems : ImmichApiPaths -> String -> GridState -> List GridItem -> (GridMsg -> msg) -> Element msg
 viewGridItems apiPaths apiKey state gridItems toMsg =
     let
+        totalItems =
+            List.length gridItems
+
+        visibleRange =
+            calculateVisibleRange state totalItems
+
+        totalHeight =
+            calculateTotalHeight state totalItems
+
+        -- Extract only visible items
+        visibleItems =
+            gridItems
+                |> List.drop visibleRange.startIndex
+                |> List.take (visibleRange.endIndex - visibleRange.startIndex)
+
+        -- Calculate offset for visible items to maintain scroll position
+        rowHeight =
+            state.itemHeight + 8
+
+        topOffset =
+            toFloat visibleRange.startRow * rowHeight
+
+        -- Container styles for virtual scrolling
+        containerStyle =
+            [ Html.Attributes.style "position" "relative"
+            , Html.Attributes.style "height" "100%"
+            , Html.Attributes.style "overflow-y" "auto"
+            , Html.Events.on "scroll" (Html.Events.targetValue |> Json.Decode.andThen decodeScrollTop |> Json.Decode.map (toMsg << GridScrolled))
+            ]
+
+        -- Inner container with total height to maintain scrollbar
+        innerContainerStyle =
+            [ Html.Attributes.style "height" (String.fromFloat totalHeight ++ "px")
+            , Html.Attributes.style "position" "relative"
+            ]
+
+        -- Grid styles for visible items
         gridStyle =
             [ Html.Attributes.style "display" "grid"
             , Html.Attributes.style "grid-template-columns" ("repeat(" ++ String.fromInt state.gridColumns ++ ", 1fr)")
             , Html.Attributes.style "gap" "8px"
             , Html.Attributes.style "padding" "10px"
-            , Html.Attributes.style "height" "100%"
-            , Html.Attributes.style "overflow-y" "auto"
+            , Html.Attributes.style "position" "absolute"
+            , Html.Attributes.style "top" (String.fromFloat topOffset ++ "px")
+            , Html.Attributes.style "left" "0"
+            , Html.Attributes.style "right" "0"
             ]
 
-        gridItemsHtml =
-            List.map (viewGridItem apiPaths apiKey toMsg) gridItems
+        visibleItemsHtml =
+            List.map (viewGridItem apiPaths apiKey toMsg) visibleItems
     in
-    html (Html.div gridStyle gridItemsHtml)
+    html
+        (Html.div containerStyle
+            [ Html.div innerContainerStyle
+                [ Html.div gridStyle visibleItemsHtml ]
+            ]
+        )
 
 
 viewGridItem : ImmichApiPaths -> String -> (GridMsg -> msg) -> GridItem -> Html msg

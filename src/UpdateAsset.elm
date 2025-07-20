@@ -905,5 +905,9 @@ handleGridViewMessage gridMsg gridState currentAssets knownAssets =
                 -- Switch to album selection for bulk remove
                 StayInAssets (SelectAlbumInput (ViewAlbums.getAlbumSearch "" Dict.empty))
 
+        ViewGrid.GridScrolled _ ->
+            -- Scroll events are handled by updateGridState
+            StayInAssets (GridView updatedGridState)
+
         _ ->
             StayInAssets (GridView updatedGridState)
