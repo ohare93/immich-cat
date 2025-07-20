@@ -15,20 +15,19 @@
       }
 
       .center img {
-        max-width: 100%; /* Restrict the image width to the width of its container */
-        max-height: 100%; /* Restrict the image height to maintain aspect ratio */
-        display: block; /* Ensure the image behaves as a block element */
-        margin: 0 auto; /* Center the image horizontally within the container */
+        max-width: 100%;
+        max-height: 100%;
+        display: block;
+        margin: 0 auto;
       }
     </style>
   </head>
   <body>
     <div id="myapp"></div>
     <script type="text/javascript">
-      // Cache for storing blob URLs
       const assetCache = new Map();
       const preloadQueue = new Set();
-      const maxCacheSize = 50; // Max number of cached assets
+      const maxCacheSize = 50;
 
       function fetchWithAuthentication(url, authToken) {
         const headers = new Headers();
@@ -55,9 +54,7 @@
           return assetCache.get(imageUrl);
         }
 
-        // Prevent multiple simultaneous fetches of the same asset
         if (preloadQueue.has(imageUrl)) {
-          // Wait for the ongoing fetch to complete
           while (preloadQueue.has(imageUrl) && !assetCache.has(imageUrl)) {
             await new Promise((resolve) => setTimeout(resolve, 50));
           }
@@ -84,30 +81,25 @@
         }
       }
 
-      // Preload function for adjacent images
       function preloadAsset(imageUrl, authToken) {
         if (!assetCache.has(imageUrl) && !preloadQueue.has(imageUrl)) {
-          getProtectedAssetUrl(imageUrl, authToken).catch(console.error);
+          getProtectedAssetUrl(imageUrl, authToken).catch(() => {});
         }
       }
 
-      // Shared base class for media elements
       class MediaElementBase extends HTMLElement {
         constructor(config) {
           super();
           this.config = config;
           this.assetBlob = null;
-          this.currentVideo = null; // Track current video element for cleanup
+          this.currentVideo = null;
         }
 
         connectedCallback() {
-          // Initialize properties but don't start loading yet
-          // We'll wait for attributes to be set via attributeChangedCallback
           this.assetUrl = this.getAttribute("asset-url");
           this.apiKey = this.getAttribute("api-key");
           this.preloadList = this.getAttribute("preload-urls");
 
-          // Show initial loading state
           this.render();
         }
 
@@ -116,15 +108,12 @@
             this.apiKey = newValue;
           } else if (name === "asset-url") {
             this.assetUrl = newValue;
-            // Clear existing blob when URL changes so new asset can load
             this.assetBlob = null;
-            // Stop and cleanup any existing video
             this.cleanupCurrentVideo();
           } else if (name === "preload-urls") {
             this.preloadList = newValue;
           }
 
-          // Start loading when we have both asset URL and API key
           if (
             this.assetUrl &&
             this.apiKey &&
@@ -139,7 +128,6 @@
                 this.apiKey,
               );
 
-              // Preload adjacent assets using config
               if (this.preloadList) {
                 const urls = this.preloadList.split(",");
                 const urlsToPreload = this.config.preloadCount
@@ -162,12 +150,10 @@
 
               this.render(); // Show actual asset
 
-              // Execute post-render callback if provided
               if (this.config.postRender) {
                 this.config.postRender(this);
               }
             } catch (error) {
-              console.error(`Error loading ${this.config.mediaType}:`, error);
               this.innerHTML = `
                 <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #f66;">
                   Error loading ${this.config.mediaType}
@@ -200,7 +186,6 @@
         }
 
         disconnectedCallback() {
-          // Clean up when element is removed from DOM
           this.cleanupCurrentVideo();
         }
 
@@ -217,7 +202,6 @@
         }
 
         showVideoWarning(message) {
-          // Create a warning overlay on top of the video
           const warningDiv = document.createElement('div');
           warningDiv.style.cssText = `
             position: absolute;
@@ -234,14 +218,12 @@
           `;
           warningDiv.textContent = `⚠️ ${message}`;
           
-          // Position the parent element relatively if not already
           if (this.style.position !== 'relative') {
             this.style.position = 'relative';
           }
           
           this.appendChild(warningDiv);
           
-          // Auto-hide warning after 8 seconds
           setTimeout(() => {
             if (warningDiv.parentNode) {
               warningDiv.remove();
@@ -287,26 +269,18 @@
                 </div>
               `,
               postRender: (element) => {
-                // Clean up any previous video first
                 element.cleanupCurrentVideo();
                 
-                // Use event-based approach instead of setTimeout for better QuteBrowser compatibility
                 const video = element.querySelector("video");
                 if (video) {
-                  // Track this video for cleanup
                   element.currentVideo = video;
                   
                   video.addEventListener('loadeddata', () => {
-                    // Only try manual play if autoplay didn't work
                     if (video.paused) {
-                      video.play().catch(console.error);
+                      video.play().catch(() => {});
                     }
                   });
                   
-                  // Log errors but don't show user warnings
-                  video.addEventListener('error', (e) => {
-                    console.error('Video error:', e.target.error);
-                  });
                 }
               },
             });
@@ -314,7 +288,6 @@
         },
       );
 
-      // ThumbHash-to-Image Web Component
       customElements.define(
         "thumbhash-image",
         class extends HTMLElement {
@@ -362,15 +335,12 @@
           }
 
           async render() {
-            // Clear previous content
             this.innerHTML = "";
             
-            // Show thumbhash placeholder first
             if (this.thumbhashString && window.thumbhash) {
               this.renderThumbhash();
             }
             
-            // Then load full image
             if (this.assetUrl && this.apiKey && !this.hasLoadedFullImage) {
               this.loadFullImage();
             }
@@ -378,14 +348,12 @@
 
           renderThumbhash() {
             try {
-              // Decode base64 thumbhash string to Uint8Array
               const binaryString = atob(this.thumbhashString);
               const thumbhashArray = new Uint8Array(binaryString.length);
               for (let i = 0; i < binaryString.length; i++) {
                 thumbhashArray[i] = binaryString.charCodeAt(i);
               }
               
-              // Create canvas and render thumbhash
               this.canvas = document.createElement("canvas");
               this.canvas.style.width = "100%";
               this.canvas.style.height = "100%";
@@ -395,7 +363,6 @@
               this.canvas.style.left = "0";
               this.canvas.style.filter = "blur(1px)"; // Slight blur for aesthetic
               
-              // Use thumbhash library to decode
               const { w, h, rgba } = window.thumbhash.thumbHashToRGBA(thumbhashArray);
               this.canvas.width = w;
               this.canvas.height = h;
@@ -408,7 +375,6 @@
               this.appendChild(this.canvas);
               
             } catch (error) {
-              console.error("Error rendering thumbhash:", error);
               this.renderPlaceholder();
             }
           }
@@ -447,7 +413,6 @@
                 this.img.style.opacity = "1";
                 this.hasLoadedFullImage = true;
                 
-                // Remove thumbhash canvas after full image loads
                 setTimeout(() => {
                   if (this.canvas && this.canvas.parentNode) {
                     this.canvas.remove();
@@ -455,24 +420,18 @@
                 }, 300);
               };
               
-              this.img.onerror = () => {
-                console.error("Error loading full image");
-              };
+              this.img.onerror = () => {};
               
               this.img.src = objectUrl;
               this.appendChild(this.img);
               
             } catch (error) {
-              console.error("Error loading full image:", error);
             }
           }
         }
       );
 
-      // Get environment variables from the running process (secure runtime injection)
       const getEnvVar = (name, defaultValue = "") => {
-        // In development, these will be injected by the dev server
-        // In production, these will be passed via server-side rendering or build-time injection
         return (window.ENV && window.ENV[name]) || defaultValue;
       };
 
@@ -485,29 +444,18 @@
         },
       });
 
-      // Diagnostic logging
-      console.log('ENV available:', !!window.ENV);
-      console.log('storageAPI available:', !!window.storageAPI);
-      console.log('Current location:', window.location.href);
-
-      // Fallback storageAPI if not injected by dev server
       if (!window.storageAPI) {
-        console.warn('storageAPI not found, creating fallback implementation');
-        console.warn('This suggests you are loading the file directly instead of through the dev server');
         window.storageAPI = {
           save: function(key, value) {
             try {
               localStorage.setItem(key, value);
-              console.log('Saved to localStorage (fallback):', key);
             } catch (error) {
-              console.error('Failed to save to localStorage:', error);
             }
           },
           load: function(key) {
             try {
               return localStorage.getItem(key);
             } catch (error) {
-              console.error('Failed to load from localStorage:', error);
               return null;
             }
           },
@@ -515,44 +463,33 @@
             try {
               localStorage.removeItem('immichApiUrl');
               localStorage.removeItem('immichApiKey');
-              console.log('Cleared localStorage (fallback)');
             } catch (error) {
-              console.error('Failed to clear localStorage:', error);
             }
           }
         };
       }
 
-      // Port subscriptions
       app.ports.openUrl.subscribe(function (url) {
         window.open(url, "_blank");
       });
 
-      // localStorage port connections
       app.ports.saveToStorage.subscribe(function (data) {
         const [key, value] = data;
         if (window.storageAPI.save.constructor.name === 'AsyncFunction') {
-          // Handle async version (with encryption)
-          window.storageAPI.save(key, value).catch(function(error) {
-            console.error('Error saving to storage:', error);
-          });
+          window.storageAPI.save(key, value).catch(function(error) {});
         } else {
-          // Handle sync version (fallback)
           window.storageAPI.save(key, value);
         }
       });
 
       app.ports.loadFromStorage.subscribe(function (key) {
         if (window.storageAPI.load.constructor.name === 'AsyncFunction') {
-          // Handle async version (with encryption)
           window.storageAPI.load(key).then(function(value) {
             app.ports.storageLoaded.send([key, value]);
           }).catch(function(error) {
-            console.error('Error loading from storage:', error);
             app.ports.storageLoaded.send([key, null]);
           });
         } else {
-          // Handle sync version (fallback)
           const value = window.storageAPI.load(key);
           app.ports.storageLoaded.send([key, value]);
         }

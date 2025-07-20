@@ -116,9 +116,6 @@ viewTimelineView model config loadDataMsg loadTimelineAssetsMsg =
             , viewTimelineFilters config
             , button [] { onPress = Just loadTimelineAssetsMsg, label = text "[Enter/Space] Load & View Assets" }
             ]
-        , column [ width (fillPortion 6), height fill ]
-            [ el [ paddingXY 10 10 ] (text "Timeline assets will appear here") -- TODO: implement asset display
-            ]
         , column [ width (fillPortion 4 |> minimum 300), height fill, paddingXY 15 15 ]
             [ viewContextHelp TimelineContext
             ]
@@ -137,9 +134,6 @@ viewSearchView model config executeSearchMsg =
             , viewSearchFilters config
             , el [] (text ("Search Query: " ++ config.query))
             , button [] { onPress = Just executeSearchMsg, label = text "[Enter/Space] Search & View Results" }
-            ]
-        , column [ width (fillPortion 6), height fill ]
-            [ text "Search results will appear here" -- TODO: implement search results
             ]
         , column [ width (fillPortion 4 |> minimum 300), height fill, paddingXY 15 15 ]
             [ viewContextHelp (SearchContext { inputFocused = config.inputFocused })
@@ -188,7 +182,6 @@ checkForEmptyFilterResults model config album =
             else
                 text "Album assets will appear here"
 
-        -- TODO: implement filtered album assets
         _ ->
             text "Loading album assets..."
 
@@ -264,15 +257,6 @@ viewSettings model onUrlChange onApiKeyChange onSaveConfig onClearConfig =
                         _ ->
                             el [ Font.size 14, Font.color (Element.rgb 0.7 0.5 0.1) ] (text "⚠️ Using development server configuration")
                     ]
-                ]
-            , -- Other Settings (placeholder)
-              column [ Element.spacingXY 0 15 ]
-                [ el [ Font.size 18, Font.bold ] (text "Other Preferences")
-                , el [ Font.size 14 ] (text "Coming soon:")
-                , text "• Timeline default filters"
-                , text "• Search default context"
-                , text "• Album default sorting"
-                , text "• Keybinding customization"
                 ]
             , el [ Font.size 12 ] (text "Press Escape to return to main menu")
             ]
