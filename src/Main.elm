@@ -1958,9 +1958,19 @@ handleFetchAlbums albums model =
         albumCount =
             List.length albums
 
+        isFirstLoad =
+            Dict.isEmpty model.knownAlbums
+
         feedbackMessage =
             if albumCount > 0 then
-                Just ("Reloaded " ++ String.fromInt albumCount ++ " albums")
+                let
+                    actionText =
+                        if isFirstLoad then
+                            "Loaded"
+                        else
+                            "Reloaded"
+                in
+                Just (actionText ++ " " ++ String.fromInt albumCount ++ " albums")
 
             else
                 Just "No albums found"

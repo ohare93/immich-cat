@@ -90,6 +90,12 @@ handleMainMenuInput key knownAlbums screenHeight =
         "t" ->
             ChangeMode (LegacyTimelineView defaultTimelineConfig)
 
+        " " ->
+            ChangeMode (LegacyTimelineView defaultTimelineConfig)
+
+        "Enter" ->
+            ChangeMode (LegacyTimelineView defaultTimelineConfig)
+
         "s" ->
             ChangeMode (LegacySearchView defaultSearchConfig)
 
