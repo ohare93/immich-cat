@@ -171,12 +171,33 @@ updateGridState msg state assets =
 calculateGridColumns : Int -> Int
 calculateGridColumns screenWidth =
     let
+        -- Default responsive breakpoints
         minItemWidth =
-            150
+            if screenWidth < 768 then
+                120
+                -- Mobile: smaller items
 
+            else if screenWidth < 1024 then
+                140
+                -- Tablet: medium items
+
+            else
+                150
+
+        -- Desktop: full size items
         maxColumns =
-            8
+            if screenWidth < 768 then
+                3
+                -- Mobile: fewer columns
 
+            else if screenWidth < 1024 then
+                5
+                -- Tablet: medium columns
+
+            else
+                8
+
+        -- Desktop: full columns
         calculatedColumns =
             screenWidth // minItemWidth
     in

@@ -4,7 +4,7 @@ import Browser exposing (element)
 import Browser.Events exposing (onKeyDown, onResize)
 import Date
 import Dict exposing (Dict)
-import Element exposing (Element, alignRight, alignTop, clipY, column, el, fill, fillPortion, height, minimum, paddingXY, px, text, width)
+import Element exposing (Element, alignRight, alignTop, clipY, column, el, fill, fillPortion, height, minimum, paddingXY, px, row, text, width)
 import Element.Background as Background
 import Element.Font as Font
 import HelpText exposing (AlbumBrowseState(..), ViewContext(..), viewContextHelp)
@@ -79,6 +79,8 @@ type Msg
     | MenuMsg MenuMsg
     | AlbumMsg AlbumMsg
     | AssetMsg AssetMsg
+      -- Theme messages
+    | ToggleTheme
 
 
 type alias Flags =
@@ -86,6 +88,18 @@ type alias Flags =
     , immichApiKey : String
     , immichApiUrl : String
     }
+
+
+type DeviceClass
+    = Mobile
+    | Tablet
+    | Desktop
+
+
+type Theme
+    = Light
+    | Dark
+    | System
 
 
 type alias Model =
@@ -116,6 +130,9 @@ type alias Model =
     , apiKey : String
     , immichApiPaths : ImmichApiPaths
     , screenHeight : Int
+    , screenWidth : Int
+    , deviceClass : DeviceClass
+    , theme : Theme
     , pendingAlbumChange : Maybe ( ImmichAlbumId, Bool ) -- (albumId, isAddition)
     , paginationState : PaginationState
     }
@@ -165,6 +182,82 @@ type alias ImageIndex =
     Int
 
 
+classifyDevice : Int -> Int -> DeviceClass
+classifyDevice width height =
+    if width < 768 then
+        Mobile
+
+    else if width < 1024 then
+        Tablet
+
+    else
+        Desktop
+
+
+nextTheme : Theme -> Theme
+nextTheme currentTheme =
+    case currentTheme of
+        Light ->
+            Dark
+
+        Dark ->
+            System
+
+        System ->
+            Light
+
+
+getBackgroundColor : Theme -> Element.Color
+getBackgroundColor theme =
+    case theme of
+        Light ->
+            Element.rgb 0.98 0.98 0.98
+
+        Dark ->
+            Element.rgb 0.1 0.1 0.1
+
+        System ->
+            ViewAlbums.usefulColours "darkgrey"
+
+
+
+-- Default
+
+
+getTextColor : Theme -> Element.Color
+getTextColor theme =
+    case theme of
+        Light ->
+            Element.rgb 0.1 0.1 0.1
+
+        Dark ->
+            Element.rgb 0.9 0.9 0.9
+
+        System ->
+            Element.rgb 0.1 0.1 0.1
+
+
+
+-- Default
+
+
+getSecondaryColor : Theme -> Element.Color
+getSecondaryColor theme =
+    case theme of
+        Light ->
+            Element.rgb 0.6 0.6 0.6
+
+        Dark ->
+            Element.rgb 0.5 0.5 0.5
+
+        System ->
+            Element.rgb 0.6 0.6 0.6
+
+
+
+-- Default
+
+
 init : Flags -> ( Model, Cmd Msg )
 init flags =
     ( { key = ""
@@ -194,6 +287,9 @@ init flags =
       , apiKey = flags.immichApiKey
       , immichApiPaths = getImmichApiPaths flags.immichApiUrl flags.immichApiKey
       , screenHeight = 800 -- Default, will be updated by window resize
+      , screenWidth = 1200 -- Default, will be updated by window resize
+      , deviceClass = classifyDevice 1200 800 -- Will be updated by WindowResize
+      , theme = System -- Default to system theme
       , pendingAlbumChange = Nothing
       , paginationState =
             { currentConfig = Nothing
@@ -329,16 +425,35 @@ createDetailedViewTitle assetSource =
 
 view : Model -> Html Msg
 view model =
-    Element.layout [ width fill, height (fill |> minimum 1), Background.color <| ViewAlbums.usefulColours "darkgrey" ] <|
-        viewWithInputBottomBar model.userMode <|
+    Element.layout
+        [ width fill
+        , height (fill |> minimum 1)
+        , Background.color (getBackgroundColor model.theme)
+        , Font.color (getTextColor model.theme)
+        ]
+    <|
+        viewWithInputBottomBar model.deviceClass model.userMode model.theme <|
             viewMainWindow model
 
 
-viewWithInputBottomBar : UserMode -> Element Msg -> Element Msg
-viewWithInputBottomBar userMode viewMain =
+viewWithInputBottomBar : DeviceClass -> UserMode -> Theme -> Element Msg -> Element Msg
+viewWithInputBottomBar deviceClass userMode theme viewMain =
+    let
+        inputBarHeight =
+            case deviceClass of
+                Mobile ->
+                    px 44
+
+                -- Touch-friendly height for mobile
+                Tablet ->
+                    px 30
+
+                Desktop ->
+                    px 20
+    in
     column [ width fill, height fill ]
         [ el [ width fill, height (fill |> minimum 1), clipY ] viewMain
-        , el [ width fill, height (px 20) ] <| viewInputMode userMode
+        , el [ width fill, height inputBarHeight ] <| viewInputMode userMode theme
         ]
 
 
@@ -363,7 +478,7 @@ viewMenuState : Model -> MenuState -> Element Msg
 viewMenuState model menuState =
     case menuState of
         MainMenuHome ->
-            Menus.viewMainMenu model.reloadFeedback
+            Menus.viewMainMenu (model.deviceClass == Mobile) model.reloadFeedback
 
         TimelineView config ->
             Menus.viewTimelineView model config LoadDataAgain LoadTimelineAssets
@@ -491,8 +606,8 @@ viewAssetState model assetState =
             ViewAsset.viewGridAssets model.immichApiPaths model.apiKey gridState model.currentAssets model.knownAssets model.paginationState.hasMorePages model.paginationState.isLoadingMore (AssetMsg << AssetGridMsg)
 
 
-viewInputMode : UserMode -> Element msg
-viewInputMode userMode =
+viewInputMode : UserMode -> Theme -> Element msg
+viewInputMode userMode theme =
     let
         inputMode =
             case userMode of
@@ -542,16 +657,30 @@ viewInputMode userMode =
 
                 LoadingAssets _ ->
                     NormalMode
+
+        themeText =
+            case theme of
+                Light ->
+                    "☀️"
+
+                Dark ->
+                    "🌙"
+
+                System ->
+                    "⚙️"
     in
-    case inputMode of
-        NormalMode ->
-            el [ width fill, Background.color <| Element.fromRgb { red = 0.8, green = 0.8, blue = 0.8, alpha = 1 } ] <| text "Normal"
+    row [ width fill ]
+        [ case inputMode of
+            NormalMode ->
+                el [ width (fillPortion 1), Background.color <| Element.fromRgb { red = 0.8, green = 0.8, blue = 0.8, alpha = 1 } ] <| text "Normal"
 
-        InsertMode ->
-            el [ width fill, Background.color <| Element.fromRgb { red = 0, green = 1, blue = 0, alpha = 1 } ] <| text "Input"
+            InsertMode ->
+                el [ width (fillPortion 1), Background.color <| Element.fromRgb { red = 0, green = 1, blue = 0, alpha = 1 } ] <| text "Input"
 
-        KeybindingMode ->
-            el [ width fill, Background.color <| Element.fromRgb { red = 1, green = 0.5, blue = 0, alpha = 1 } ] <| text "Keybind"
+            KeybindingMode ->
+                el [ width (fillPortion 1), Background.color <| Element.fromRgb { red = 1, green = 0.5, blue = 0, alpha = 1 } ] <| text "Keybind"
+        , el [ width (px 40), Background.color <| getSecondaryColor theme, Font.color <| getTextColor theme, Element.centerX ] <| text themeText
+        ]
 
 
 
@@ -1086,13 +1215,20 @@ update msg model =
                         "g" ->
                             ( { model | userMode = MainMenu Settings }, Cmd.none )
 
+                        "T" ->
+                            ( { model | theme = nextTheme model.theme }, Cmd.none )
+
                         _ ->
                             ( model, Cmd.none )
 
         WindowResize width height ->
             let
                 newModel =
-                    { model | screenHeight = height }
+                    { model
+                        | screenHeight = height
+                        , screenWidth = width
+                        , deviceClass = classifyDevice width height
+                    }
 
                 updatedModel =
                     case model.userMode of
@@ -1436,6 +1572,9 @@ update msg model =
         AssetMsg assetMsg ->
             -- This should no longer be called due to new architecture
             ( model, Cmd.none )
+
+        ToggleTheme ->
+            ( { model | theme = nextTheme model.theme }, Cmd.none )
 
         ImmichMsg imsg ->
             let

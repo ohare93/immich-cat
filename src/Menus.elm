@@ -74,31 +74,51 @@ type alias AlbumConfig =
 -- Main menu view
 
 
-viewMainMenu : Maybe String -> Element msg
-viewMainMenu reloadFeedback =
-    row [ width fill, height fill ]
-        [ column [ width <| fillPortion 1, height fill, Element.spacingXY 0 20, paddingXY 20 20 ]
-            [ el [ Font.size 24, Font.bold ] (text "Image Categorizer")
-            , column [ Element.spacingXY 0 15 ]
-                [ el [ Font.size 18, Font.bold ] (text "Choose View Mode")
+viewMainMenu : Bool -> Maybe String -> Element msg
+viewMainMenu isMobile reloadFeedback =
+    if isMobile then
+        column [ width fill, height fill, paddingXY 10 20, Element.spacingXY 0 20 ]
+            [ el [ Font.size 20, Font.bold, Element.centerX ] (text "Image Categorizer")
+            , column [ width fill, Element.spacingXY 0 15 ]
+                [ el [ Font.size 16, Font.bold ] (text "Choose View Mode")
                 , viewMainMenuOption "t" "📅 Timeline View" "Browse all assets with timeline filters"
                 , viewMainMenuOption "s" "🔍 Search Assets" "Smart search with context options"
                 , viewMainMenuOption "a" "📁 Browse Albums" "Select and view album contents"
                 , viewMainMenuOption "r" "↻ Reload Albums" "Refresh album list from server"
                 , viewMainMenuOption "g" "⚙️ Settings" "Configure preferences and options"
                 ]
-            , column [ Element.spacingXY 0 10 ]
-                [ case reloadFeedback of
-                    Just message ->
-                        el [ Font.size 14, Font.color (Element.rgb 0.2 0.6 1.0) ] (text message)
+            , case reloadFeedback of
+                Just feedback ->
+                    el [ Font.size 12, Element.centerX ] (text feedback)
 
-                    Nothing ->
-                        Element.none
-                , el [ Font.size 12 ] (text "Press the highlighted key or click to navigate")
-                ]
+                Nothing ->
+                    Element.none
             ]
-        , el [ width <| fillPortion 1, height fill, paddingXY 20 20 ] <| viewContextHelp MainMenuContext
-        ]
+
+    else
+        row [ width fill, height fill ]
+            [ column [ width <| fillPortion 1, height fill, Element.spacingXY 0 20, paddingXY 20 20 ]
+                [ el [ Font.size 24, Font.bold ] (text "Image Categorizer")
+                , column [ Element.spacingXY 0 15 ]
+                    [ el [ Font.size 18, Font.bold ] (text "Choose View Mode")
+                    , viewMainMenuOption "t" "📅 Timeline View" "Browse all assets with timeline filters"
+                    , viewMainMenuOption "s" "🔍 Search Assets" "Smart search with context options"
+                    , viewMainMenuOption "a" "📁 Browse Albums" "Select and view album contents"
+                    , viewMainMenuOption "r" "↻ Reload Albums" "Refresh album list from server"
+                    , viewMainMenuOption "g" "⚙️ Settings" "Configure preferences and options"
+                    ]
+                , column [ Element.spacingXY 0 10 ]
+                    [ case reloadFeedback of
+                        Just message ->
+                            el [ Font.size 14, Font.color (Element.rgb 0.2 0.6 1.0) ] (text message)
+
+                        Nothing ->
+                            Element.none
+                    , el [ Font.size 12 ] (text "Press the highlighted key or click to navigate")
+                    ]
+                ]
+            , el [ width <| fillPortion 1, height fill, paddingXY 20 20 ] <| viewContextHelp MainMenuContext
+            ]
 
 
 viewMainMenuOption : String -> String -> String -> Element msg

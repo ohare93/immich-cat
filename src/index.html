@@ -2,6 +2,7 @@
 <html>
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Main</title>
     <script src="../dist/main.js"></script>
     <script src="../node_modules/thumbhash/thumbhash.js"></script>
@@ -19,6 +20,27 @@
         max-height: 100%;
         display: block;
         margin: 0 auto;
+      }
+
+      /* Mobile responsive improvements */
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+      }
+
+      /* Touch-friendly improvements */
+      @media (max-width: 768px) {
+        .center img {
+          max-height: calc(100vh - 100px); /* Account for mobile browser bars */
+        }
+      }
+
+      /* Grid responsiveness */
+      @media (max-width: 480px) {
+        .center {
+          white-space: normal;
+        }
       }
     </style>
   </head>
