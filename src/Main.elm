@@ -58,6 +58,8 @@ type Msg
     | ChangeSearchContext SearchContext
     | ChangeSearchStatus StatusFilter
     | ChangeSearchQuery String
+    | SelectSearchSuggestion String
+    | ClearSearchQuery
     | ChangeAlbumMediaType MediaTypeFilter
     | ChangeAlbumOrder ImageOrder
     | ChangeAlbumStatus StatusFilter
@@ -367,7 +369,7 @@ viewMenuState model menuState =
             Menus.viewTimelineView model config LoadDataAgain LoadTimelineAssets
 
         SearchView config ->
-            Menus.viewSearchView model config ExecuteSearch
+            Menus.viewSearchView model config ChangeSearchQuery SelectSearchSuggestion ExecuteSearch ClearSearchQuery
 
         AlbumBrowse search ->
             Element.row [ width fill, height fill ]
@@ -1223,7 +1225,66 @@ update msg model =
                 MainMenu menuState ->
                     case menuState of
                         SearchView config ->
-                            ( { model | userMode = MainMenu (SearchView { config | query = newQuery }) }, Cmd.none )
+                            let
+                                suggestions =
+                                    if String.length newQuery > 1 then
+                                        Menus.generateSearchSuggestions model.knownAssets
+
+                                    else
+                                        []
+
+                                updatedConfig =
+                                    { config
+                                        | query = newQuery
+                                        , suggestions = suggestions
+                                        , showSuggestions = String.length newQuery > 1
+                                    }
+                            in
+                            ( { model | userMode = MainMenu (SearchView updatedConfig) }, Cmd.none )
+
+                        _ ->
+                            ( model, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        SelectSearchSuggestion suggestion ->
+            case model.userMode of
+                MainMenu menuState ->
+                    case menuState of
+                        SearchView config ->
+                            let
+                                updatedRecentSearches =
+                                    Menus.addToRecentSearches suggestion config.recentSearches
+
+                                updatedConfig =
+                                    { config
+                                        | query = suggestion
+                                        , recentSearches = updatedRecentSearches
+                                        , showSuggestions = False
+                                    }
+                            in
+                            ( { model | userMode = MainMenu (SearchView updatedConfig) }, Cmd.none )
+
+                        _ ->
+                            ( model, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        ClearSearchQuery ->
+            case model.userMode of
+                MainMenu menuState ->
+                    case menuState of
+                        SearchView config ->
+                            let
+                                updatedConfig =
+                                    { config
+                                        | query = ""
+                                        , showSuggestions = False
+                                    }
+                            in
+                            ( { model | userMode = MainMenu (SearchView updatedConfig) }, Cmd.none )
 
                         _ ->
                             ( model, Cmd.none )
@@ -1304,8 +1365,14 @@ update msg model =
 
                             else
                                 let
+                                    updatedRecentSearches =
+                                        Menus.addToRecentSearches config.query config.recentSearches
+
+                                    updatedConfig =
+                                        { config | recentSearches = updatedRecentSearches }
+
                                     updatedModel =
-                                        createLoadStateForCurrentAssetSource (TextSearch config.query) model
+                                        createLoadStateForCurrentAssetSource (TextSearch config.query) { model | userMode = MainMenu (SearchView updatedConfig) }
 
                                     modelWithPagination =
                                         { updatedModel | paginationState = { currentConfig = Nothing, currentQuery = Just config.query, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = updatedModel.paginationState.maxAssetsToFetch } }

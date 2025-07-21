@@ -3,11 +3,13 @@ module Menus exposing
     , SearchConfig
     , SearchContext(..)
     , TimelineConfig
+    , addToRecentSearches
     , defaultAlbumConfig
     , defaultSearchConfig
     , defaultTimelineConfig
     , filterByMediaType
     , filterByStatus
+    , generateSearchSuggestions
     , toggleCategorisation
     , toggleMediaType
     , toggleOrder
@@ -20,8 +22,11 @@ module Menus exposing
     , viewTimelineView
     )
 
+import Date
 import Dict exposing (Dict)
 import Element exposing (Element, centerX, centerY, column, el, fill, fillPortion, height, minimum, paddingXY, px, row, text, width)
+import Element.Background as Background
+import Element.Border as Border
 import Element.Font as Font
 import Element.Input as Input exposing (button)
 import HelpText exposing (AlbumBrowseState(..), ViewContext(..), viewContextHelp)
@@ -52,6 +57,9 @@ type alias SearchConfig =
     , status : StatusFilter
     , query : String
     , inputFocused : Bool
+    , recentSearches : List String
+    , showSuggestions : Bool
+    , suggestions : List String
     }
 
 
@@ -126,13 +134,13 @@ viewTimelineView model config loadDataMsg loadTimelineAssetsMsg =
 -- Search view
 
 
-viewSearchView : { a | albumKeybindings : Dict ImmichAssetId String, currentAssets : List ImmichAssetId, imagesLoadState : ImmichLoadState, knownAlbums : Dict ImmichAssetId ImmichAlbum } -> SearchConfig -> msg -> Element msg
-viewSearchView model config executeSearchMsg =
+viewSearchView : { a | albumKeybindings : Dict ImmichAssetId String, currentAssets : List ImmichAssetId, imagesLoadState : ImmichLoadState, knownAlbums : Dict ImmichAssetId ImmichAlbum, knownAssets : Dict ImmichAssetId ImmichAsset } -> SearchConfig -> (String -> msg) -> (String -> msg) -> msg -> msg -> Element msg
+viewSearchView model config onQueryChange onSuggestionSelect executeSearchMsg clearSearchMsg =
     row [ width fill, height fill ]
         [ column [ width (fillPortion 3 |> minimum 220), height fill, paddingXY 15 15, Element.spacingXY 0 15 ]
             [ el [ Font.size 20, Font.bold ] (text "🔍 Search Assets")
             , viewSearchFilters config
-            , el [] (text ("Search Query: " ++ config.query))
+            , viewEnhancedSearchInput config onQueryChange onSuggestionSelect clearSearchMsg
             , button [] { onPress = Just executeSearchMsg, label = text "[Enter/Space] Search & View Results" }
             ]
         , column [ width (fillPortion 4 |> minimum 300), height fill, paddingXY 15 15 ]
@@ -486,6 +494,9 @@ defaultSearchConfig =
     , status = AllStatuses
     , query = ""
     , inputFocused = False
+    , recentSearches = []
+    , showSuggestions = False
+    , suggestions = []
     }
 
 
@@ -525,3 +536,252 @@ filterByStatus statusFilter assets =
 
         ArchivedOnly ->
             List.filter (\asset -> asset.isArchived) assets
+
+
+
+-- Enhanced search input with suggestions and recent searches
+
+
+viewEnhancedSearchInput : SearchConfig -> (String -> msg) -> (String -> msg) -> msg -> Element msg
+viewEnhancedSearchInput config onQueryChange onSuggestionSelect clearSearchMsg =
+    let
+        inputField =
+            Input.text
+                [ width fill
+                , Element.below
+                    (if config.showSuggestions && (not (List.isEmpty config.suggestions) || not (List.isEmpty config.recentSearches)) then
+                        viewSearchSuggestions config onSuggestionSelect
+
+                     else
+                        Element.none
+                    )
+                ]
+                { onChange = onQueryChange
+                , text = config.query
+                , placeholder = Just (Input.placeholder [] (text "Type to search assets..."))
+                , label = Input.labelAbove [ Font.size 14, Font.bold ] (text "Search Query")
+                }
+
+        clearButton =
+            if String.isEmpty config.query then
+                Element.none
+
+            else
+                Input.button
+                    [ Element.alignRight
+                    , paddingXY 8 4
+                    , Font.size 12
+                    , Font.color (Element.rgb 0.6 0.6 0.6)
+                    , Element.mouseOver [ Font.color (Element.rgb 0.8 0.2 0.2) ]
+                    ]
+                    { onPress = Just clearSearchMsg
+                    , label = text "✕ Clear"
+                    }
+    in
+    column [ width fill, Element.spacingXY 0 5 ]
+        [ row [ width fill, Element.spacingXY 10 0 ]
+            [ el [ width fill ] inputField
+            , clearButton
+            ]
+        , if not (List.isEmpty config.recentSearches) && String.isEmpty config.query then
+            viewRecentSearches config onSuggestionSelect
+
+          else
+            Element.none
+        ]
+
+
+viewSearchSuggestions : SearchConfig -> (String -> msg) -> Element msg
+viewSearchSuggestions config onSuggestionSelect =
+    let
+        allSuggestions =
+            config.suggestions ++ config.recentSearches
+
+        limitedSuggestions =
+            allSuggestions
+                |> List.filter (\suggestion -> String.contains (String.toLower config.query) (String.toLower suggestion))
+                |> List.take 8
+    in
+    if List.isEmpty limitedSuggestions then
+        Element.none
+
+    else
+        column
+            [ width fill
+            , Background.color (Element.rgb 1 1 1)
+            , Border.color (Element.rgb 0.8 0.8 0.8)
+            , Border.width 1
+            , Border.rounded 4
+            , Element.spacingXY 0 0
+            , Element.moveDown 2
+            , Element.inFront Element.none
+            ]
+            (List.map (viewSuggestionItem onSuggestionSelect) limitedSuggestions)
+
+
+viewSuggestionItem : (String -> msg) -> String -> Element msg
+viewSuggestionItem onSuggestionSelect suggestion =
+    Input.button
+        [ width fill
+        , paddingXY 12 8
+        , Element.mouseOver [ Background.color (Element.rgb 0.95 0.95 0.95) ]
+        , Font.size 14
+        ]
+        { onPress = Just (onSuggestionSelect suggestion)
+        , label =
+            row [ width fill, Element.spacingXY 8 0 ]
+                [ el [ Font.color (Element.rgb 0.4 0.4 0.4), Font.size 12 ] (text "🔍")
+                , el [] (text suggestion)
+                ]
+        }
+
+
+viewRecentSearches : SearchConfig -> (String -> msg) -> Element msg
+viewRecentSearches config onSuggestionSelect =
+    if List.isEmpty config.recentSearches then
+        Element.none
+
+    else
+        column [ width fill, Element.spacingXY 0 8 ]
+            [ el [ Font.size 12, Font.bold, Font.color (Element.rgb 0.6 0.6 0.6) ] (text "Recent Searches:")
+            , Element.wrappedRow [ Element.spacingXY 8 4 ]
+                (List.take 5 config.recentSearches
+                    |> List.map (viewRecentSearchChip onSuggestionSelect)
+                )
+            ]
+
+
+viewRecentSearchChip : (String -> msg) -> String -> Element msg
+viewRecentSearchChip onSuggestionSelect search =
+    Input.button
+        [ Background.color (Element.rgb 0.9 0.9 0.9)
+        , Font.color (Element.rgb 0.4 0.4 0.4)
+        , paddingXY 8 4
+        , Border.rounded 12
+        , Font.size 12
+        , Element.mouseOver [ Background.color (Element.rgb 0.8 0.8 0.8) ]
+        ]
+        { onPress = Just (onSuggestionSelect search)
+        , label = text search
+        }
+
+
+
+-- Helper functions for search suggestions
+
+
+dateToString : Date.Date -> String
+dateToString date =
+    String.fromInt (Date.year date)
+        ++ "-"
+        ++ String.padLeft 2 '0' (String.fromInt (Date.monthNumber date))
+        ++ "-"
+        ++ String.padLeft 2 '0' (String.fromInt (Date.day date))
+
+
+generateSearchSuggestions : Dict ImmichAssetId ImmichAsset -> List String
+generateSearchSuggestions knownAssets =
+    let
+        extractTerms asset =
+            [ asset.title
+            , extractDateTerms (dateToString asset.fileCreatedAt)
+            , extractFileTypeTerms asset.mimeType
+            , asset.duration |> Maybe.withDefault ""
+            ]
+                |> List.filter (not << String.isEmpty)
+
+        extractDateTerms dateString =
+            -- Extract year, month from date string like "2023-05-15T10:30:00Z"
+            case String.split "-" (String.left 10 dateString) of
+                year :: month :: _ ->
+                    year ++ " " ++ monthNumberToName month
+
+                _ ->
+                    ""
+
+        extractFileTypeTerms mimeType =
+            if String.startsWith "image/" mimeType then
+                "image photo picture"
+
+            else if String.startsWith "video/" mimeType then
+                "video movie clip"
+
+            else
+                ""
+
+        monthNumberToName month =
+            case month of
+                "01" ->
+                    "January"
+
+                "02" ->
+                    "February"
+
+                "03" ->
+                    "March"
+
+                "04" ->
+                    "April"
+
+                "05" ->
+                    "May"
+
+                "06" ->
+                    "June"
+
+                "07" ->
+                    "July"
+
+                "08" ->
+                    "August"
+
+                "09" ->
+                    "September"
+
+                "10" ->
+                    "October"
+
+                "11" ->
+                    "November"
+
+                "12" ->
+                    "December"
+
+                _ ->
+                    ""
+
+        allTerms =
+            Dict.values knownAssets
+                |> List.concatMap extractTerms
+                |> List.concatMap (String.split " ")
+                |> List.map String.trim
+                |> List.filter (\term -> String.length term > 2)
+                |> List.map String.toLower
+
+        termFrequency =
+            List.foldl
+                (\term acc -> Dict.update term (\count -> Just (Maybe.withDefault 0 count + 1)) acc)
+                Dict.empty
+                allTerms
+    in
+    Dict.toList termFrequency
+        |> List.sortBy (\( _, count ) -> -count)
+        |> List.take 20
+        |> List.map (\( term, _ ) -> term)
+
+
+addToRecentSearches : String -> List String -> List String
+addToRecentSearches newSearch recentSearches =
+    if String.isEmpty (String.trim newSearch) then
+        recentSearches
+
+    else
+        let
+            trimmedSearch =
+                String.trim newSearch
+
+            filteredRecent =
+                List.filter ((/=) trimmedSearch) recentSearches
+        in
+        (trimmedSearch :: filteredRecent)
+            |> List.take 10
