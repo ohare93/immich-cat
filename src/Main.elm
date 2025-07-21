@@ -1587,7 +1587,7 @@ update msg model =
             in
             case imsg of
                 Immich.AlbumAssetsChanged (Ok _) ->
-                    -- Album membership change succeeded, update album asset count and normalize asset states
+                    -- Album membership change succeeded, update album asset count and refresh membership data
                     let
                         updatedModel =
                             case newModel.pendingAlbumChange of
@@ -1602,17 +1602,27 @@ update msg model =
 
                                         modelWithUpdatedCount =
                                             updateAlbumAssetCount albumId countChange { newModel | pendingAlbumChange = Nothing }
-
-                                        -- Normalize the asset's PropertyChange state to stable state
-                                        finalModel =
-                                            normalizeAssetMembershipStates modelWithUpdatedCount albumId isAddition
                                     in
-                                    finalModel
+                                    modelWithUpdatedCount
 
                                 Nothing ->
                                     { newModel | pendingAlbumChange = Nothing }
+
+                        -- Fetch fresh membership data to ensure all album memberships are current
+                        membershipCmd =
+                            case updatedModel.userMode of
+                                ViewAssets assetState ->
+                                    case assetState of
+                                        EditAsset _ asset _ ->
+                                            Immich.fetchMembershipForAsset updatedModel.immichApiPaths asset.asset.id |> Cmd.map ImmichMsg
+
+                                        _ ->
+                                            Cmd.none
+
+                                _ ->
+                                    Cmd.none
                     in
-                    ( updatedModel, Cmd.none )
+                    ( updatedModel, membershipCmd )
 
                 Immich.AlbumAssetsChanged (Err _) ->
                     -- Album membership change failed, clear pending change and re-fetch to get correct state

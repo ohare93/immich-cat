@@ -352,6 +352,9 @@ handleNormalModeInput key inputMode asset search screenHeight currentAssets =
         " " ->
             ChangeImageIndex 1
 
+        "Enter" ->
+            ChangeImageIndex 1
+
         "Escape" ->
             ChangeAssetToMainMenu
 

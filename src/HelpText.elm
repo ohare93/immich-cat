@@ -217,6 +217,7 @@ viewAssetViewHelp inputMode =
             , viewKeybinding "←" "Previous asset"
             , viewKeybinding "→" "Next asset"
             , viewKeybinding "Space" "Next asset"
+            , viewKeybinding "Enter" "Next asset"
             , viewKeybinding "Escape" "Return to main menu"
             ]
         , column [ Element.spacingXY 0 8 ]

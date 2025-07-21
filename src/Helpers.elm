@@ -27,7 +27,7 @@ isSupportedSearchLetter : String -> Bool
 isSupportedSearchLetter testString =
     let
         regex =
-            regexFromString "^[a-zA-Z0-9 ]$"
+            regexFromString "^[a-zA-Z0-9 \\-_.(),;:!?@#&']$"
     in
     Regex.contains regex testString
 
