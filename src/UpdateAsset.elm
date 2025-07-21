@@ -92,6 +92,8 @@ type AssetAction
     | InvalidKeybindingInput String AlbumSearch
     | ExitToNormalMode
     | ToggleVideoLoaded
+    | ToggleScrollView
+    | ScrollImage Int Int
     | NoAssetAction
 
 
@@ -108,40 +110,45 @@ handleEditAssetInput key inputMode asset search albumKeybindings knownAlbums scr
         handleKeybindingModeInput key inputMode asset search albumKeybindings knownAlbums
 
     else
-        -- Normal mode: check for normal mode commands first, then keybinding mode
-        case key of
-            "I" ->
-                ChangeInputMode InsertMode
-
-            "F" ->
-                ToggleFavorite
-
-            "D" ->
-                ToggleArchived
-
-            "K" ->
-                OpenInImmich
-
-            "T" ->
-                ToggleTimeView
-
-            "G" ->
-                SwitchToGridView
-
-            "L" ->
-                ToggleVideoLoaded
-
-            "?" ->
-                ShowAssetHelp
+        case inputMode of
+            ScrollViewMode scrollState ->
+                handleScrollViewModeInput key scrollState
 
             _ ->
-                if isKeybindingLetter key then
-                    -- Start keybinding mode with this lowercase letter
-                    handleStartKeybindingMode key asset search albumKeybindings knownAlbums
+                -- Normal mode: check for normal mode commands first, then keybinding mode
+                case key of
+                    "I" ->
+                        ChangeInputMode InsertMode
 
-                else
-                    -- Handle other navigation keys (arrows, space, etc.)
-                    handleNormalModeInput key inputMode asset search screenHeight currentAssets
+                    "F" ->
+                        ToggleFavorite
+
+                    "D" ->
+                        ToggleArchived
+
+                    "K" ->
+                        OpenInImmich
+
+                    "T" ->
+                        ToggleTimeView
+
+                    "G" ->
+                        SwitchToGridView
+
+                    "L" ->
+                        ToggleVideoLoaded
+
+                    "?" ->
+                        ShowAssetHelp
+
+                    _ ->
+                        if isKeybindingLetter key then
+                            -- Start keybinding mode with this lowercase letter
+                            handleStartKeybindingMode key asset search albumKeybindings knownAlbums
+
+                        else
+                            -- Handle other navigation keys (arrows, space, etc.)
+                            handleNormalModeInput key inputMode asset search screenHeight currentAssets
 
 
 
@@ -364,6 +371,9 @@ handleNormalModeInput key inputMode asset search screenHeight currentAssets =
         "PageDown" ->
             UpdateAssetSearch { search | pagination = pageDown search.pagination }
 
+        "S" ->
+            ToggleScrollView
+
         _ ->
             if String.contains "Control" key then
                 case String.replace "Control+" "" key of
@@ -384,6 +394,45 @@ handleNormalModeInput key inputMode asset search screenHeight currentAssets =
 
             else
                 NoAssetAction
+
+
+
+-- Handle Scroll View Mode input for hjkl navigation
+
+
+handleScrollViewModeInput : String -> { scrollX : Int, scrollY : Int } -> AssetAction
+handleScrollViewModeInput key scrollState =
+    let
+        scrollStep =
+            50
+
+        -- pixels to scroll per key press
+    in
+    case key of
+        "j" ->
+            ScrollImage 0 -scrollStep
+
+        -- Scroll image up to see more below
+        "k" ->
+            ScrollImage 0 scrollStep
+
+        -- Scroll image down to see more above
+        "h" ->
+            ScrollImage scrollStep 0
+
+        -- Scroll image right to see more to the left
+        "l" ->
+            ScrollImage -scrollStep 0
+
+        -- Scroll image left to see more to the right
+        "Escape" ->
+            ChangeInputMode NormalMode
+
+        "S" ->
+            ChangeInputMode NormalMode
+
+        _ ->
+            NoAssetAction
 
 
 
@@ -757,6 +806,10 @@ convertAssetActionToResult action inputMode asset search currentAssets =
 
                             else
                                 KeybindingMode
+
+                        ScrollViewMode scrollState ->
+                            -- Preserve scroll view mode when updating search
+                            ScrollViewMode scrollState
             in
             StayInAssets (EditAsset newInputMode asset newSearch)
 
@@ -826,6 +879,33 @@ convertAssetActionToResult action inputMode asset search currentAssets =
 
         NoAssetAction ->
             StayInAssets (EditAsset inputMode asset search)
+
+        ToggleScrollView ->
+            case inputMode of
+                NormalMode ->
+                    StayInAssets (EditAsset (ScrollViewMode { scrollX = 0, scrollY = 0 }) asset search)
+
+                ScrollViewMode _ ->
+                    StayInAssets (EditAsset NormalMode asset search)
+
+                _ ->
+                    -- Keep existing mode if not Normal or ScrollView
+                    StayInAssets (EditAsset inputMode asset search)
+
+        ScrollImage deltaX deltaY ->
+            case inputMode of
+                ScrollViewMode scrollState ->
+                    let
+                        newScrollState =
+                            { scrollX = scrollState.scrollX + deltaX
+                            , scrollY = scrollState.scrollY + deltaY
+                            }
+                    in
+                    StayInAssets (EditAsset (ScrollViewMode newScrollState) asset search)
+
+                _ ->
+                    -- Ignore scroll commands if not in scroll view mode
+                    StayInAssets (EditAsset inputMode asset search)
 
 
 

@@ -228,6 +228,7 @@ viewAssetViewHelp inputMode =
             , viewKeybinding "I" "Enter album search mode"
             , viewKeybinding "T" "Toggle time view (Absolute/Relative)"
             , viewKeybinding "G" "Switch to grid view"
+            , viewKeybinding "S" "Toggle scroll view (for large images)"
             , viewKeybinding "?" "Show/hide this help"
             ]
         , if inputMode == InsertMode then
@@ -250,7 +251,21 @@ viewAssetViewHelp inputMode =
                 ]
 
           else
-            Element.none
+            case inputMode of
+                ScrollViewMode _ ->
+                    column [ Element.spacingXY 0 8 ]
+                        [ el [ Font.size 16, Font.bold ] (text "Scroll View Mode")
+                        , viewKeybinding "j" "Scroll down"
+                        , viewKeybinding "k" "Scroll up"
+                        , viewKeybinding "h" "Scroll left"
+                        , viewKeybinding "l" "Scroll right"
+                        , viewKeybinding "S" "Exit scroll view"
+                        , viewKeybinding "Escape" "Exit scroll view"
+                        , el [ Font.size 13, Element.paddingXY 0 5 ] (text "Use this mode for very large images that need scrolling")
+                        ]
+
+                _ ->
+                    Element.none
         ]
 
 

@@ -85,6 +85,7 @@ type InputMode
     = NormalMode
     | InsertMode
     | KeybindingMode
+    | ScrollViewMode { scrollX : Int, scrollY : Int }
 
 
 

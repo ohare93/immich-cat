@@ -360,11 +360,100 @@ viewVideo asset apiPaths apiKey currentAssets knownAssets imageIndex =
 
 
 
+-- Scroll view for very large images
+
+
+viewScrollAsset : ImmichApiPaths -> String -> AssetWithActions -> { scrollX : Int, scrollY : Int } -> Element msg
+viewScrollAsset apiPaths apiKey assetWithActions scrollState =
+    let
+        asset =
+            assetWithActions.asset
+    in
+    if asset.path == "" then
+        text "No asset selected"
+
+    else if String.startsWith "image/" asset.mimeType then
+        viewScrollImage asset apiPaths apiKey scrollState
+
+    else if String.startsWith "video/" asset.mimeType then
+        if assetWithActions.isVideoLoaded then
+            viewScrollVideo asset apiPaths apiKey scrollState
+
+        else
+            text "Video not loaded for scroll view"
+
+    else
+        text "Unknown asset type for scroll view"
+
+
+
+-- Scroll image view with full-width display and scrolling
+
+
+viewScrollImage : ImmichAsset -> ImmichApiPaths -> String -> { scrollX : Int, scrollY : Int } -> Element msg
+viewScrollImage asset apiPaths apiKey scrollState =
+    column [ width fill, height fill ]
+        [ el [ width fill, height fill ] <|
+            Element.html <|
+                Html.div
+                    [ Html.Attributes.style "display" "flex"
+                    , Html.Attributes.style "align-items" "flex-start"
+                    , Html.Attributes.style "justify-content" "flex-start"
+                    , Html.Attributes.style "height" "calc(100vh - 40px)"
+                    , Html.Attributes.style "width" "100%"
+                    , Html.Attributes.style "overflow" "hidden"
+                    , Html.Attributes.style "position" "relative"
+                    ]
+                    [ Html.node "style" [] [ Html.text ("image-from-api.scroll-view img { max-width: none !important; max-height: none !important; width: 100% !important; height: auto !important; transform: translate(" ++ String.fromInt scrollState.scrollX ++ "px, " ++ String.fromInt scrollState.scrollY ++ "px) !important; position: absolute !important; top: 0 !important; left: 0 !important; }") ]
+                    , Html.node "image-from-api"
+                        [ Html.Attributes.attribute "asset-url" (apiPaths.downloadAsset asset.id)
+                        , Html.Attributes.attribute "api-key" apiKey
+                        , Html.Attributes.class "scroll-view"
+                        , Html.Attributes.style "width" "100%"
+                        , Html.Attributes.style "height" "100%"
+                        , Html.Attributes.style "display" "block"
+                        ]
+                        []
+                    ]
+        ]
+
+
+
+-- Scroll video view with full-width display and scrolling
+
+
+viewScrollVideo : ImmichAsset -> ImmichApiPaths -> String -> { scrollX : Int, scrollY : Int } -> Element msg
+viewScrollVideo asset apiPaths apiKey scrollState =
+    column [ width fill, height fill ]
+        [ el [ width fill, height fill ] <|
+            Element.html <|
+                Html.div 
+                    [ Html.Attributes.style "width" "100%"
+                    , Html.Attributes.style "height" "calc(100vh - 40px)"
+                    , Html.Attributes.style "position" "relative"
+                    , Html.Attributes.style "overflow" "hidden"
+                    ]
+                    [ Html.node "style" [] [ Html.text ("video-from-api.scroll-view video { max-width: none !important; max-height: none !important; width: 100% !important; height: auto !important; transform: translate(" ++ String.fromInt scrollState.scrollX ++ "px, " ++ String.fromInt scrollState.scrollY ++ "px) !important; position: absolute !important; top: 0 !important; left: 0 !important; }") ]
+                    , Html.node "video-from-api"
+                        [ Html.Attributes.attribute "asset-url" (apiPaths.downloadAsset asset.id)
+                        , Html.Attributes.attribute "api-key" apiKey
+                        , Html.Attributes.class "scroll-view"
+                        , Html.Attributes.style "width" "100%"
+                        , Html.Attributes.style "height" "calc(100vh - 40px)"
+                        , Html.Attributes.style "display" "block"
+                        , Html.Attributes.style "overflow" "hidden"
+                        ]
+                        []
+                    ]
+        ]
+
+
+
 -- Edit asset view function
 
 
-viewEditAsset : ImmichApiPaths -> String -> ImageIndex -> Int -> String -> AssetWithActions -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> TimeViewMode -> Element msg
-viewEditAsset apiPaths apiKey imageIndex totalAssets viewTitle currentAsset currentAssets knownAssets currentDateMillis timeMode =
+viewEditAsset : ImmichApiPaths -> String -> ImageIndex -> Int -> String -> AssetWithActions -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> TimeViewMode -> InputMode -> Element msg
+viewEditAsset apiPaths apiKey imageIndex totalAssets viewTitle currentAsset currentAssets knownAssets currentDateMillis timeMode inputMode =
     let
         -- Convert milliseconds to proper Date
         currentDate =
@@ -378,14 +467,28 @@ viewEditAsset apiPaths apiKey imageIndex totalAssets viewTitle currentAsset curr
         timeSinceUpload =
             formatTimeSinceUpload currentDate currentAsset.asset.fileCreatedAt
     in
-    column [ width fill, height fill ]
-        [ row [ width fill, alignTop, height (px 20) ]
-            [ el [] (text (String.fromInt (imageIndex + 1) ++ "/" ++ String.fromInt totalAssets ++ "    " ++ viewTitle))
-            , el [ alignRight, Font.size 12, Font.color (Element.rgb 0.7 0.7 0.7) ] (text (timeSinceUpload ++ " - "))
-            , viewAssetCountsText counts timeMode
-            ]
-        , el [ width fill, height fill ] <| viewAsset apiPaths apiKey currentAsset currentAssets knownAssets imageIndex
-        ]
+    case inputMode of
+        ScrollViewMode scrollState ->
+            -- Scroll view mode: show scroll view with minimal header
+            column [ width fill, height fill ]
+                [ row [ width fill, alignTop, height (px 20) ]
+                    [ el [] (text (String.fromInt (imageIndex + 1) ++ "/" ++ String.fromInt totalAssets ++ "    " ++ viewTitle ++ " (Scroll View)"))
+                    , el [ alignRight, Font.size 12, Font.color (Element.rgb 0.7 0.7 0.7) ] (text (timeSinceUpload ++ " - "))
+                    , viewAssetCountsText counts timeMode
+                    ]
+                , el [ width fill, height fill ] <| viewScrollAsset apiPaths apiKey currentAsset scrollState
+                ]
+
+        _ ->
+            -- Normal view modes
+            column [ width fill, height fill ]
+                [ row [ width fill, alignTop, height (px 20) ]
+                    [ el [] (text (String.fromInt (imageIndex + 1) ++ "/" ++ String.fromInt totalAssets ++ "    " ++ viewTitle))
+                    , el [ alignRight, Font.size 12, Font.color (Element.rgb 0.7 0.7 0.7) ] (text (timeSinceUpload ++ " - "))
+                    , viewAssetCountsText counts timeMode
+                    ]
+                , el [ width fill, height fill ] <| viewAsset apiPaths apiKey currentAsset currentAssets knownAssets imageIndex
+                ]
 
 
 
