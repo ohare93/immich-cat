@@ -1,0 +1,42 @@
+{
+  "name": "Elm Image Categorizer",
+  "dockerComposeFile": "../docker-compose.yaml",
+  "service": "image-frontend",
+  "workspaceFolder": "/mnt",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "elmtooling.elm-ls-vscode",
+        "ms-vscode.vscode-json",
+        "bradlc.vscode-tailwindcss",
+        "ms-vscode.vscode-typescript-next",
+        "ms-azuretools.vscode-docker",
+        "jnoortheen.nix-ide"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "files.associations": {
+          "*.elm": "elm",
+          "flake.lock": "json"
+        },
+        "elm.compiler": "/nix/store/*-elm-*/bin/elm",
+        "elm.makeCommand": "/nix/store/*-elm-*/bin/elm",
+        "elm.formatCommand": "/nix/store/*-elmPackages.elm-format-*/bin/elm-format",
+        "elm.testCommand": "/nix/store/*-elmPackages.elm-test-*/bin/elm-test"
+      }
+    }
+  },
+  "forwardPorts": [8000, 8001],
+  "portsAttributes": {
+    "8000": {
+      "label": "Application",
+      "onAutoForward": "openPreview"
+    },
+    "8001": {
+      "label": "Elm Live",
+      "onAutoForward": "ignore"
+    }
+  },
+  "postCreateCommand": "npm install && echo 'Development environment ready! Run: npm run dev'",
+  "remoteUser": "root"
+}
