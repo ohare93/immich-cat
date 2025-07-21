@@ -478,7 +478,11 @@ viewMenuState : Model -> MenuState -> Element Msg
 viewMenuState model menuState =
     case menuState of
         MainMenuHome ->
-            Menus.viewMainMenu (model.deviceClass == Mobile) model.reloadFeedback
+            let
+                isConfigured =
+                    model.configuredApiUrl /= Nothing && model.configuredApiKey /= Nothing
+            in
+            Menus.viewMainMenu (model.deviceClass == Mobile) model.reloadFeedback isConfigured
 
         TimelineView config ->
             Menus.viewTimelineView model config LoadDataAgain LoadTimelineAssets
@@ -1007,8 +1011,8 @@ handleAssetResult assetResult model =
                 loadMoreCmd =
                     case ( paginationState.currentConfig, paginationState.currentQuery ) of
                         ( Just config, Nothing ) ->
-                            -- Load more for image search
-                            Immich.searchAssetsPaginated model.immichApiPaths "" config.mediaType config.status 1000 nextPage |> Cmd.map ImmichMsg
+                            -- Load more for timeline view (preserves ordering)
+                            Immich.fetchImagesPaginated model.immichApiPaths config 1000 nextPage |> Cmd.map ImmichMsg
 
                         ( Nothing, Just query ) ->
                             -- Load more for text search
@@ -1640,13 +1644,17 @@ update msg model =
                                 |> appendFetchedAssets paginatedResponse.assets
                                 |> updatePaginationState paginatedResponse page
 
-                        Immich.AlbumFetchedForFiltering order mediaType status (Ok album) ->
+                        Immich.AssetMembershipFetched (Ok assetWithMembership) ->
+                            model
+                                |> handleFetchAssetMembership assetWithMembership
+
+                        Immich.AlbumFetchedWithClientSideFiltering order mediaType status (Ok album) ->
                             let
-                                -- Filter album assets client-side
+                                -- Filter and sort album assets client-side since API doesn't respect orderBy with albumIds
                                 filteredAssets =
                                     album.assets
-                                        |> filterByMediaType mediaType
-                                        |> filterByStatus status
+                                        |> Menus.filterByMediaType mediaType
+                                        |> Menus.filterByStatus status
                                         |> (case order of
                                                 CreatedAsc ->
                                                     List.sortBy (.fileCreatedAt >> Date.toRataDie)
@@ -1662,7 +1670,6 @@ update msg model =
 
                                                 Random ->
                                                     identity
-                                            -- Keep original album order for now
                                            )
 
                                 updatedModel =
@@ -1681,12 +1688,8 @@ update msg model =
                             in
                             updatedModel
 
-                        Immich.AlbumFetchedForFiltering _ _ _ (Err error) ->
+                        Immich.AlbumFetchedWithClientSideFiltering _ _ _ (Err error) ->
                             { model | imagesLoadState = ImmichLoadError error }
-
-                        Immich.AssetMembershipFetched (Ok assetWithMembership) ->
-                            model
-                                |> handleFetchAssetMembership assetWithMembership
 
                         Immich.AssetUpdated (Ok updatedAsset) ->
                             { model | knownAssets = Dict.insert updatedAsset.id updatedAsset model.knownAssets }
@@ -1929,16 +1932,176 @@ handleFetchAssetMembership assetWithMembership model =
 
 handleFetchAssets : List ImmichAsset -> Model -> Model
 handleFetchAssets assets model =
-    { model
-        | knownAssets = Helpers.listOverrideDict assets (\a -> ( a.id, a )) model.knownAssets
-        , currentAssets = List.map .id assets
-        , imagesLoadState = ImmichLoadSuccess
+    let
+        _ =
+            Debug.log "handleFetchAssets called" ("Processing " ++ String.fromInt (List.length assets) ++ " assets")
 
-        -- Preserve paginationState - don't overwrite it
-    }
+        _ =
+            Debug.log "Current userMode" (Debug.toString model.userMode)
+
+        -- Apply client-side sorting since Immich API doesn't respect orderBy properly
+        sortedAssets =
+            case model.paginationState.currentConfig of
+                Just config ->
+                    let
+                        _ =
+                            Debug.log "Timeline config found" ("Applying sorting with order: " ++ Debug.toString config.order)
+
+                        _ =
+                            Debug.log "Full timeline config" (Debug.toString config)
+                    in
+                    -- Apply sorting for timeline views
+                    applySortingToAssets config.order assets
+
+                Nothing ->
+                    let
+                        _ =
+                            Debug.log "No timeline config" "Keeping original order"
+                    in
+                    -- Keep original order for other views (album/search views handle sorting separately)
+                    assets
+    in
+    case model.paginationState.currentConfig of
+        Just _ ->
+            let
+                _ =
+                    Debug.log "handleFetchAssets" ("Setting imageIndex to 0, was: " ++ String.fromInt model.imageIndex)
+
+                updatedModel =
+                    { model
+                        | knownAssets = Helpers.listOverrideDict sortedAssets (\a -> ( a.id, a )) model.knownAssets
+                        , currentAssets = List.map .id sortedAssets
+                        , imagesLoadState = ImmichLoadSuccess
+                        , imageIndex = 0
+
+                        -- Preserve paginationState - don't overwrite it
+                    }
+            in
+            -- Timeline view with sorting - jump to first asset and sync ViewAsset state
+            case model.userMode of
+                ViewAssets _ ->
+                    -- Currently viewing an asset, sync the view to show asset at index 0
+                    Tuple.first (switchToEditIfAssetFound updatedModel 0)
+
+                _ ->
+                    -- Not currently viewing an asset, just return updated model
+                    updatedModel
+
+        Nothing ->
+            let
+                _ =
+                    Debug.log "handleFetchAssets" ("Preserving imageIndex: " ++ String.fromInt model.imageIndex)
+            in
+            -- No timeline sorting, preserve current index
+            { model
+                | knownAssets = Helpers.listOverrideDict sortedAssets (\a -> ( a.id, a )) model.knownAssets
+                , currentAssets = List.map .id sortedAssets
+                , imagesLoadState = ImmichLoadSuccess
+
+                -- Preserve paginationState - don't overwrite it
+            }
+
+
+applySortingToAssets : ImageOrder -> List ImmichAsset -> List ImmichAsset
+applySortingToAssets order assets =
+    let
+        _ =
+            Debug.log "Timeline Sorting" ("Applying " ++ Debug.toString order ++ " to " ++ String.fromInt (List.length assets) ++ " assets using timestamp strings for precision")
+
+        -- Debug log first 3 assets with both Date and raw string timestamps
+        loggedAssets =
+            assets
+                |> List.take 3
+                |> List.map
+                    (\asset ->
+                        let
+                            _ =
+                                Debug.log ("Asset: " ++ String.left 8 asset.id)
+                                    ("RAW: Created="
+                                        ++ asset.fileCreatedAtString
+                                        ++ " Modified="
+                                        ++ asset.fileModifiedAtString
+                                        ++ " | PARSED: Created="
+                                        ++ Date.toIsoString asset.fileCreatedAt
+                                        ++ " Modified="
+                                        ++ Date.toIsoString asset.fileModifiedAt
+                                    )
+                        in
+                        asset
+                    )
+
+        sortedAssets =
+            case order of
+                CreatedAsc ->
+                    List.sortWith
+                        (\a b ->
+                            case compare a.fileCreatedAtString b.fileCreatedAtString of
+                                EQ ->
+                                    compare a.id b.id
+
+                                -- Secondary sort by ID for predictable ordering
+                                other ->
+                                    other
+                        )
+                        assets
+
+                CreatedDesc ->
+                    List.sortWith
+                        (\a b ->
+                            case compare b.fileCreatedAtString a.fileCreatedAtString of
+                                -- b first for descending
+                                EQ ->
+                                    compare a.id b.id
+
+                                -- Secondary sort by ID for predictable ordering
+                                other ->
+                                    other
+                        )
+                        assets
+
+                ModifiedAsc ->
+                    List.sortWith
+                        (\a b ->
+                            case compare a.fileModifiedAtString b.fileModifiedAtString of
+                                EQ ->
+                                    compare a.id b.id
+
+                                -- Secondary sort by ID for predictable ordering
+                                other ->
+                                    other
+                        )
+                        assets
+
+                ModifiedDesc ->
+                    List.sortWith
+                        (\a b ->
+                            let
+                                stringComparison =
+                                    compare b.fileModifiedAtString a.fileModifiedAtString
+
+                                -- b first for descending
+                                _ =
+                                    Debug.log ("String Comparing " ++ String.left 8 a.id ++ " vs " ++ String.left 8 b.id)
+                                        ("A=" ++ a.fileModifiedAtString ++ " vs B=" ++ b.fileModifiedAtString ++ " Result=" ++ Debug.toString stringComparison)
+                            in
+                            case stringComparison of
+                                EQ ->
+                                    compare a.id b.id
+
+                                -- Secondary sort by ID for predictable ordering
+                                other ->
+                                    other
+                        )
+                        assets
+
+                Random ->
+                    assets
+    in
+    sortedAssets
 
 
 
+-- Keep original order for random
 -- KEYBINDING GENERATION --
 -- All keybinding functions are now imported from KeybindingGenerator module
 
@@ -1967,6 +2130,7 @@ handleFetchAlbums albums model =
                     actionText =
                         if isFirstLoad then
                             "Loaded"
+
                         else
                             "Reloaded"
                 in
@@ -2194,11 +2358,61 @@ appendFetchedAssets newAssets model =
 
         combinedAssetIds =
             existingAssetIds ++ newAssetIds
+
+        -- Re-sort all assets if we're in timeline view (since Immich API doesn't sort properly)
+        finalAssetIds =
+            case model.paginationState.currentConfig of
+                Just config ->
+                    -- Get all assets and re-sort them
+                    let
+                        allAssets =
+                            combinedAssetIds
+                                |> List.filterMap (\id -> Dict.get id updatedKnownAssets)
+
+                        sortedAssets =
+                            applySortingToAssets config.order allAssets
+
+                        _ =
+                            Debug.log "appendFetchedAssets" ("Re-sorting " ++ String.fromInt (List.length allAssets) ++ " assets with order: " ++ Debug.toString config.order)
+                    in
+                    List.map .id sortedAssets
+
+                Nothing ->
+                    combinedAssetIds
     in
-    { model
-        | knownAssets = updatedKnownAssets
-        , currentAssets = combinedAssetIds
-    }
+    case model.paginationState.currentConfig of
+        Just _ ->
+            let
+                _ =
+                    Debug.log "appendFetchedAssets" ("Setting imageIndex to 0, was: " ++ String.fromInt model.imageIndex)
+
+                updatedModel =
+                    { model
+                        | knownAssets = updatedKnownAssets
+                        , currentAssets = finalAssetIds
+                        , imageIndex = 0
+                    }
+            in
+            -- Timeline view with re-sorting - jump to first asset and sync ViewAsset state
+            case model.userMode of
+                ViewAssets _ ->
+                    -- Currently viewing an asset, sync the view to show asset at index 0
+                    Tuple.first (switchToEditIfAssetFound updatedModel 0)
+
+                _ ->
+                    -- Not currently viewing an asset, just return updated model
+                    updatedModel
+
+        Nothing ->
+            let
+                _ =
+                    Debug.log "appendFetchedAssets" ("Preserving imageIndex: " ++ String.fromInt model.imageIndex)
+            in
+            -- No timeline re-sorting, preserve current index
+            { model
+                | knownAssets = updatedKnownAssets
+                , currentAssets = finalAssetIds
+            }
 
 
 

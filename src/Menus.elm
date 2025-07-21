@@ -74,8 +74,8 @@ type alias AlbumConfig =
 -- Main menu view
 
 
-viewMainMenu : Bool -> Maybe String -> Element msg
-viewMainMenu isMobile reloadFeedback =
+viewMainMenu : Bool -> Maybe String -> Bool -> Element msg
+viewMainMenu isMobile reloadFeedback isConfigured =
     if isMobile then
         column [ width fill, height fill, paddingXY 10 20, Element.spacingXY 0 20 ]
             [ el [ Font.size 20, Font.bold, Element.centerX ] (text "Image Categorizer")
@@ -87,6 +87,14 @@ viewMainMenu isMobile reloadFeedback =
                 , viewMainMenuOption "r" "↻ Reload Albums" "Refresh album list from server"
                 , viewMainMenuOption "g" "⚙️ Settings" "Configure preferences and options"
                 ]
+            , if not isConfigured then
+                column [ Element.spacingXY 0 8, Element.centerX ]
+                    [ el [ Font.size 14, Font.bold, Font.color (Element.rgb 0.8 0.2 0.2), Element.centerX ] (text "⚠️ Configuration Required")
+                    , el [ Font.size 12, Element.centerX ] (text "Please configure server URL and API key in Settings (press 'g')")
+                    ]
+
+              else
+                Element.none
             , case reloadFeedback of
                 Just feedback ->
                     el [ Font.size 12, Element.centerX ] (text feedback)
@@ -108,7 +116,15 @@ viewMainMenu isMobile reloadFeedback =
                     , viewMainMenuOption "g" "⚙️ Settings" "Configure preferences and options"
                     ]
                 , column [ Element.spacingXY 0 10 ]
-                    [ case reloadFeedback of
+                    [ if not isConfigured then
+                        column [ Element.spacingXY 0 5 ]
+                            [ el [ Font.size 16, Font.bold, Font.color (Element.rgb 0.8 0.2 0.2) ] (text "⚠️ Configuration Required")
+                            , el [ Font.size 13 ] (text "Please configure server URL and API key in Settings (press 'g')")
+                            ]
+
+                      else
+                        Element.none
+                    , case reloadFeedback of
                         Just message ->
                             el [ Font.size 14, Font.color (Element.rgb 0.2 0.6 1.0) ] (text message)
 

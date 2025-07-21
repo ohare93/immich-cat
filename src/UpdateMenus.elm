@@ -129,7 +129,14 @@ handleTimelineViewInput key config =
             ChangeMode (LegacyTimelineView { config | categorisation = toggleCategorisation config.categorisation })
 
         "o" ->
-            ChangeMode (LegacyTimelineView { config | order = toggleOrder config.order })
+            let
+                newOrder =
+                    toggleOrder config.order
+
+                _ =
+                    Debug.log "Timeline order toggle" ("From: " ++ Debug.toString config.order ++ " To: " ++ Debug.toString newOrder)
+            in
+            ChangeMode (LegacyTimelineView { config | order = newOrder })
 
         "s" ->
             ChangeMode (LegacyTimelineView { config | status = toggleStatus config.status })

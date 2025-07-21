@@ -114,6 +114,8 @@ type alias ImmichAsset =
     , albumMembership : List ImmichAlbumId
     , fileCreatedAt : Date
     , fileModifiedAt : Date
+    , fileCreatedAtString : String -- Raw ISO timestamp for accurate sorting
+    , fileModifiedAtString : String -- Raw ISO timestamp for accurate sorting
     , thumbhash : Maybe String
     , duration : Maybe String -- Duration in HH:MM:SS.mmm format for video assets
     }
@@ -444,12 +446,13 @@ searchAssetsPaginated apiPaths searchText mediaType status size page =
 
 fetchAlbumAssetsWithFilters : ImmichApiPaths -> ImmichAlbumId -> ImageOrder -> MediaTypeFilter -> StatusFilter -> Cmd Msg
 fetchAlbumAssetsWithFilters apiPaths albumId order mediaType status =
-    -- Fetch the album and we'll filter client-side in the handler
+    -- WORKAROUND: Immich API doesn't properly respect orderBy with albumIds
+    -- Fall back to getting album data and doing client-side sorting
     makeGetRequest
         apiPaths.apiKey
         (apiPaths.getAlbum albumId)
         albumDecoder
-        (AlbumFetchedForFiltering order mediaType status)
+        (AlbumFetchedWithClientSideFiltering order mediaType status)
 
 
 fetchMembershipForAsset : ImmichApiPaths -> ImmichAssetId -> Cmd Msg
@@ -633,19 +636,29 @@ dateDecoder =
     Decode.string
         |> Decode.andThen
             (\dateString ->
+                -- Always fall back to date-only parsing since Elm's Date.fromIsoString doesn't support full timestamps
                 case fromIsoString (splitDateTimeToDate dateString) of
                     Ok date ->
                         Decode.succeed date
 
                     Err _ ->
-                        Decode.fail "Invalid date format"
+                        Decode.fail ("Invalid date format: " ++ dateString)
             )
+
+
+
+-- New decoder for full timestamp strings (for accurate sorting)
+
+
+timestampStringDecoder : Decode.Decoder String
+timestampStringDecoder =
+    Decode.string
 
 
 imageDecoder : Decode.Decoder ImmichAsset
 imageDecoder =
     Decode.map8
-        (\id path title mimeType isFavorite isArchived albumMembership ( fileCreatedAt, fileModifiedAt ) ->
+        (\id path title mimeType isFavorite isArchived albumMembership timestamps ->
             { id = id
             , path = path
             , title = title
@@ -653,8 +666,10 @@ imageDecoder =
             , isFavourite = isFavorite
             , isArchived = isArchived
             , albumMembership = albumMembership
-            , fileCreatedAt = fileCreatedAt
-            , fileModifiedAt = fileModifiedAt
+            , fileCreatedAt = timestamps.createdDate
+            , fileModifiedAt = timestamps.modifiedDate
+            , fileCreatedAtString = timestamps.createdString
+            , fileModifiedAtString = timestamps.modifiedString
             , thumbhash = Nothing
             , duration = Nothing
             }
@@ -666,9 +681,18 @@ imageDecoder =
         (Decode.field "isFavorite" Decode.bool)
         (Decode.field "isArchived" Decode.bool)
         (Decode.succeed [])
-        (Decode.map2 Tuple.pair
+        (Decode.map4
+            (\createdDate modifiedDate createdString modifiedString ->
+                { createdDate = createdDate
+                , modifiedDate = modifiedDate
+                , createdString = createdString
+                , modifiedString = modifiedString
+                }
+            )
             (Decode.field "fileCreatedAt" dateDecoder)
             (Decode.field "fileModifiedAt" dateDecoder)
+            (Decode.field "fileCreatedAt" timestampStringDecoder)
+            (Decode.field "fileModifiedAt" timestampStringDecoder)
         )
         |> Decode.andThen
             (\asset ->
@@ -733,4 +757,4 @@ type Msg
     | AlbumCreated (Result Http.Error ImmichAlbum)
     | AssetUpdated (Result Http.Error ImmichAsset)
     | BulkAssetsUpdated (Result Http.Error (List ImmichAsset))
-    | AlbumFetchedForFiltering ImageOrder MediaTypeFilter StatusFilter (Result Http.Error ImmichAlbum)
+    | AlbumFetchedWithClientSideFiltering ImageOrder MediaTypeFilter StatusFilter (Result Http.Error ImmichAlbum)

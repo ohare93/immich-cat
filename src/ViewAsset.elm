@@ -427,7 +427,7 @@ viewScrollVideo asset apiPaths apiKey scrollState =
     column [ width fill, height fill ]
         [ el [ width fill, height fill ] <|
             Element.html <|
-                Html.div 
+                Html.div
                     [ Html.Attributes.style "width" "100%"
                     , Html.Attributes.style "height" "calc(100vh - 40px)"
                     , Html.Attributes.style "position" "relative"
