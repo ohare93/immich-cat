@@ -62,6 +62,7 @@ type AssetResult msg
     | AssetBulkAddToAlbum (List ImmichAssetId) ImmichAlbumId
     | AssetBulkRemoveFromAlbum (List ImmichAssetId) ImmichAlbumId
     | AssetRequestLoadMore
+    | AssetReloadAlbums
 
 
 
@@ -94,6 +95,7 @@ type AssetAction
     | ToggleVideoLoaded
     | ToggleScrollView
     | ScrollImage Int Int
+    | ReloadAlbums
     | NoAssetAction
 
 
@@ -373,6 +375,9 @@ handleNormalModeInput key inputMode asset search screenHeight currentAssets =
 
         "S" ->
             ToggleScrollView
+
+        "R" ->
+            ReloadAlbums
 
         _ ->
             if String.contains "Control" key then
@@ -906,6 +911,9 @@ convertAssetActionToResult action inputMode asset search currentAssets =
                 _ ->
                     -- Ignore scroll commands if not in scroll view mode
                     StayInAssets (EditAsset inputMode asset search)
+
+        ReloadAlbums ->
+            AssetReloadAlbums
 
 
 

@@ -226,6 +226,7 @@ viewAssetViewHelp inputMode =
             , viewKeybinding "F" "Toggle favorite"
             , viewKeybinding "K" "Open in Immich (new tab)"
             , viewKeybinding "I" "Enter album search mode"
+            , viewKeybinding "R" "Reload albums from server"
             , viewKeybinding "T" "Toggle time view (Absolute/Relative)"
             , viewKeybinding "G" "Switch to grid view"
             , viewKeybinding "S" "Toggle scroll view (for large images)"

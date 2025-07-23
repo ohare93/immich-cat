@@ -1026,6 +1026,10 @@ handleAssetResult assetResult model =
             in
             ( { model | paginationState = updatedPaginationState }, loadMoreCmd )
 
+        AssetReloadAlbums ->
+            -- Reload albums while staying in ViewAsset mode
+            ( model, Immich.getAllAlbums model.baseUrl model.apiKey |> Cmd.map ImmichMsg )
+
 
 
 -- Helper to convert UpdateMenus.AssetSource to Main.AssetSource
