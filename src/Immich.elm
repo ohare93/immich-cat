@@ -383,7 +383,7 @@ fetchImagesPaginated apiPaths config size page =
                 apiPaths.apiKey
                 apiPaths.searchRandom
                 randomBody
-                paginatedAssetsDecoder
+                randomAssetsDecoder
                 messageConstructor
 
         _ ->
@@ -576,6 +576,23 @@ paginatedAssetsDecoder =
         (Decode.field "assets" (Decode.field "items" (Decode.list imageDecoder)))
         (Decode.field "assets" (Decode.field "total" Decode.int))
         (Decode.field "assets" (Decode.field "count" Decode.int))
+
+
+randomAssetsDecoder : Decode.Decoder PaginatedAssetResponse
+randomAssetsDecoder =
+    Decode.list imageDecoder
+        |> Decode.map
+            (\assets ->
+                let
+                    count =
+                        List.length assets
+
+                    -- Random endpoint doesn't provide pagination info, so assume no more pages
+                    hasNext =
+                        False
+                in
+                PaginatedAssetResponse assets count count hasNext
+            )
 
 
 albumToAssetWithMembershipDecoder : ImmichAssetId -> Decode.Decoder AssetWithMembership
