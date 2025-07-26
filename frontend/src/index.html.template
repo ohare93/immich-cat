@@ -12,7 +12,9 @@
     node: document.getElementById('myapp'),
     flags: {
 	test: Date.now(),
-        imagePrepend: "${BACKEND_URL}"
+        imagePrepend: "${BACKEND_URL}",
+	immichApiKey: "${IMMICH_URL}",
+	immichApiUrl: "${IMMICH_API_KEY}",
     }
   });
   </script>

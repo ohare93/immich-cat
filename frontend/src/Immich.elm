@@ -1,28 +1,18 @@
 module Immich exposing (..)
 
+import Array exposing (Array)
 import Date exposing (Date, fromIsoString)
 import Html exposing (..)
 import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
-import List exposing (head)
 import String exposing (split)
 
 
-type alias ImmichModel =
-    { images : List ImageWithMetadata
-    , imagesLoadState : LoadState
-    , albums : List ImmichAlbum
-    , albumsLoadState : LoadState
-    , apiUrl : String
-    , apiKey : String
-    , errorOnLoad : String
-    }
-
-type LoadState
-    = Loading
-    | Success
-    | Error Http.Error
+type ImmichLoadState
+    = ImmichLoading
+    | ImmichLoadSuccess
+    | ImmichLoadError Http.Error
 
 
 type alias ImageWithMetadata =
@@ -37,7 +27,7 @@ type alias ImmichAlbum =
     { id : String
     , albumName : String
     , assetCount : Int
-    , assets : List ImageWithMetadata
+    , assets : Array ImageWithMetadata
     , albumThumbnailAssetId : String
     , createdAt : Date
     }
@@ -49,20 +39,20 @@ type alias ImmichConfig =
     }
 
 
-getAllAlbums : String -> String -> Cmd ImmichMsg
+getAllAlbums : String -> String -> Cmd Msg
 getAllAlbums url key =
     Http.request
         { method = "GET"
         , headers = [ Http.header "Content-Type" "application/json", Http.header "x-api-key" key ]
         , url = url ++ "/albums"
         , body = Http.emptyBody
-        , expect = Http.expectJson AlbumsFetched (Decode.list albumDecoder)
+        , expect = Http.expectJson AlbumsFetched (Decode.array albumDecoder)
         , timeout = Nothing
         , tracker = Nothing
         }
 
 
-fetchRandomImages : String -> String -> Cmd ImmichMsg
+fetchRandomImages : String -> String -> Cmd Msg
 fetchRandomImages url key =
     Http.request
         { method = "POST"
@@ -73,7 +63,7 @@ fetchRandomImages url key =
                 (Encode.object
                     [ ( "isNotInAlbum", Encode.bool True ) ]
                 )
-        , expect = Http.expectJson RandomImagesFetched (Decode.list imageDecoder)
+        , expect = Http.expectJson RandomImagesFetched (Decode.array imageDecoder)
         , timeout = Nothing
         , tracker = Nothing
         }
@@ -85,7 +75,7 @@ albumDecoder =
         (Decode.field "id" Decode.string)
         (Decode.field "albumName" Decode.string)
         (Decode.field "assetCount" Decode.int)
-        (Decode.field "assets" (Decode.list imageDecoder))
+        (Decode.field "assets" (Decode.array imageDecoder))
         (Decode.field "albumThumbnailAssetId" Decode.string)
         (Decode.field "createdAt" dateDecoder)
 
@@ -93,7 +83,7 @@ albumDecoder =
 splitDateTimeToDate : String -> String
 splitDateTimeToDate str =
     if String.contains "T" str then
-        Maybe.withDefault str (head (split "T" str))
+        Maybe.withDefault str (List.head (split "T" str))
 
     else
         str
@@ -126,26 +116,37 @@ imageDecoder =
 -- UPDATE --
 
 
-type ImmichMsg
+type Msg
     = StartLoading
-    | AlbumsFetched (Result Http.Error (List ImmichAlbum))
-    | RandomImagesFetched (Result Http.Error (List ImageWithMetadata))
+    | AlbumsFetched (Result Http.Error (Array ImmichAlbum))
+    | RandomImagesFetched (Result Http.Error (Array ImageWithMetadata))
 
 
-update : ImmichMsg -> ImmichModel -> ( ImmichModel, Cmd ImmichMsg )
+type alias Model r =
+    { r
+        | images : Array ImageWithMetadata
+        , imagesLoadState : ImmichLoadState
+        , albums : Array ImmichAlbum
+        , albumsLoadState : ImmichLoadState
+        , apiUrl : String
+        , apiKey : String
+    }
+
+
+update : Msg -> Model r -> ( Model r, Cmd Msg )
 update msg model =
     case msg of
         StartLoading ->
-            ( { model | albumsLoadState = Loading, imagesLoadState = Loading }, getAllAlbums model.apiUrl model.apiKey )
+            ( { model | albumsLoadState = ImmichLoading, imagesLoadState = ImmichLoading }, getAllAlbums model.apiUrl model.apiKey )
 
         AlbumsFetched (Ok albums) ->
-            ( { model | albums = albums, albumsLoadState = Success }, fetchRandomImages model.apiUrl model.apiKey )
+            ( { model | albums = albums, albumsLoadState = ImmichLoadSuccess }, fetchRandomImages model.apiUrl model.apiKey )
 
         AlbumsFetched (Err error) ->
-            ( { model | albums = [], albumsLoadState = Error error }, Cmd.none )
+            ( { model | albums = Array.empty, albumsLoadState = ImmichLoadError error }, Cmd.none )
 
         RandomImagesFetched (Ok images) ->
-            ( { model | images = images, imagesLoadState = Success }, Cmd.none )
+            ( { model | images = images, imagesLoadState = ImmichLoadSuccess }, Cmd.none )
 
         RandomImagesFetched (Err error) ->
-            ( { model | images = [], imagesLoadState = Error error }, Cmd.none )
+            ( { model | images = Array.empty, imagesLoadState = ImmichLoadError error }, Cmd.none )

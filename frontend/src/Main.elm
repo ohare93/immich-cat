@@ -3,20 +3,24 @@ import Array exposing (Array)
 import Browser exposing (element)
 import Browser.Events exposing (onKeyDown)
 import Date
+import Dict exposing (Dict)
 import Html exposing (Html, button, div, img, text)
 import Html.Attributes exposing (class, src)
 import Html.Events exposing (onClick)
-import Immich exposing (ImageWithMetadata, ImmichAlbum)
+import Immich exposing (ImageWithMetadata, ImmichAlbum, ImmichLoadState(..), getAllAlbums)
 import Json.Decode as Decode
 
 
 type Msg
     = Increment
     | KeyPress String
+    | ImmichMsg Immich.Msg
 
 type alias Flags =
     { test : Int
     , imagePrepend : String
+    , immichApiKey : String
+    , immichApiUrl : String
     }
 
 
@@ -24,15 +28,54 @@ type alias Model =
     { count : Int
     , key : String
     , imagePrepend : String
-    , albums : List ImmichAlbum
-    , images : Array ImageWithMetadata
-    , state : UserState
+    , assetSelectMode : AssetSource
+    , userMode : UserMode
+    , bucketMode : BucketMode
     , test : Int
+    -- Immich fields
+    , images : Array ImageWithMetadata
+    , imagesLoadState : ImmichLoadState
+    , albums : Array ImmichAlbum
+    , albumsLoadState : ImmichLoadState
+    , apiUrl : String
+    , apiKey : String
     }
 
-type UserState
-    = ViewingState Int (Maybe ImageWithMetadata)
-    | ErrorState
+type AssetSource
+    = NoAssets
+    | Uncategorised
+
+
+-- | Search String
+-- | Album ImmichAlbum
+
+type UserMode
+    = SelectAssets String
+    | EditAsset AssetSource Int (List AssetChange)
+
+type BucketMode
+    = Normal
+
+
+-- type alias TestModel =
+--     { images : Array ImageWithMetadata
+--     , image : ImageWithMetadata
+--     , index : int
+--     , changesToBeMade : List AssetChange
+--     }
+
+type AssetChange
+    = AddToAlbum ImmichAlbum
+    | RemoveFromAlbum ImmichAlbum
+    | Delete
+    | Favourite
+
+defaultAssetKeys : Dict String AssetChange
+defaultAssetKeys =
+    Dict.fromList
+        [ ( "d", Delete )
+        , ( "f", Favourite )
+        ]
 
 
 init : Flags -> ( Model, Cmd Msg )
@@ -56,28 +99,30 @@ init flags =
                     "jpg"
                 ]
 
-        -- , { id = "0003", url = "", title = "Image C", inAlbumns = [ "a", "b" ] }
-        -- ]
         testAlbums =
-            [ ImmichAlbum "a" "Test" 50 [] "000001" (Date.fromOrdinalDate 2025 1)
-            ]
+            Array.fromList
+                [ ImmichAlbum "a" "Test" 50 Array.empty "000001" (Date.fromOrdinalDate 2025 1)
+                , ImmichAlbum "b" "Test2" 50 Array.empty "000002" (Date.fromOrdinalDate 2025 1)
+                , ImmichAlbum "c" "Test3" 50 Array.empty "000003" (Date.fromOrdinalDate 2025 1)
+                , ImmichAlbum "d" "Test4" 50 Array.empty "000004" (Date.fromOrdinalDate 2025 1)
+                ]
     in
     ( { count = 7
       , key = ""
-      , albums = testAlbums
       , imagePrepend = flags.imagePrepend
-      -- , albums =
-      --       [ { id = "a", name = "Album A" }
-      --       , { id = "b", name = "Album B" }
-      --       , { id = "c", name = "Album C" }
-      --       , { id = "d", name = "Album D" }
-      --       , { id = "e", name = "Album E" }
-      --       ]
-      , images = testImages
+      , userMode = SelectAssets ""
+      , assetSelectMode = NoAssets
+      , bucketMode = Normal
       , test = flags.test
-      , state = ViewingState 0 Nothing
+      -- Immich fields
+      , images = testImages
+      , imagesLoadState = ImmichLoading
+      , albums = testAlbums
+      , albumsLoadState = ImmichLoading
+      , apiUrl = flags.immichApiUrl
+      , apiKey = flags.immichApiKey
       }
-    , Cmd.none
+    , getAllAlbums flags.immichApiUrl flags.immichApiKey |> Cmd.map ImmichMsg
     )
 
 
@@ -100,46 +145,46 @@ init flags =
 --         ]
 
 
-imageOrBlank : String -> Html msg
-imageOrBlank path =
-    if path == "" then
-        text ""
-
-    else
-        img [ src path, class "img-fluid" ] []
-
-
-viewImage : String -> Maybe ImageWithMetadata -> Html msg
-viewImage imagePrepend maybeImage =
-    case maybeImage of
+viewImage : String -> Int -> Array ImageWithMetadata -> Html msg
+viewImage imagePrepend index images =
+    let
+        currentImage =
+            Array.get index images
+    in
+    case currentImage of
         Just image ->
-            div []
-                [ imageOrBlank (imagePrepend ++ image.path)
-                , div [] [ text image.title ]
-                -- , showAlbumsForImage model.albums image
-                ]
+            if image.path == "" then
+                div [] [ text "No Image" ]
+
+            else
+                div []
+                    [ img [ src (imagePrepend ++ image.path), class "img-fluid" ] []
+                    , div [] [ text image.title ]
+                    ]
+
         Nothing ->
-            div [] [ text "No Image Found" ]
+            div [] [ text "No Image" ]
 
 
 view : Model -> Html Msg
 view model =
-    case model.state of
-        ViewingState index maybeImage ->
-            viewViewingState model.test model.imagePrepend model.count model.key index maybeImage
-        ErrorState ->
-            div [] [ text "Error!" ]
+    case model.userMode of
+        SelectAssets searchString ->
+            div [] [ text "Select Assets" ]
+        EditAsset _ index pendingChanges ->
+            viewEditAsset model.test model.imagePrepend model.count model.key model.images index pendingChanges
 
-viewViewingState : Int -> String -> Int -> String -> Int -> Maybe ImageWithMetadata -> Html Msg
-viewViewingState test imagePrepend count key index maybeImage =
+
+viewEditAsset : Int -> String -> Int -> String -> Array ImageWithMetadata -> Int -> List AssetChange -> Html Msg
+viewEditAsset test imagePrepend count key images index pendingChanges =
     div [ class "text-center" ]
         [ div [] [ text ("Count: " ++ String.fromInt count) ]
         , div [] [ text ("Key: " ++ key) ]
         , button
             [ class "btn btn-primary", onClick Increment ]
             [ text "+" ]
-        , viewImage imagePrepend maybeImage
-        , text (String.fromInt index)
+        , viewImage imagePrepend index images
+        , text (String.fromInt index ++ "  ")
         , text (String.fromInt test)
         ]
 
@@ -148,23 +193,34 @@ viewViewingState test imagePrepend count key index maybeImage =
 -- UPDATE --
 
 
-moveImagePointer : Model -> Int -> Model
-moveImagePointer model step =
-    case model.state of
-        ViewingState index _ ->
-            let
-                newIndex =
-                    modBy (Array.length model.images) (index + step)
-                newImage =
-                    Array.get newIndex model.images
-            in
-            { model | state = ViewingState newIndex newImage }
-        ErrorState ->
-            { model | state = ViewingState 0 Nothing }
+loopImageIndexOverArray : Int -> Int -> Int -> Int
+loopImageIndexOverArray index step length =
+    modBy length (index + step)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
+    case model.userMode of
+        SelectAssets searchString ->
+            updateSelectAssets msg model
+        EditAsset assetSource index pendingChanges ->
+            updateEditAsset msg model assetSource index pendingChanges
+
+
+updateSelectAssets : Msg -> Model -> ( Model, Cmd Msg )
+updateSelectAssets msg model =
+    case msg of
+        KeyPress key ->
+            case key of
+                "u" ->
+                    ( { model | userMode = EditAsset Uncategorised 0 [] }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
+        _ ->
+            ( model, Cmd.none )
+
+updateEditAsset : Msg -> Model -> AssetSource -> Int -> List AssetChange -> ( Model, Cmd Msg )
+updateEditAsset msg model assetSource index pendingChanges =
     case msg of
         Increment ->
             ( { model | count = model.count + 1 }, Cmd.none )
@@ -172,16 +228,27 @@ update msg model =
         KeyPress key ->
             case key of
                 "ArrowLeft" ->
-                    ( moveImagePointer model -1, Cmd.none )
+                    let
+                        newIndex =
+                            loopImageIndexOverArray index -1 (Array.length model.images)
+                    in
+                    ( { model | userMode = EditAsset assetSource newIndex pendingChanges }, Cmd.none )
 
                 "ArrowRight" ->
-                    ( moveImagePointer model 1, Cmd.none )
+                    let
+                        newIndex =
+                            loopImageIndexOverArray index 1 (Array.length model.images)
+                    in
+                    ( { model | userMode = EditAsset assetSource newIndex pendingChanges }, Cmd.none )
 
                 " " ->
                     ( { model | key = "" }, Cmd.none )
 
                 _ ->
                     ( { model | key = key }, Cmd.none )
+
+        ImmichMsg immichMsg ->
+            Immich.update immichMsg model |> Tuple.mapBoth (\a -> a) (Cmd.map ImmichMsg)
 
 
 subscriptions : Model -> Sub Msg
