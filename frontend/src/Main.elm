@@ -14,6 +14,11 @@ type Msg
     = Increment
     | KeyPress String
 
+type alias Flags =
+    { test : Int
+    , imagePrepend : String
+    }
+
 
 type alias Model =
     { count : Int
@@ -22,6 +27,7 @@ type alias Model =
     , albums : List ImmichAlbum
     , images : Array ImageWithMetadata
     , state : UserState
+    , test : Int
     }
 
 type UserState
@@ -29,8 +35,8 @@ type UserState
     | ErrorState
 
 
-init : () -> ( Model, Cmd Msg )
-init _ =
+init : Flags -> ( Model, Cmd Msg )
+init flags =
     let
         testImages =
             Array.fromList
@@ -59,7 +65,7 @@ init _ =
     ( { count = 7
       , key = ""
       , albums = testAlbums
-      , imagePrepend = "http://localhost:3333/"
+      , imagePrepend = flags.imagePrepend
       -- , albums =
       --       [ { id = "a", name = "Album A" }
       --       , { id = "b", name = "Album B" }
@@ -68,6 +74,7 @@ init _ =
       --       , { id = "e", name = "Album E" }
       --       ]
       , images = testImages
+      , test = flags.test
       , state = ViewingState 0 Nothing
       }
     , Cmd.none
@@ -119,12 +126,12 @@ view : Model -> Html Msg
 view model =
     case model.state of
         ViewingState index maybeImage ->
-            viewViewingState model.imagePrepend model.count model.key index maybeImage
+            viewViewingState model.test model.imagePrepend model.count model.key index maybeImage
         ErrorState ->
             div [] [ text "Error!" ]
 
-viewViewingState : String -> Int -> String -> Int -> Maybe ImageWithMetadata -> Html Msg
-viewViewingState imagePrepend count key index maybeImage =
+viewViewingState : Int -> String -> Int -> String -> Int -> Maybe ImageWithMetadata -> Html Msg
+viewViewingState test imagePrepend count key index maybeImage =
     div [ class "text-center" ]
         [ div [] [ text ("Count: " ++ String.fromInt count) ]
         , div [] [ text ("Key: " ++ key) ]
@@ -133,6 +140,7 @@ viewViewingState imagePrepend count key index maybeImage =
             [ text "+" ]
         , viewImage imagePrepend maybeImage
         , text (String.fromInt index)
+        , text (String.fromInt test)
         ]
 
 
@@ -181,7 +189,7 @@ subscriptions _ =
     onKeyDown (Decode.map KeyPress (Decode.field "key" Decode.string))
 
 
-main : Program () Model Msg
+main : Program Flags Model Msg
 main =
     element
         { init = init

@@ -3,9 +3,10 @@ services:
     container_name: image-frontend
     build: .
     volumes:
-    - .:/mnt
+      - .:/mnt
     ports:
-    - 8000:8000
+      - 8000:8000
+    env_file:
+      - path: .env
     # we need init to kill elm-test when run with "make test"
     # init: true
-    command: reactor

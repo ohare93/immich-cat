@@ -1,11 +1,13 @@
 services:
   image-frontend:
+    container_name: image_frontend
     extends:
       file: ./frontend/docker-compose.yaml
       service: image-frontend
     networks:
       - image-categoriser
   image-backend:
+    container_name: image_backend
     extends:
       file: ./backend/docker-compose.yaml
       service: image-backend
