@@ -4,19 +4,16 @@ import Array exposing (Array)
 import Browser exposing (element)
 import Browser.Events exposing (onKeyDown)
 import Date
-import Debug exposing (toString)
 import Dict exposing (Dict)
-import Element exposing (Element, alignBottom, alignRight, alignTop, centerX, centerY, column, el, fill, fillPortion, height, padding, paddingXY, rgb255, row, spacing, text, width)
+import Element exposing (Element, alignBottom, alignRight, alignTop, centerX, centerY, column, el, fill, fillPortion, height, paddingXY, row, text, width)
 import Element.Background as Background
-import Element.Border as Border
 import Element.Font as Font
-import Helpers exposing (send)
-import Html exposing (Html, button, div)
-import Html.Attributes exposing (class, src)
-import Html.Events exposing (onClick)
-import Immich exposing (ImmichAlbum, ImmichAsset, ImmichLoadState(..), getAllAlbums)
+import Helpers exposing (regexFromString)
+import Html exposing (Html)
+import Html.Attributes
+import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichAsset, ImmichAssetId, ImmichLoadState(..), getAllAlbums)
 import Json.Decode as Decode
-import Regex exposing (Regex)
+import Regex
 
 
 type Msg
@@ -37,10 +34,11 @@ type alias Model =
     , assetSelectMode : AssetSource
     , userMode : UserMode
     , test : Int
+    , imageIndex : ImageIndex
     -- Immich fields
-    , images : Array ImmichAsset
+    , images : List ImmichAsset
     , imagesLoadState : ImmichLoadState
-    , albums : Array ImmichAlbum
+    , albums : List ImmichAlbum
     , albumsLoadState : ImmichLoadState
     , apiUrl : String
     , apiKey : String
@@ -56,8 +54,9 @@ type AssetSource
 type UserMode
     = MainMenu
     | SearchAssetInput SearchString
-    | SelectAlbumInput AlbumSearchResults
-    | EditAsset InputMode AssetSource ImageIndex (List AssetChange) AlbumSearchResults
+    | SelectAlbumInput AlbumSearch
+    | LoadingAssets
+    | EditAsset InputMode AssetWithActions AlbumSearch
 
 type alias SearchString =
     String
@@ -65,14 +64,16 @@ type alias SearchString =
 type alias ImageIndex =
     Int
 
-type alias AlbumSearchResults =
-    { searchString : SearchString
-    , albumsWithScore : List AlbumWithScore
+type alias AssetWithActions =
+    { asset : ImmichAsset
+    , isFavourite : PropertyChange
+    , isArchived : PropertyChange
+    , albumMemership : Dict ImmichAssetId PropertyChange
     }
 
-type alias AlbumWithScore =
-    { album : ImmichAlbum
-    , score : Int
+type alias AlbumSearch =
+    { searchString : String
+    , albumScores : Dict ImmichAlbumId Int
     }
 
 type InputMode
@@ -80,17 +81,19 @@ type InputMode
     | InsertMode
 
 type AssetChange
-    = AddToAlbum ImmichAlbum
-    | RemoveFromAlbum ImmichAlbum
-    | Delete
-    | SetFavourite Bool
+    = ToggleAlbum ImmichAlbum
+    | ToggleDelete
+    | ToggleFavourite
 
 type TextInputUpdate
     = TextInputAddition String
     | TextInputBackspace
 
 type UserActionGeneral
-    = ChangeUserMode UserMode
+    = ChangeUserModeToEditAsset
+    | ChangeUserModeToMainMenu
+    | ChangeUserModeToSearchAsset
+    | ChangeUserModeToSelectAlbum
     | ReloadData
     | UnknownAction
 
@@ -105,11 +108,10 @@ type UserActionAlbumSelectMode
 
 type UserActionEditMode
     = ChangeInputMode InputMode
-    | AddToAssetChangeList AssetChange
-    | RemoveFromAssetChangeList
     | ChangeImageIndex Int
     | TextEditModeInputUpdate TextInputUpdate
     | ApplyAlbumIfMatching
+    | AssetChange AssetChange
     | UserActionGeneralEdit UserActionGeneral
 
 type PropertyChange
@@ -118,31 +120,45 @@ type PropertyChange
     | ChangeToTrue
     | ChangeToFalse
 
+flipPropertyChange : PropertyChange -> PropertyChange
+flipPropertyChange propertyChange =
+    case propertyChange of
+        RemainTrue ->
+            ChangeToFalse
+
+        RemainFalse ->
+            ChangeToTrue
+
+        ChangeToTrue ->
+            RemainFalse
+
+        ChangeToFalse ->
+            RemainTrue
+
 init : Flags -> ( Model, Cmd Msg )
 init flags =
     let
         testImages =
-            Array.fromList
-                [ ImmichAsset "0001" "images/imafight.jpg" "Imafight" "jpg" False False
-                , ImmichAsset "0002" "images/dcemployees.jpg" "dcemployees" "jpg" False False
-                , ImmichAsset "0003" "images/jordan.jpg" "Jordan" "jpg" False False
-                , ImmichAsset "0004" "images/router-password.mp4" "router password" "mp4" False False
-                ]
+            [ ImmichAsset "0001" "images/imafight.jpg" "Imafight" "jpg" False False
+            , ImmichAsset "0002" "images/dcemployees.jpg" "dcemployees" "jpg" False False
+            , ImmichAsset "0003" "images/jordan.jpg" "Jordan" "jpg" False False
+            , ImmichAsset "0004" "images/router-password.mp4" "router password" "mp4" False False
+            ]
 
         testAlbums =
-            Array.fromList
-                [ ImmichAlbum "a" "J" 200 Array.empty "000001" (Date.fromOrdinalDate 2025 1)
-                , ImmichAlbum "b" "ToBeSorted" 3000 Array.empty "000002" (Date.fromOrdinalDate 2025 1)
-                , ImmichAlbum "c" "The World" 50 Array.empty "000003" (Date.fromOrdinalDate 2025 1)
-                , ImmichAlbum "c" "The Other One" 75 Array.empty "000034" (Date.fromOrdinalDate 2025 1)
-                , ImmichAlbum "d" "Comics" 50 Array.empty "000004" (Date.fromOrdinalDate 2025 1)
-                ]
+            [ ImmichAlbum "a" "J" 200 [] "000001" (Date.fromOrdinalDate 2025 1)
+            , ImmichAlbum "b" "ToBeSorted" 3000 [] "000002" (Date.fromOrdinalDate 2025 1)
+            , ImmichAlbum "c" "The World" 50 [] "000003" (Date.fromOrdinalDate 2025 1)
+            , ImmichAlbum "d" "The Other One" 75 [] "000034" (Date.fromOrdinalDate 2025 1)
+            , ImmichAlbum "e" "Comics" 50 [] "000004" (Date.fromOrdinalDate 2025 1)
+            ]
     in
     ( { key = ""
       , imagePrepend = flags.imagePrepend
       , userMode = MainMenu
       , assetSelectMode = NoAssets
       , test = flags.test
+      , imageIndex = 0
       -- Immich fields
       , images = testImages
       , imagesLoadState = ImmichLoading
@@ -155,6 +171,21 @@ init flags =
       -- getAllAlbums flags.immichApiUrl flags.immichApiKey |> Cmd.map ImmichMsg
     )
 
+usefulColours : String -> Element.Color
+usefulColours name =
+    case name of
+        "red" ->
+            Element.fromRgb { red = 1, green = 0, blue = 0, alpha = 1 }
+        "green" ->
+            Element.fromRgb { red = 0, green = 1, blue = 0, alpha = 1 }
+        "blue" ->
+            Element.fromRgb { red = 0, green = 0, blue = 1, alpha = 1 }
+        "grey" ->
+            Element.fromRgb { red = 0.8, green = 0.8, blue = 0.8, alpha = 0.6 }
+        "black" ->
+            Element.fromRgb { red = 0, green = 0, blue = 0, alpha = 1 }
+        _ ->
+            Element.fromRgb { red = 0, green = 0, blue = 0, alpha = 1 }
 
 
 -- VIEW --
@@ -232,11 +263,11 @@ viewVideo attrs { poster, source } =
                     []
                 ]
 
-viewEditAsset : String -> ImmichAsset -> Element Msg
+viewEditAsset : String -> AssetWithActions -> Element Msg
 viewEditAsset assetPathPrepend currentAsset =
     column [ width fill, height fill ]
         [ el [ alignTop ] (text "Top Bar")
-        , viewAsset assetPathPrepend currentAsset
+        , viewAsset assetPathPrepend currentAsset.asset
         , column [ alignBottom ] []
         -- [ text (String.fromInt index ++ "  ")
         -- ]
@@ -268,24 +299,18 @@ viewMainWindow model =
                 [ text "Input Search String"
                 , text searchString
                 ]
-        SelectAlbumInput searchResults ->
+        SelectAlbumInput search ->
             viewWithSidebar
-                (viewSidebarAlbums searchResults)
+                (viewSidebarAlbums search model.albums)
                 (column []
                     [ text "Select Album"
-                    , text searchResults.searchString
+                    , text search.searchString
                     ]
                 )
-        EditAsset _ _ index pendingChanges searchResults ->
-            let
-                currentAsset =
-                    Array.get index model.images
-            in
-            case currentAsset of
-                Just asset ->
-                    viewWithSidebar (viewSidebar searchResults pendingChanges asset) (viewEditAsset model.imagePrepend asset)
-                Nothing ->
-                    text ("Error. Cannot find image of index " ++ String.fromInt index)
+        LoadingAssets ->
+            text "Loading Assets"
+        EditAsset _ asset search ->
+            viewWithSidebar (viewSidebar asset search model.albums) (viewEditAsset model.imagePrepend asset)
 
 viewInputMode : UserMode -> Element msg
 viewInputMode userMode =
@@ -298,7 +323,9 @@ viewInputMode userMode =
                     InsertMode
                 SelectAlbumInput _ ->
                     InsertMode
-                EditAsset editInputMode _ _ _ _ ->
+                LoadingAssets ->
+                    NormalMode
+                EditAsset editInputMode _ _ ->
                     editInputMode
     in
     case inputMode of
@@ -314,94 +341,82 @@ viewWithSidebar sidebarView viewToBeNextToSidebar =
         , el [ width <| fillPortion 1, height fill, alignRight ] <| sidebarView
         ]
 
-viewSidebar : AlbumSearchResults -> List AssetChange -> ImmichAsset -> Element Msg
-viewSidebar searchResults pendingChanges currentAsset =
-    let
-        setFavourite =
-            case currentAsset.isFavourite of
-                True ->
-                    if List.member (SetFavourite False) pendingChanges then
-                        ChangeToFalse
-                    else
-                        RemainTrue
-                False ->
-                    if List.member (SetFavourite True) pendingChanges then
-                        ChangeToTrue
-                    else
-                        RemainFalse
-        shouldDelete =
-            case currentAsset.isArchived of
-                True ->
-                    if List.member Delete pendingChanges then
-                        ChangeToTrue
-                    else
-                        RemainTrue
-                False ->
-                    if List.member Delete pendingChanges then
-                        ChangeToTrue
-                    else
-                        RemainFalse
-    in
+viewSidebar : AssetWithActions -> AlbumSearch -> List ImmichAlbum -> Element Msg
+viewSidebar asset search albums =
     column [ height fill ]
         [ el [ alignTop, height <| fillPortion 1 ] <| text "Asset Changes"
         , row [ alignTop, height <| fillPortion 2 ]
-            [ case setFavourite of
+            [ case asset.isFavourite of
                 ChangeToTrue ->
-                    el [ Font.color <| Element.fromRgb { red = 0, green = 1, blue = 0, alpha = 1 } ] <| text "Fav"
+                    el [ Font.color <| usefulColours "green" ] <| text "Fav"
                 ChangeToFalse ->
-                    el [ Font.color <| Element.fromRgb { red = 1, green = 0, blue = 0, alpha = 1 } ] <| text "!Fav"
+                    el [ Font.color <| usefulColours "red" ] <| text "!Fav"
                 RemainTrue ->
-                    el [ Font.color <| Element.fromRgb { red = 0.8, green = 0.8, blue = 0.8, alpha = 0.6 } ] <| text "Fav"
+                    el [ Font.color <| usefulColours "grey" ] <| text "Fav"
                 RemainFalse ->
-                    el [ Font.color <| Element.fromRgb { red = 0.8, green = 0.8, blue = 0.8, alpha = 0.6 } ] <| text "!Fav"
-            , case shouldDelete of
+                    el [ Font.color <| usefulColours "grey" ] <| text "!Fav"
+            , case asset.isArchived of
                 ChangeToTrue ->
-                    el [ Font.color <| Element.fromRgb { red = 1, green = 0, blue = 0, alpha = 1 } ] <| text "Delete"
+                    el [ Font.color <| usefulColours "red" ] <| text "Delete"
                 ChangeToFalse ->
-                    el [ Font.color <| Element.fromRgb { red = 0, green = 1, blue = 0, alpha = 1 } ] <| text "Undelete"
+                    el [ Font.color <| usefulColours "green" ] <| text "Undelete"
                 RemainTrue ->
-                    el [ Font.color <| Element.fromRgb { red = 0.8, green = 0.8, blue = 0.8, alpha = 0.6 } ] <| text ""
+                    el [ Font.color <| usefulColours "grey" ] <| text ""
                 RemainFalse ->
-                    el [ Font.color <| Element.fromRgb { red = 0.8, green = 0.8, blue = 0.8, alpha = 0.6 } ] <| text ""
+                    el [ Font.color <| usefulColours "grey" ] <| text ""
             ]
-        , viewSidebarAlbumsForCurrentAsset searchResults pendingChanges currentAsset
+        , viewSidebarAlbumsForCurrentAsset asset search albums
         ]
 
 
-viewSidebarAlbums : AlbumSearchResults -> Element Msg
-viewSidebarAlbums searchResults =
+viewSidebarAlbums : AlbumSearch -> List ImmichAlbum -> Element Msg
+viewSidebarAlbums search albums =
     column [ height fill ]
         (List.map
-            (\albumWithScore ->
+            (\album ->
                 row []
-                    [ el [ paddingXY 5 0 ] <| text (String.fromInt albumWithScore.album.assetCount)
-                    , el [] <| text albumWithScore.album.albumName
+                    [ el [ paddingXY 5 0 ] <| text (String.fromInt album.assetCount)
+                    , el [] <| text album.albumName
                     ]
             )
-            searchResults.albumsWithScore
+         <|
+            filterToOnlySearchedForAlbums search albums
         )
 
-viewSidebarAlbumsForCurrentAsset : AlbumSearchResults -> List AssetChange -> ImmichAsset -> Element Msg
-viewSidebarAlbumsForCurrentAsset searchResults pendingChanges currentAsset =
+viewSidebarAlbumsForCurrentAsset : AssetWithActions -> AlbumSearch -> List ImmichAlbum -> Element Msg
+viewSidebarAlbumsForCurrentAsset asset search albums =
     column [ height fill ]
         (List.map
-            (\albumWithScore ->
+            (\album ->
                 let
+                    assetInAlbum =
+                        Maybe.withDefault RemainFalse <| Dict.get album.id asset.albumMemership
                     attrs =
-                        if List.member (AddToAlbum albumWithScore.album) pendingChanges then
-                            [ Background.color <| Element.fromRgb { red = 0, green = 1, blue = 0, alpha = 1 } ]
-                        else if List.member (RemoveFromAlbum albumWithScore.album) pendingChanges then
-                            [ Background.color <| Element.fromRgb { red = 1, green = 0, blue = 0, alpha = 1 } ]
-                        else
-                            []
+                        case assetInAlbum of
+                            RemainTrue ->
+                                [ Background.color <| usefulColours "green" ]
+                            RemainFalse ->
+                                [ Background.color <| usefulColours "grey" ]
+                            ChangeToTrue ->
+                                [ Background.color <| usefulColours "blue" ]
+                            ChangeToFalse ->
+                                [ Background.color <| usefulColours "red" ]
                 in
                 row []
-                    [ el [ paddingXY 5 0 ] <| text (String.fromInt albumWithScore.album.assetCount)
-                    , el attrs <| text albumWithScore.album.albumName
+                    [ el [ paddingXY 5 0 ] <| text (String.fromInt album.assetCount)
+                    , el attrs <| text album.albumName
                     ]
             )
-            searchResults.albumsWithScore
+         <|
+            filterToOnlySearchedForAlbums search albums
         )
+
+filterToOnlySearchedForAlbums : AlbumSearch -> List ImmichAlbum -> List ImmichAlbum
+filterToOnlySearchedForAlbums search albums =
+    if search.searchString == "" then
+        albums
+    else
+        List.filter (\album -> 0 < (Maybe.withDefault 0 <| Dict.get album.id search.albumScores)) albums
 
 
 -- UPDATE --
@@ -437,11 +452,11 @@ handleUserInput model key =
                 generalAction =
                     case key of
                         "u" ->
-                            ChangeUserMode (EditAsset NormalMode Uncategorised 0 [] <| getMatchingAlbumsOrdered "" model.albums)
+                            ChangeUserModeToEditAsset
                         "a" ->
-                            ChangeUserMode (SelectAlbumInput <| getMatchingAlbumsOrdered "" model.albums)
+                            ChangeUserModeToSelectAlbum
                         "s" ->
-                            ChangeUserMode (SearchAssetInput "")
+                            ChangeUserModeToSearchAsset
                         _ ->
                             UnknownAction
             in
@@ -456,9 +471,9 @@ handleUserInput model key =
                             "Backspace" ->
                                 TextInputUpdate TextInputBackspace
                             "Escape" ->
-                                UserActionGeneralSearch <| ChangeUserMode MainMenu
+                                UserActionGeneralSearch <| ChangeUserModeToMainMenu
                             "Enter" ->
-                                UserActionGeneralSearch <| ChangeUserMode <| EditAsset NormalMode (Search searchString) 0 [] <| getMatchingAlbumsOrdered "" model.albums
+                                UserActionGeneralSearch <| ChangeUserModeToEditAsset
                             _ ->
                                 UserActionGeneralSearch UnknownAction
             in
@@ -487,7 +502,7 @@ handleUserInput model key =
                             "Backspace" ->
                                 TextSelectInputUpdate TextInputBackspace
                             "Escape" ->
-                                UserActionGeneralAlbumSelect (ChangeUserMode MainMenu)
+                                UserActionGeneralAlbumSelect ChangeUserModeToMainMenu
                             "Enter" ->
                                 SelectAlbumIfMatching
                             _ ->
@@ -499,24 +514,31 @@ handleUserInput model key =
                         newSearchString =
                             searchResults.searchString ++ newKey
                     in
-                    ( { model | userMode = SelectAlbumInput <| getMatchingAlbumsOrdered newSearchString model.albums }, Cmd.none )
+                    ( { model | userMode = SelectAlbumInput <| getAlbumSearch newSearchString model.albums }, Cmd.none )
                 TextSelectInputUpdate TextInputBackspace ->
                     let
                         newSearchString =
                             String.slice 0 (String.length searchResults.searchString - 1) searchResults.searchString
                     in
-                    ( { model | userMode = SelectAlbumInput <| getMatchingAlbumsOrdered newSearchString model.albums }, Cmd.none )
+                    ( { model | userMode = SelectAlbumInput <| getAlbumSearch newSearchString model.albums }, Cmd.none )
                 SelectAlbumIfMatching ->
-                    case searchResults.albumsWithScore of
+                    let
+                        matches =
+                            filterToOnlySearchedForAlbums searchResults model.albums
+                    in
+                    case matches of
                         [] ->
                             ( model, Cmd.none )
-                        [ albumWithScore ] ->
-                            ( { model | userMode = EditAsset NormalMode (Album albumWithScore.album) 0 [] { searchString = "", albumsWithScore = [] } }, Cmd.none )
+                        [ album ] ->
+                            -- TODO: Call fetch on album
+                            switchToEditIfAssetFound model 0
                         _ ->
                             ( model, Cmd.none )
                 UserActionGeneralAlbumSelect action ->
                     handleGeneralActions model action
-        EditAsset inputMode assetSource index pendingChanges searchResults ->
+        LoadingAssets ->
+            ( { model | userMode = LoadingAssets }, Cmd.none )
+        EditAsset inputMode asset search ->
             let
                 userAction =
                     if inputMode == InsertMode then
@@ -539,77 +561,88 @@ handleUserInput model key =
                             "ArrowRight" ->
                                 ChangeImageIndex 1
                             "Escape" ->
-                                UserActionGeneralEdit <| ChangeUserMode MainMenu
-                            "Backspace" ->
-                                RemoveFromAssetChangeList
+                                UserActionGeneralEdit <| ChangeUserModeToMainMenu
+                            -- "Backspace" ->
+                            --     RemoveFromAssetChangeList
                             "i" ->
                                 ChangeInputMode InsertMode
                             "d" ->
-                                AddToAssetChangeList Delete
+                                AssetChange ToggleDelete
                             "f" ->
-                                -- TODO: Base on the assets favourite state
-                                AddToAssetChangeList <| SetFavourite True
+                                AssetChange ToggleFavourite
                             _ ->
                                 UserActionGeneralEdit UnknownAction
             in
             case userAction of
-                AddToAssetChangeList change ->
+                AssetChange ToggleFavourite ->
                     let
-                        newPendingChanges =
-                            if List.member change pendingChanges then
-                                pendingChanges
-                            else
-                                change :: pendingChanges
+                        newAsset =
+                            { asset | isFavourite = flipPropertyChange asset.isFavourite }
                     in
-                    ( { model | userMode = EditAsset inputMode assetSource index newPendingChanges searchResults }, Cmd.none )
-                RemoveFromAssetChangeList ->
-                    ( { model | userMode = EditAsset inputMode assetSource index (List.drop 1 pendingChanges) searchResults }, Cmd.none )
+                    ( { model | userMode = EditAsset inputMode newAsset search }, Cmd.none )
+                -- RemoveFromAssetChangeList ->
+                --     ( { model | userMode = EditAsset inputMode assetSource index (List.drop 1 pendingChanges) searchResults }, Cmd.none )
+                AssetChange ToggleDelete ->
+                    let
+                        newAsset =
+                            { asset | isArchived = flipPropertyChange asset.isArchived }
+                    in
+                    ( { model | userMode = EditAsset inputMode newAsset search }, Cmd.none )
+                AssetChange (ToggleAlbum album) ->
+                    ( { model | userMode = EditAsset inputMode (toggleAssetAlbum asset album) search }, Cmd.none )
                 ApplyAlbumIfMatching ->
-                    case searchResults.albumsWithScore of
+                    let
+                        matches =
+                            filterToOnlySearchedForAlbums search model.albums
+                    in
+                    case matches of
                         [] ->
                             ( model, Cmd.none )
-                        [ albumWithScore ] ->
-                            let
-                                change =
-                                    AddToAlbum albumWithScore.album
-                                newPendingChanges =
-                                    if List.member change pendingChanges then
-                                        pendingChanges
-                                    else
-                                        change :: pendingChanges
-                            in
-                            ( { model | userMode = EditAsset inputMode assetSource index newPendingChanges (getMatchingAlbumsOrdered "" model.albums) }, Cmd.none )
+                        [ album ] ->
+                            ( { model | userMode = EditAsset inputMode (toggleAssetAlbum asset album) (getAlbumSearch "" model.albums) }, Cmd.none )
                         _ ->
                             ( model, Cmd.none )
                 ChangeInputMode newInputMode ->
-                    ( { model | userMode = EditAsset newInputMode assetSource index pendingChanges <| getMatchingAlbumsOrdered "" model.albums }, Cmd.none )
+                    ( { model | userMode = EditAsset newInputMode asset <| getAlbumSearch "" model.albums }, Cmd.none )
                 ChangeImageIndex indexChange ->
                     let
                         newIndex =
-                            loopImageIndexOverArray index indexChange (Array.length model.images)
+                            loopImageIndexOverArray model.imageIndex indexChange (List.length model.images)
                     in
-                    ( { model | userMode = EditAsset inputMode assetSource newIndex pendingChanges searchResults }, Cmd.none )
+                    switchToEditIfAssetFound model newIndex
                 TextEditModeInputUpdate (TextInputAddition newKey) ->
                     let
                         newSearchString =
-                            searchResults.searchString ++ newKey
+                            search.searchString ++ newKey
                     in
-                    ( { model | userMode = EditAsset inputMode assetSource index pendingChanges <| getMatchingAlbumsOrdered newSearchString model.albums }, Cmd.none )
+                    ( { model | userMode = EditAsset inputMode asset <| getAlbumSearch newSearchString model.albums }, Cmd.none )
                 TextEditModeInputUpdate TextInputBackspace ->
                     let
                         newSearchString =
-                            String.slice 0 (String.length searchResults.searchString - 1) searchResults.searchString
+                            String.slice 0 (String.length search.searchString - 1) search.searchString
                     in
-                    ( { model | userMode = EditAsset inputMode assetSource index pendingChanges <| getMatchingAlbumsOrdered newSearchString model.albums }, Cmd.none )
+                    ( { model | userMode = EditAsset inputMode asset <| getAlbumSearch newSearchString model.albums }, Cmd.none )
 
                 UserActionGeneralEdit generalAction ->
                     handleGeneralActions model generalAction
 
+
+toggleAssetAlbum : AssetWithActions -> ImmichAlbum -> AssetWithActions
+toggleAssetAlbum asset album =
+    { asset | albumMemership = Dict.insert album.id (flipPropertyChange <| Maybe.withDefault RemainFalse <| Dict.get album.id asset.albumMemership) asset.albumMemership }
+
+
 handleGeneralActions : Model -> UserActionGeneral -> ( Model, Cmd Msg )
 handleGeneralActions model action =
     case action of
-        ChangeUserMode newMode ->
-            ( { model | userMode = newMode }, Cmd.none )
+        ChangeUserModeToMainMenu ->
+            ( { model | userMode = MainMenu }, Cmd.none )
+        ChangeUserModeToSearchAsset ->
+            ( { model | userMode = SearchAssetInput "" }, Cmd.none )
+        ChangeUserModeToSelectAlbum ->
+            ( { model | userMode = SelectAlbumInput <| getAlbumSearch "" model.albums }, Cmd.none )
+        ChangeUserModeToEditAsset ->
+            switchToEditIfAssetFound model 0
 
         ReloadData ->
             ( { model | imagesLoadState = ImmichLoading, albumsLoadState = ImmichLoading }, Cmd.none )
@@ -617,26 +650,54 @@ handleGeneralActions model action =
         UnknownAction ->
             ( model, Cmd.none )
 
-
-getMatchingAlbumsOrdered : String -> Array ImmichAlbum -> AlbumSearchResults
-getMatchingAlbumsOrdered searchString albums =
+switchToEditIfAssetFound : Model -> ImageIndex -> ( Model, Cmd Msg )
+switchToEditIfAssetFound model index =
     let
-        albumsList =
-            Array.toList albums
-        albumsWithScores =
-            List.map (\a -> { album = a, score = shittyFuzzyAlgorithmTest searchString a.albumName }) albumsList
+        maybeAsset =
+            model.images |> List.drop index |> List.head
     in
-    { searchString = searchString
-    , albumsWithScore =
-        albumsWithScores
-            |> List.filter (\a -> a.score > 0 || searchString == "")
-            |> List.sortBy (\a -> ( a.score, a.album.assetCount ))
-            |> List.reverse
+    case maybeAsset of
+        Nothing ->
+            ( { model | userMode = LoadingAssets }, Cmd.none )
+
+        Just asset ->
+            ( { model | imageIndex = index, userMode = EditAsset NormalMode (getAssetWithActions asset) (getAlbumSearch "" model.albums) }, Cmd.none )
+
+
+getAssetWithActions : ImmichAsset -> AssetWithActions
+getAssetWithActions asset =
+    { asset = asset
+    , isFavourite =
+        if asset.isFavourite then
+            RemainTrue
+
+        else
+            RemainFalse
+    , isArchived =
+        if asset.isArchived then
+            RemainTrue
+
+        else
+            RemainFalse
+    , albumMemership = Dict.empty
     }
 
-regexFromString : String -> Regex
-regexFromString searchString =
-    Regex.fromStringWith { caseInsensitive = True, multiline = False } searchString |> Maybe.withDefault Regex.never
+getAlbumSearch : String -> List ImmichAlbum -> AlbumSearch
+getAlbumSearch searchString albums =
+    { searchString = searchString
+    , albumScores =
+        Dict.fromList <| List.map (\album -> ( album.id, shittyFuzzyAlgorithmTest searchString album.albumName )) albums
+    }
+
+
+
+-- { searchString = searchString
+-- , albumsWithScore =
+--     albumsWithScores
+--         |> List.filter (\a -> a.score > 0 || searchString == "")
+--         |> List.sortBy (\a -> ( a.score, a.album.assetCount ))
+--         |> List.reverse
+-- }
 
 shittyFuzzyAlgorithmTest : String -> String -> Int
 shittyFuzzyAlgorithmTest searchString textToBeSearched =

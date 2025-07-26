@@ -3,7 +3,7 @@ services:
     container_name: image-frontend
     build: .
     volumes:
-      - ./src:/mnt/src
+      - .:/mnt
     ports:
       - 8000:8000
     env_file:

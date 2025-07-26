@@ -19,7 +19,9 @@ VOLUME /mnt
 # NOTE: docker-compose mounts code in /mnt
 
 COPY package*.json /mnt/
-
 RUN npm install
+
+COPY elm.json /mnt/
+# RUN elm make src/Main.elm
 
 CMD ["npm", "run", "start-env"]
