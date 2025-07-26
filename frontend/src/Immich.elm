@@ -20,6 +20,8 @@ type alias ImmichAsset =
     , path : String
     , title : String
     , mimeType : String
+    , isFavourite : Bool
+    , isArchived : Bool
     }
 
 
@@ -105,12 +107,13 @@ dateDecoder =
 
 imageDecoder : Decode.Decoder ImmichAsset
 imageDecoder =
-    Decode.map4 ImmichAsset
+    Decode.map6 ImmichAsset
         (Decode.field "id" Decode.string)
         (Decode.field "originalMimeType" Decode.string)
         (Decode.field "originalFilePath" Decode.string)
         (Decode.field "originalFileName" Decode.string)
-
+        (Decode.field "isFavorite" Decode.bool)
+        (Decode.field "isArchived" Decode.bool)
 
 
 -- UPDATE --

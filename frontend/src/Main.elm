@@ -4,6 +4,7 @@ import Array exposing (Array)
 import Browser exposing (element)
 import Browser.Events exposing (onKeyDown)
 import Date
+import Debug exposing (toString)
 import Dict exposing (Dict)
 import Element exposing (Element, alignBottom, alignRight, alignTop, centerX, centerY, column, el, fill, fillPortion, height, padding, paddingXY, rgb255, row, spacing, text, width)
 import Element.Background as Background
@@ -51,11 +52,28 @@ type AssetSource
     | Search String
     | Album ImmichAlbum
 
+
 type UserMode
     = MainMenu
-    | SearchAssetInput String
-    | SelectAlbumInput String (List ImmichAlbum)
-    | EditAsset InputMode AssetSource Int (List AssetChange)
+    | SearchAssetInput SearchString
+    | SelectAlbumInput AlbumSearchResults
+    | EditAsset InputMode AssetSource ImageIndex (List AssetChange) AlbumSearchResults
+
+type alias SearchString =
+    String
+
+type alias ImageIndex =
+    Int
+
+type alias AlbumSearchResults =
+    { searchString : SearchString
+    , albumsWithScore : List AlbumWithScore
+    }
+
+type alias AlbumWithScore =
+    { album : ImmichAlbum
+    , score : Int
+    }
 
 type InputMode
     = NormalMode
@@ -65,7 +83,7 @@ type AssetChange
     = AddToAlbum ImmichAlbum
     | RemoveFromAlbum ImmichAlbum
     | Delete
-    | Favourite
+    | SetFavourite Bool
 
 type TextInputUpdate
     = TextInputAddition String
@@ -88,18 +106,27 @@ type UserActionAlbumSelectMode
 type UserActionEditMode
     = ChangeInputMode InputMode
     | AddToAssetChangeList AssetChange
+    | RemoveFromAssetChangeList
     | ChangeImageIndex Int
+    | TextEditModeInputUpdate TextInputUpdate
+    | ApplyAlbumIfMatching
     | UserActionGeneralEdit UserActionGeneral
+
+type PropertyChange
+    = RemainTrue
+    | RemainFalse
+    | ChangeToTrue
+    | ChangeToFalse
 
 init : Flags -> ( Model, Cmd Msg )
 init flags =
     let
         testImages =
             Array.fromList
-                [ ImmichAsset "0001" "images/imafight.jpg" "Imafight" "jpg"
-                , ImmichAsset "0002" "images/dcemployees.jpg" "dcemployees" "jpg"
-                , ImmichAsset "0003" "images/jordan.jpg" "Jordan" "jpg"
-                , ImmichAsset "0004" "images/router-password.mp4" "router password" "mp4"
+                [ ImmichAsset "0001" "images/imafight.jpg" "Imafight" "jpg" False False
+                , ImmichAsset "0002" "images/dcemployees.jpg" "dcemployees" "jpg" False False
+                , ImmichAsset "0003" "images/jordan.jpg" "Jordan" "jpg" False False
+                , ImmichAsset "0004" "images/router-password.mp4" "router password" "mp4" False False
                 ]
 
         testAlbums =
@@ -148,35 +175,28 @@ init flags =
 --         ]
 
 
-viewAsset : String -> Int -> Array ImmichAsset -> Element msg
-viewAsset assetPrepend index assets =
-    let
-        currentAsset =
-            Array.get index assets
-    in
-    case currentAsset of
-        Just asset ->
-            if asset.path == "" then
-                el [] (text "No Asset")
-            else
-                let
-                    fullAssetPath =
-                        assetPrepend ++ asset.path
-                in
-                if assetIsImage asset then
-                    viewImage asset fullAssetPath
-                else if assetIsVideo asset then
-                    viewVideo
-                        [ Background.color (Element.rgb 0 0 0) ]
-                        { poster = ""
-                        , source = fullAssetPath
-                        }
+viewAsset : String -> ImmichAsset -> Element msg
+viewAsset assetPrepend asset =
+    if asset.path == "" then
+        el [] (text "No Asset")
 
-                else
-                    text (String.join " " [ "Error with", asset.title, "Unknown mimetype:", asset.mimeType ])
+    else
+        let
+            fullAssetPath =
+                assetPrepend ++ asset.path
+        in
+        if assetIsImage asset then
+            viewImage asset fullAssetPath
 
-        Nothing ->
-            text "No Asset"
+        else if assetIsVideo asset then
+            viewVideo
+                [ Background.color (Element.rgb 0 0 0) ]
+                { poster = ""
+                , source = fullAssetPath
+                }
+
+        else
+            text (String.join " " [ "Error with", asset.title, "Unknown mimetype:", asset.mimeType ])
 
 assetIsImage : ImmichAsset -> Bool
 assetIsImage asset =
@@ -212,30 +232,30 @@ viewVideo attrs { poster, source } =
                     []
                 ]
 
-viewEditAsset : Int -> String -> String -> Array ImmichAsset -> Int -> List AssetChange -> Element Msg
-viewEditAsset test imagePrepend key images index pendingChanges =
+viewEditAsset : String -> ImmichAsset -> Element Msg
+viewEditAsset assetPathPrepend currentAsset =
     column [ width fill, height fill ]
         [ el [ alignTop ] (text "Top Bar")
-        , viewAsset imagePrepend index images
-        , column [ alignBottom ]
-            [ text (String.fromInt index ++ "  ")
-            , text (String.fromInt test)
-            ]
+        , viewAsset assetPathPrepend currentAsset
+        , column [ alignBottom ] []
+        -- [ text (String.fromInt index ++ "  ")
+        -- ]
         ]
 
 
 view : Model -> Html Msg
 view model =
     Element.layout [ width fill, height fill ] <|
-        column [ width fill, height fill ] <|
-            [ row [ width fill, height <| fillPortion 15 ]
-                [ el [ width <| fillPortion 4, height fill ] <| viewMainWindow model
-                , el [ width <| fillPortion 1, alignRight ] <| viewSidebar model
-                ]
-            , row [ width fill ]
-                [ viewInputMode model.userMode
-                ]
-            ]
+        viewWithInputBottomBar model.userMode <|
+            viewMainWindow model
+
+
+viewWithInputBottomBar : UserMode -> Element Msg -> Element Msg
+viewWithInputBottomBar userMode viewMain =
+    column [ width fill, height fill ]
+        [ el [ width fill, height <| fillPortion 15 ] viewMain
+        , el [ width fill ] <| viewInputMode userMode
+        ]
 
 
 viewMainWindow : Model -> Element Msg
@@ -248,13 +268,24 @@ viewMainWindow model =
                 [ text "Input Search String"
                 , text searchString
                 ]
-        SelectAlbumInput searchString matchingAlbums ->
-            column []
-                [ text "Select Album"
-                , text searchString
-                ]
-        EditAsset _ _ index pendingChanges ->
-            viewEditAsset model.test model.imagePrepend model.key model.images index pendingChanges
+        SelectAlbumInput searchResults ->
+            viewWithSidebar
+                (viewSidebarAlbums searchResults)
+                (column []
+                    [ text "Select Album"
+                    , text searchResults.searchString
+                    ]
+                )
+        EditAsset _ _ index pendingChanges searchResults ->
+            let
+                currentAsset =
+                    Array.get index model.images
+            in
+            case currentAsset of
+                Just asset ->
+                    viewWithSidebar (viewSidebar searchResults pendingChanges asset) (viewEditAsset model.imagePrepend asset)
+                Nothing ->
+                    text ("Error. Cannot find image of index " ++ String.fromInt index)
 
 viewInputMode : UserMode -> Element msg
 viewInputMode userMode =
@@ -265,9 +296,9 @@ viewInputMode userMode =
                     NormalMode
                 SearchAssetInput _ ->
                     InsertMode
-                SelectAlbumInput _ _ ->
+                SelectAlbumInput _ ->
                     InsertMode
-                EditAsset editInputMode _ _ _ ->
+                EditAsset editInputMode _ _ _ _ ->
                     editInputMode
     in
     case inputMode of
@@ -276,36 +307,107 @@ viewInputMode userMode =
         InsertMode ->
             el [ width fill, Background.color <| Element.fromRgb { red = 0, green = 1, blue = 0, alpha = 1 } ] <| text "Input"
 
-viewSidebar : Model -> Element Msg
-viewSidebar model =
+viewWithSidebar : Element Msg -> Element Msg -> Element Msg
+viewWithSidebar sidebarView viewToBeNextToSidebar =
+    row [ width fill, height fill ]
+        [ el [ width <| fillPortion 4, height fill ] <| viewToBeNextToSidebar
+        , el [ width <| fillPortion 1, height fill, alignRight ] <| sidebarView
+        ]
+
+viewSidebar : AlbumSearchResults -> List AssetChange -> ImmichAsset -> Element Msg
+viewSidebar searchResults pendingChanges currentAsset =
     let
-        matchingAlbums =
-            case model.userMode of
-                MainMenu ->
-                    Array.toList model.albums
-                SearchAssetInput _ ->
-                    Array.toList model.albums
-                SelectAlbumInput searchText albums ->
-                    albums
-                EditAsset _ _ _ _ ->
-                    Array.toList model.albums
+        setFavourite =
+            case currentAsset.isFavourite of
+                True ->
+                    if List.member (SetFavourite False) pendingChanges then
+                        ChangeToFalse
+                    else
+                        RemainTrue
+                False ->
+                    if List.member (SetFavourite True) pendingChanges then
+                        ChangeToTrue
+                    else
+                        RemainFalse
+        shouldDelete =
+            case currentAsset.isArchived of
+                True ->
+                    if List.member Delete pendingChanges then
+                        ChangeToTrue
+                    else
+                        RemainTrue
+                False ->
+                    if List.member Delete pendingChanges then
+                        ChangeToTrue
+                    else
+                        RemainFalse
     in
-    column []
+    column [ height fill ]
+        [ el [ alignTop, height <| fillPortion 1 ] <| text "Asset Changes"
+        , row [ alignTop, height <| fillPortion 2 ]
+            [ case setFavourite of
+                ChangeToTrue ->
+                    el [ Font.color <| Element.fromRgb { red = 0, green = 1, blue = 0, alpha = 1 } ] <| text "Fav"
+                ChangeToFalse ->
+                    el [ Font.color <| Element.fromRgb { red = 1, green = 0, blue = 0, alpha = 1 } ] <| text "!Fav"
+                RemainTrue ->
+                    el [ Font.color <| Element.fromRgb { red = 0.8, green = 0.8, blue = 0.8, alpha = 0.6 } ] <| text "Fav"
+                RemainFalse ->
+                    el [ Font.color <| Element.fromRgb { red = 0.8, green = 0.8, blue = 0.8, alpha = 0.6 } ] <| text "!Fav"
+            , case shouldDelete of
+                ChangeToTrue ->
+                    el [ Font.color <| Element.fromRgb { red = 1, green = 0, blue = 0, alpha = 1 } ] <| text "Delete"
+                ChangeToFalse ->
+                    el [ Font.color <| Element.fromRgb { red = 0, green = 1, blue = 0, alpha = 1 } ] <| text "Undelete"
+                RemainTrue ->
+                    el [ Font.color <| Element.fromRgb { red = 0.8, green = 0.8, blue = 0.8, alpha = 0.6 } ] <| text ""
+                RemainFalse ->
+                    el [ Font.color <| Element.fromRgb { red = 0.8, green = 0.8, blue = 0.8, alpha = 0.6 } ] <| text ""
+            ]
+        , viewSidebarAlbumsForCurrentAsset searchResults pendingChanges currentAsset
+        ]
+
+
+viewSidebarAlbums : AlbumSearchResults -> Element Msg
+viewSidebarAlbums searchResults =
+    column [ height fill ]
         (List.map
-            (\album ->
+            (\albumWithScore ->
                 row []
-                    [ el [ paddingXY 5 0 ] <| text (String.fromInt album.assetCount)
-                    , text album.albumName
+                    [ el [ paddingXY 5 0 ] <| text (String.fromInt albumWithScore.album.assetCount)
+                    , el [] <| text albumWithScore.album.albumName
                     ]
             )
-            matchingAlbums
+            searchResults.albumsWithScore
+        )
+
+viewSidebarAlbumsForCurrentAsset : AlbumSearchResults -> List AssetChange -> ImmichAsset -> Element Msg
+viewSidebarAlbumsForCurrentAsset searchResults pendingChanges currentAsset =
+    column [ height fill ]
+        (List.map
+            (\albumWithScore ->
+                let
+                    attrs =
+                        if List.member (AddToAlbum albumWithScore.album) pendingChanges then
+                            [ Background.color <| Element.fromRgb { red = 0, green = 1, blue = 0, alpha = 1 } ]
+                        else if List.member (RemoveFromAlbum albumWithScore.album) pendingChanges then
+                            [ Background.color <| Element.fromRgb { red = 1, green = 0, blue = 0, alpha = 1 } ]
+                        else
+                            []
+                in
+                row []
+                    [ el [ paddingXY 5 0 ] <| text (String.fromInt albumWithScore.album.assetCount)
+                    , el attrs <| text albumWithScore.album.albumName
+                    ]
+            )
+            searchResults.albumsWithScore
         )
 
 
 -- UPDATE --
 
 
-loopImageIndexOverArray : Int -> Int -> Int -> Int
+loopImageIndexOverArray : ImageIndex -> Int -> Int -> ImageIndex
 loopImageIndexOverArray index step length =
     modBy length (index + step)
 
@@ -335,9 +437,9 @@ handleUserInput model key =
                 generalAction =
                     case key of
                         "u" ->
-                            ChangeUserMode (EditAsset NormalMode Uncategorised 0 [])
+                            ChangeUserMode (EditAsset NormalMode Uncategorised 0 [] <| getMatchingAlbumsOrdered "" model.albums)
                         "a" ->
-                            ChangeUserMode (SelectAlbumInput "" (getMatchingAlbumsOrdered "" model.albums))
+                            ChangeUserMode (SelectAlbumInput <| getMatchingAlbumsOrdered "" model.albums)
                         "s" ->
                             ChangeUserMode (SearchAssetInput "")
                         _ ->
@@ -346,20 +448,19 @@ handleUserInput model key =
             handleGeneralActions model generalAction
         SearchAssetInput searchString ->
             let
-                isTextAddition =
-                    isSupportedSearchLetter key
                 userAction =
-                    case ( isTextAddition, key ) of
-                        ( True, _ ) ->
-                            TextInputUpdate (TextInputAddition key)
-                        ( False, "Backspace" ) ->
-                            TextInputUpdate TextInputBackspace
-                        ( False, "Escape" ) ->
-                            UserActionGeneralSearch (ChangeUserMode MainMenu)
-                        ( False, "Enter" ) ->
-                            UserActionGeneralSearch (ChangeUserMode (EditAsset NormalMode (Search searchString) 0 []))
-                        _ ->
-                            UserActionGeneralSearch UnknownAction
+                    if isSupportedSearchLetter key then
+                        TextInputUpdate (TextInputAddition key)
+                    else
+                        case key of
+                            "Backspace" ->
+                                TextInputUpdate TextInputBackspace
+                            "Escape" ->
+                                UserActionGeneralSearch <| ChangeUserMode MainMenu
+                            "Enter" ->
+                                UserActionGeneralSearch <| ChangeUserMode <| EditAsset NormalMode (Search searchString) 0 [] <| getMatchingAlbumsOrdered "" model.albums
+                            _ ->
+                                UserActionGeneralSearch UnknownAction
             in
             case userAction of
                 TextInputUpdate (TextInputAddition newKey) ->
@@ -376,56 +477,61 @@ handleUserInput model key =
                     ( { model | userMode = SearchAssetInput newSearchString }, Cmd.none )
                 UserActionGeneralSearch action ->
                     handleGeneralActions model action
-        SelectAlbumInput searchString matchingAlbums ->
+        SelectAlbumInput searchResults ->
             let
-                isTextAddition =
-                    isSupportedSearchLetter key
                 userAction =
-                    case ( isTextAddition, key ) of
-                        ( True, _ ) ->
-                            TextSelectInputUpdate (TextInputAddition key)
-                        ( False, "Backspace" ) ->
-                            TextSelectInputUpdate TextInputBackspace
-                        ( False, "Escape" ) ->
-                            UserActionGeneralAlbumSelect (ChangeUserMode MainMenu)
-                        ( False, "Enter" ) ->
-                            SelectAlbumIfMatching
-                        _ ->
-                            UserActionGeneralAlbumSelect UnknownAction
+                    if isSupportedSearchLetter key then
+                        TextSelectInputUpdate (TextInputAddition key)
+                    else
+                        case key of
+                            "Backspace" ->
+                                TextSelectInputUpdate TextInputBackspace
+                            "Escape" ->
+                                UserActionGeneralAlbumSelect (ChangeUserMode MainMenu)
+                            "Enter" ->
+                                SelectAlbumIfMatching
+                            _ ->
+                                UserActionGeneralAlbumSelect UnknownAction
             in
             case userAction of
                 TextSelectInputUpdate (TextInputAddition newKey) ->
                     let
                         newSearchString =
-                            searchString ++ newKey
+                            searchResults.searchString ++ newKey
                     in
-                    ( { model | userMode = SelectAlbumInput newSearchString (getMatchingAlbumsOrdered newSearchString model.albums) }, Cmd.none )
+                    ( { model | userMode = SelectAlbumInput <| getMatchingAlbumsOrdered newSearchString model.albums }, Cmd.none )
                 TextSelectInputUpdate TextInputBackspace ->
                     let
                         newSearchString =
-                            String.slice 0 (String.length searchString - 1) searchString
+                            String.slice 0 (String.length searchResults.searchString - 1) searchResults.searchString
                     in
-                    ( { model | userMode = SelectAlbumInput newSearchString (getMatchingAlbumsOrdered newSearchString model.albums) }, Cmd.none )
+                    ( { model | userMode = SelectAlbumInput <| getMatchingAlbumsOrdered newSearchString model.albums }, Cmd.none )
                 SelectAlbumIfMatching ->
-                    case matchingAlbums of
+                    case searchResults.albumsWithScore of
                         [] ->
                             ( model, Cmd.none )
-                        [ album ] ->
-                            ( { model | userMode = EditAsset NormalMode (Album album) 0 [] }, Cmd.none )
+                        [ albumWithScore ] ->
+                            ( { model | userMode = EditAsset NormalMode (Album albumWithScore.album) 0 [] { searchString = "", albumsWithScore = [] } }, Cmd.none )
                         _ ->
                             ( model, Cmd.none )
                 UserActionGeneralAlbumSelect action ->
                     handleGeneralActions model action
-        EditAsset inputMode assetSource index pendingChanges ->
+        EditAsset inputMode assetSource index pendingChanges searchResults ->
             let
                 userAction =
                     if inputMode == InsertMode then
-                        case key of
-                            "Escape" ->
-                                ChangeInputMode NormalMode
-                            -- TODO: Handle input here
-                            _ ->
-                                UserActionGeneralEdit UnknownAction
+                        if isSupportedSearchLetter key then
+                            TextEditModeInputUpdate (TextInputAddition key)
+                        else
+                            case key of
+                                "Escape" ->
+                                    ChangeInputMode NormalMode
+                                "Backspace" ->
+                                    TextEditModeInputUpdate TextInputBackspace
+                                "Enter" ->
+                                    ApplyAlbumIfMatching
+                                _ ->
+                                    UserActionGeneralEdit UnknownAction
                     else
                         case key of
                             "ArrowLeft" ->
@@ -433,31 +539,68 @@ handleUserInput model key =
                             "ArrowRight" ->
                                 ChangeImageIndex 1
                             "Escape" ->
-                                UserActionGeneralEdit (ChangeUserMode MainMenu)
+                                UserActionGeneralEdit <| ChangeUserMode MainMenu
+                            "Backspace" ->
+                                RemoveFromAssetChangeList
                             "i" ->
                                 ChangeInputMode InsertMode
                             "d" ->
                                 AddToAssetChangeList Delete
                             "f" ->
-                                AddToAssetChangeList Favourite
+                                -- TODO: Base on the assets favourite state
+                                AddToAssetChangeList <| SetFavourite True
                             _ ->
                                 UserActionGeneralEdit UnknownAction
-
-                -- , ( "r", ReloadData )
-                -- , ( "i", ChangeInputMode InsertMode )
-                -- , ( "Escape", ChangeUserMode MainMenu )
             in
             case userAction of
                 AddToAssetChangeList change ->
-                    ( { model | userMode = EditAsset inputMode assetSource index (change :: pendingChanges) }, Cmd.none )
+                    let
+                        newPendingChanges =
+                            if List.member change pendingChanges then
+                                pendingChanges
+                            else
+                                change :: pendingChanges
+                    in
+                    ( { model | userMode = EditAsset inputMode assetSource index newPendingChanges searchResults }, Cmd.none )
+                RemoveFromAssetChangeList ->
+                    ( { model | userMode = EditAsset inputMode assetSource index (List.drop 1 pendingChanges) searchResults }, Cmd.none )
+                ApplyAlbumIfMatching ->
+                    case searchResults.albumsWithScore of
+                        [] ->
+                            ( model, Cmd.none )
+                        [ albumWithScore ] ->
+                            let
+                                change =
+                                    AddToAlbum albumWithScore.album
+                                newPendingChanges =
+                                    if List.member change pendingChanges then
+                                        pendingChanges
+                                    else
+                                        change :: pendingChanges
+                            in
+                            ( { model | userMode = EditAsset inputMode assetSource index newPendingChanges (getMatchingAlbumsOrdered "" model.albums) }, Cmd.none )
+                        _ ->
+                            ( model, Cmd.none )
                 ChangeInputMode newInputMode ->
-                    ( { model | userMode = EditAsset newInputMode assetSource index pendingChanges }, Cmd.none )
+                    ( { model | userMode = EditAsset newInputMode assetSource index pendingChanges <| getMatchingAlbumsOrdered "" model.albums }, Cmd.none )
                 ChangeImageIndex indexChange ->
                     let
                         newIndex =
                             loopImageIndexOverArray index indexChange (Array.length model.images)
                     in
-                    ( { model | userMode = EditAsset inputMode assetSource newIndex pendingChanges }, Cmd.none )
+                    ( { model | userMode = EditAsset inputMode assetSource newIndex pendingChanges searchResults }, Cmd.none )
+                TextEditModeInputUpdate (TextInputAddition newKey) ->
+                    let
+                        newSearchString =
+                            searchResults.searchString ++ newKey
+                    in
+                    ( { model | userMode = EditAsset inputMode assetSource index pendingChanges <| getMatchingAlbumsOrdered newSearchString model.albums }, Cmd.none )
+                TextEditModeInputUpdate TextInputBackspace ->
+                    let
+                        newSearchString =
+                            String.slice 0 (String.length searchResults.searchString - 1) searchResults.searchString
+                    in
+                    ( { model | userMode = EditAsset inputMode assetSource index pendingChanges <| getMatchingAlbumsOrdered newSearchString model.albums }, Cmd.none )
 
                 UserActionGeneralEdit generalAction ->
                     handleGeneralActions model generalAction
@@ -475,7 +618,7 @@ handleGeneralActions model action =
             ( model, Cmd.none )
 
 
-getMatchingAlbumsOrdered : String -> Array ImmichAlbum -> List ImmichAlbum
+getMatchingAlbumsOrdered : String -> Array ImmichAlbum -> AlbumSearchResults
 getMatchingAlbumsOrdered searchString albums =
     let
         albumsList =
@@ -483,14 +626,13 @@ getMatchingAlbumsOrdered searchString albums =
         albumsWithScores =
             List.map (\a -> { album = a, score = shittyFuzzyAlgorithmTest searchString a.albumName }) albumsList
     in
-    if searchString == "" then
-        albumsList
-    else
+    { searchString = searchString
+    , albumsWithScore =
         albumsWithScores
-            |> List.filter (\a -> a.score > 0)
+            |> List.filter (\a -> a.score > 0 || searchString == "")
             |> List.sortBy (\a -> ( a.score, a.album.assetCount ))
             |> List.reverse
-            |> List.map .album
+    }
 
 regexFromString : String -> Regex
 regexFromString searchString =
