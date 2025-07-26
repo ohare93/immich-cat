@@ -486,7 +486,7 @@ viewMenuState model menuState =
         MainMenuHome ->
             let
                 isConfigured =
-                    model.configuredApiUrl /= Nothing && model.configuredApiKey /= Nothing
+                    not (String.isEmpty model.baseUrl) && not (String.isEmpty model.apiKey)
             in
             Menus.viewMainMenu (model.deviceClass == Mobile) model.reloadFeedback isConfigured
 
@@ -1187,7 +1187,13 @@ update msg model =
                 ( finalModel, autoClearCmd )
 
         ClearConfig ->
-            ( { model | configuredApiUrl = Nothing, configuredApiKey = Nothing }, clearStorage () )
+            ( { model 
+                | configuredApiUrl = Nothing
+                , configuredApiKey = Nothing
+                , settingsApiUrl = ""
+                , settingsApiKey = ""
+                , configValidationMessage = Nothing
+              }, clearStorage () )
 
         UpdateSettingsApiUrl url ->
             ( { model | settingsApiUrl = url, configValidationMessage = Nothing }, Cmd.none )
