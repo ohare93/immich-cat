@@ -5,8 +5,12 @@ import Browser exposing (element)
 import Browser.Events exposing (onKeyDown)
 import Date
 import Dict exposing (Dict)
+import Element exposing (Element, alignBottom, alignRight, alignTop, centerX, centerY, column, el, fill, fillPortion, height, padding, paddingXY, rgb255, row, spacing, text, width)
+import Element.Background as Background
+import Element.Border as Border
+import Element.Font as Font
 import Helpers exposing (send)
-import Html exposing (Html, button, div, img, text)
+import Html exposing (Html, button, div)
 import Html.Attributes exposing (class, src)
 import Html.Events exposing (onClick)
 import Immich exposing (ImageWithMetadata, ImmichAlbum, ImmichLoadState(..), getAllAlbums)
@@ -15,8 +19,7 @@ import Regex exposing (Regex)
 
 
 type Msg
-    = Increment
-    | KeyPress String
+    = KeyPress String
     | ImmichMsg Immich.Msg
 
 type alias Flags =
@@ -28,8 +31,7 @@ type alias Flags =
 
 
 type alias Model =
-    { count : Int
-    , key : String
+    { key : String
     , imagePrepend : String
     , assetSelectMode : AssetSource
     , userMode : UserMode
@@ -118,8 +120,7 @@ init flags =
                 , ImmichAlbum "d" "Comics" 50 Array.empty "000004" (Date.fromOrdinalDate 2025 1)
                 ]
     in
-    ( { count = 7
-      , key = ""
+    ( { key = ""
       , imagePrepend = flags.imagePrepend
       , userMode = MainMenu
       , assetSelectMode = NoAssets
@@ -156,7 +157,7 @@ init flags =
 --         ]
 
 
-viewImage : String -> Int -> Array ImageWithMetadata -> Html msg
+viewImage : String -> Int -> Array ImageWithMetadata -> Element msg
 viewImage imagePrepend index images =
     let
         currentImage =
@@ -165,63 +166,106 @@ viewImage imagePrepend index images =
     case currentImage of
         Just image ->
             if image.path == "" then
-                div [] [ text "No Image" ]
+                el [] (text "No Image")
 
             else
-                div []
-                    [ img [ src (imagePrepend ++ image.path), class "img-fluid" ] []
-                    , div [] [ text image.title ]
+                column [ width fill, height fill ]
+                    [ Element.image [ centerY, centerX ] { src = imagePrepend ++ image.path, description = "" }
+                    , el [ centerX ] (text image.title)
                     ]
 
         Nothing ->
-            div [] [ text "No Image" ]
+            text "No Image"
 
 
-viewEditAsset : Int -> String -> Int -> String -> Array ImageWithMetadata -> Int -> List AssetChange -> Html Msg
-viewEditAsset test imagePrepend count key images index pendingChanges =
-    div [ class "text-center" ]
-        [ div [] [ text ("Count: " ++ String.fromInt count) ]
-        , div [] [ text ("Key: " ++ key) ]
-        , button
-            [ class "btn btn-primary", onClick Increment ]
-            [ text "+" ]
+viewEditAsset : Int -> String -> String -> Array ImageWithMetadata -> Int -> List AssetChange -> Element Msg
+viewEditAsset test imagePrepend key images index pendingChanges =
+    column [ width fill, height fill ]
+        [ el [ alignTop ] (text "Top Bar")
         , viewImage imagePrepend index images
-        , text (String.fromInt index ++ "  ")
-        , text (String.fromInt test)
-        ]
-
-viewSelectAlbum : String -> List ImmichAlbum -> Html Msg
-viewSelectAlbum searchString matchingAlbums =
-    div []
-        [ div [] [ text "Select Album" ]
-        , div [] [ text searchString ]
-        , div []
-            [ text "Matching Albums: "
-            , div []
-                (List.map
-                    (\album ->
-                        div [] [ text album.albumName ]
-                    )
-                    matchingAlbums
-                )
+        , column [ alignBottom ]
+            [ text (String.fromInt index ++ "  ")
+            , text (String.fromInt test)
             ]
         ]
 
+
 view : Model -> Html Msg
 view model =
+    Element.layout [ width fill, height fill ] <|
+        column [ width fill, height fill ] <|
+            [ row [ width fill, height <| fillPortion 15 ]
+                [ el [ width <| fillPortion 4, height fill ] <| viewMainWindow model
+                , el [ width <| fillPortion 1, alignRight ] <| viewSidebar model
+                ]
+            , row [ width fill ]
+                [ viewInputMode model.userMode
+                ]
+            ]
+
+
+viewMainWindow : Model -> Element Msg
+viewMainWindow model =
     case model.userMode of
         MainMenu ->
-            div [] [ text "Select Asset Source" ]
+            text "Select Asset Source"
         SearchAssetInput searchString ->
-            div []
+            column []
                 [ text "Input Search String"
-                , div [] [ text searchString ]
+                , text searchString
                 ]
         SelectAlbumInput searchString matchingAlbums ->
-            viewSelectAlbum searchString matchingAlbums
+            column []
+                [ text "Select Album"
+                , text searchString
+                ]
         EditAsset _ _ index pendingChanges ->
-            viewEditAsset model.test model.imagePrepend model.count model.key model.images index pendingChanges
+            viewEditAsset model.test model.imagePrepend model.key model.images index pendingChanges
 
+viewInputMode : UserMode -> Element msg
+viewInputMode userMode =
+    let
+        inputMode =
+            case userMode of
+                MainMenu ->
+                    NormalMode
+                SearchAssetInput _ ->
+                    InsertMode
+                SelectAlbumInput _ _ ->
+                    InsertMode
+                EditAsset editInputMode _ _ _ ->
+                    editInputMode
+    in
+    case inputMode of
+        NormalMode ->
+            el [ width fill, Background.color <| Element.fromRgb { red = 0.8, green = 0.8, blue = 0.8, alpha = 1 } ] <| text "Normal"
+        InsertMode ->
+            el [ width fill, Background.color <| Element.fromRgb { red = 0, green = 1, blue = 0, alpha = 1 } ] <| text "Input"
+
+viewSidebar : Model -> Element Msg
+viewSidebar model =
+    let
+        matchingAlbums =
+            case model.userMode of
+                MainMenu ->
+                    Array.toList model.albums
+                SearchAssetInput _ ->
+                    Array.toList model.albums
+                SelectAlbumInput searchText albums ->
+                    albums
+                EditAsset _ _ _ _ ->
+                    Array.toList model.albums
+    in
+    column []
+        (List.map
+            (\album ->
+                row []
+                    [ el [ paddingXY 5 0 ] <| text (String.fromInt album.assetCount)
+                    , text album.albumName
+                    ]
+            )
+            matchingAlbums
+        )
 
 
 -- UPDATE --
@@ -246,8 +290,6 @@ update msg model =
     case msg of
         ImmichMsg immichMsg ->
             Immich.update immichMsg model |> Tuple.mapBoth (\a -> a) (Cmd.map ImmichMsg)
-        Increment ->
-            ( { model | count = model.count + 1 }, Cmd.none )
         KeyPress key ->
             handleUserInput model key
 
