@@ -22,4 +22,4 @@ COPY package*.json /mnt/
 
 RUN npm install
 
-CMD ["npm", "run", "start"]
+CMD ["npm", "run", "start-env"]

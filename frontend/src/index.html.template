@@ -12,7 +12,7 @@
     node: document.getElementById('myapp'),
     flags: {
 	test: Date.now(),
-        imagePrepend: "http://localhost:3333/"
+        imagePrepend: "${BACKEND_URL}"
     }
   });
   </script>
