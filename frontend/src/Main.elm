@@ -54,11 +54,16 @@ init _ = ({
 showAlbumsForImage : List Album -> ImageWithMetadata -> Html msg
 showAlbumsForImage albums image =
     let
-        albumNames =
-            List.map (\album -> album.name) (List.filter (\album -> List.member album.id image.inAlbumns) albums)
+        inAlbumns = List.filter (\album -> List.member album.id image.inAlbumns) albums
+        notInAlbumns = List.filter (\album -> not (List.member album.id image.inAlbumns)) albums
     in
     div []
-        [ text ("Albums: " ++ String.join ", " albumNames) ]
+        [ div []
+            [ text ("In Albumns: " ++ String.join ", " (List.map (\album -> album.name) inAlbumns)) ]
+        , div []
+            [ text ("Not In Albumns: " ++ String.join ", " (List.map (\album -> album.name) notInAlbumns)) ]
+        ]
+
 
 imageOrBlank : String -> Html msg
 imageOrBlank key =
