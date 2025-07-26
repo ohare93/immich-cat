@@ -1,0 +1,12 @@
+{
+    "name": "elm-app",
+    "version": "0.1.0",
+    "scripts": {
+      "start": "elm-live src/Main.elm --open -- --output=main.js",
+      "build": "elm make src/Main.elm --output=main.js"
+    },
+    "dependencies": {
+      "elm": "^0.19.1",
+      "elm-live": "^4.0.2"
+    }
+  }
