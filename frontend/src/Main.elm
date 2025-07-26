@@ -45,7 +45,7 @@ init _ = ({
                        ]
             , images = [ { id = "0001", url = "http://localhost:3333/images/imafight.jpg", title = "Image A", inAlbumns = ["a"] }
                        , { id = "0002", url = "http://localhost:3333/images/dcemployees.jpg", title = "Image B", inAlbumns = ["b"] }
-                       , { id = "0003", url = "http://localhost:3333/images/c.jpg", title = "Image C", inAlbumns = ["a", "b"] } ]
+                       , { id = "0003", url = "http://localhost:3333/images/jordan.jpg", title = "Image C", inAlbumns = ["a", "b"] } ]
             }
         , Cmd.none
         )

@@ -3,6 +3,6 @@ services:
     container_name: image-backend
     build: .
     volumes:
-    - .:/mnt
+    - ./images:/app/src/images
     ports:
     - 3333:3333
