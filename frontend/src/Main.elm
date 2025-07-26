@@ -25,6 +25,8 @@ getImageFromKey key =
         "a" -> "http://localhost:3333/images/imafight.jpg"
         "b" -> "http://localhost:3333/images/dcemployees.jpg"
         "c" -> "http://localhost:3333/images/c.jpg"
+        -- "d" -> "http://image-backend:3333/images/imafight.jpg"
+        -- "e" -> "http://image-backend/images/imafight.jpg"
         _ -> ""
         
 imageOrBlank : String -> Html msg
@@ -32,9 +34,20 @@ imageOrBlank key =
     if key == "" then
         text ""
     else
-        img [ src (getImageFromKey key), class "img-fluid" ] []
+        img [ src key, class "img-fluid" ] []
+        
+imageWithTitle : String -> Html msg
+imageWithTitle key =
+    let
+        url = getImageFromKey key
+    in
+    div []
+        [ imageOrBlank url
+        , div [] [ text ("Image for url: " ++ url) ]
+        ]
 
 
+view : Model -> Html Msg
 view model =
     div [ class "text-center" ]
         [ div [] [ text ("Count: " ++ String.fromInt model.count) ]
@@ -42,10 +55,11 @@ view model =
         , button
             [ class "btn btn-primary", onClick Increment ]
             [ text "+" ]
-        , imageOrBlank model.key
+        , imageWithTitle model.key
         ]
 
 
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         Increment ->

@@ -1,5 +1,5 @@
 services:
-  elm-container:
+  image-frontend:
     container_name: image-frontend
     build: .
     volumes:

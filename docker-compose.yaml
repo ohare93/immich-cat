@@ -1,10 +1,18 @@
 services:
-  frontend:
+  image-frontend:
     extends:
       file: ./frontend/docker-compose.yaml
-      service: elm-container
-  backend:
+      service: image-frontend
+    networks:
+      - image-categoriser
+  image-backend:
     extends:
       file: ./backend/docker-compose.yaml
-      service: backend-container
-      
+      service: image-backend
+    networks:
+      - image-categoriser
+
+networks:
+  image-categoriser:
+    driver: bridge
+

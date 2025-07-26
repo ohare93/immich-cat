@@ -1,5 +1,5 @@
 services:
-  backend-container:
+  image-backend:
     container_name: image-backend
     build: .
     volumes:
