@@ -35,6 +35,8 @@ generateTestAsset id fileName =
     , albumMembership = []
     , fileCreatedAt = Date.fromRataDie 737790 -- January 1, 2020
     , fileModifiedAt = Date.fromRataDie 737791 -- January 2, 2020
+    , fileCreatedAtString = "2020-01-01T00:00:00.000Z"
+    , fileModifiedAtString = "2020-01-02T00:00:00.000Z"
     , thumbhash = Nothing
     , duration = Nothing
     }

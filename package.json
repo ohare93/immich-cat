@@ -5,15 +5,12 @@
     "dev": "node scripts/dev-server.js",
     "start": "node scripts/start-dev.js",
     "build": "node scripts/build.js",
-    "dev-secure": "node scripts/dev-server.js",
-    "start-env": "npm run create-env-specific-file && npm run start",
-    "create-env-specific-file": "npx envsub -p src/index.html.template src/index.html"
+    "dev-secure": "node scripts/dev-server.js"
   },
   "dependencies": {
     "dotenv": "^16.0.3",
     "elm": "^0.19.1",
     "elm-live": "^4.0.2",
-    "envsub": "^4.1.0",
     "thumbhash": "^0.1.1"
   }
 }

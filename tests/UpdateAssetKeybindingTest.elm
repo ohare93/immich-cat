@@ -24,6 +24,8 @@ createTestAsset id title =
     , albumMembership = []
     , fileCreatedAt = Date.fromRataDie 1
     , fileModifiedAt = Date.fromRataDie 1
+    , fileCreatedAtString = "2000-01-01T00:00:00.000Z"
+    , fileModifiedAtString = "2000-01-01T00:00:00.000Z"
     , thumbhash = Nothing
     , duration = Nothing
     }
