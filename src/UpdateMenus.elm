@@ -132,9 +132,6 @@ handleTimelineViewInput key config =
             let
                 newOrder =
                     toggleOrder config.order
-
-                _ =
-                    Debug.log "Timeline order toggle" ("From: " ++ Debug.toString config.order ++ " To: " ++ Debug.toString newOrder)
             in
             ChangeMode (LegacyTimelineView { config | order = newOrder })
 

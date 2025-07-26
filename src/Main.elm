@@ -1980,40 +1980,20 @@ handleFetchAssetMembership assetWithMembership model =
 handleFetchAssets : List ImmichAsset -> Model -> Model
 handleFetchAssets assets model =
     let
-        _ =
-            Debug.log "handleFetchAssets called" ("Processing " ++ String.fromInt (List.length assets) ++ " assets")
-
-        _ =
-            Debug.log "Current userMode" (Debug.toString model.userMode)
-
         -- Apply client-side sorting since Immich API doesn't respect orderBy properly
         sortedAssets =
             case model.paginationState.currentConfig of
                 Just config ->
-                    let
-                        _ =
-                            Debug.log "Timeline config found" ("Applying sorting with order: " ++ Debug.toString config.order)
-
-                        _ =
-                            Debug.log "Full timeline config" (Debug.toString config)
-                    in
                     -- Apply sorting for timeline views
                     applySortingToAssets config.order assets
 
                 Nothing ->
-                    let
-                        _ =
-                            Debug.log "No timeline config" "Keeping original order"
-                    in
                     -- Keep original order for other views (album/search views handle sorting separately)
                     assets
     in
     case model.paginationState.currentConfig of
         Just _ ->
             let
-                _ =
-                    Debug.log "handleFetchAssets" ("Setting imageIndex to 0, was: " ++ String.fromInt model.imageIndex)
-
                 updatedModel =
                     { model
                         | knownAssets = Helpers.listOverrideDict sortedAssets (\a -> ( a.id, a )) model.knownAssets
@@ -2035,10 +2015,6 @@ handleFetchAssets assets model =
                     updatedModel
 
         Nothing ->
-            let
-                _ =
-                    Debug.log "handleFetchAssets" ("Preserving imageIndex: " ++ String.fromInt model.imageIndex)
-            in
             -- No timeline sorting, preserve current index
             { model
                 | knownAssets = Helpers.listOverrideDict sortedAssets (\a -> ( a.id, a )) model.knownAssets
@@ -2052,31 +2028,6 @@ handleFetchAssets assets model =
 applySortingToAssets : ImageOrder -> List ImmichAsset -> List ImmichAsset
 applySortingToAssets order assets =
     let
-        _ =
-            Debug.log "Timeline Sorting" ("Applying " ++ Debug.toString order ++ " to " ++ String.fromInt (List.length assets) ++ " assets using timestamp strings for precision")
-
-        -- Debug log first 3 assets with both Date and raw string timestamps
-        loggedAssets =
-            assets
-                |> List.take 3
-                |> List.map
-                    (\asset ->
-                        let
-                            _ =
-                                Debug.log ("Asset: " ++ String.left 8 asset.id)
-                                    ("RAW: Created="
-                                        ++ asset.fileCreatedAtString
-                                        ++ " Modified="
-                                        ++ asset.fileModifiedAtString
-                                        ++ " | PARSED: Created="
-                                        ++ Date.toIsoString asset.fileCreatedAt
-                                        ++ " Modified="
-                                        ++ Date.toIsoString asset.fileModifiedAt
-                                    )
-                        in
-                        asset
-                    )
-
         sortedAssets =
             case order of
                 CreatedAsc ->
@@ -2127,9 +2078,6 @@ applySortingToAssets order assets =
                                     compare b.fileModifiedAtString a.fileModifiedAtString
 
                                 -- b first for descending
-                                _ =
-                                    Debug.log ("String Comparing " ++ String.left 8 a.id ++ " vs " ++ String.left 8 b.id)
-                                        ("A=" ++ a.fileModifiedAtString ++ " vs B=" ++ b.fileModifiedAtString ++ " Result=" ++ Debug.toString stringComparison)
                             in
                             case stringComparison of
                                 EQ ->
@@ -2418,9 +2366,6 @@ appendFetchedAssets newAssets model =
 
                         sortedAssets =
                             applySortingToAssets config.order allAssets
-
-                        _ =
-                            Debug.log "appendFetchedAssets" ("Re-sorting " ++ String.fromInt (List.length allAssets) ++ " assets with order: " ++ Debug.toString config.order)
                     in
                     List.map .id sortedAssets
 
@@ -2430,9 +2375,6 @@ appendFetchedAssets newAssets model =
     case model.paginationState.currentConfig of
         Just _ ->
             let
-                _ =
-                    Debug.log "appendFetchedAssets" ("Setting imageIndex to 0, was: " ++ String.fromInt model.imageIndex)
-
                 updatedModel =
                     { model
                         | knownAssets = updatedKnownAssets
@@ -2451,10 +2393,6 @@ appendFetchedAssets newAssets model =
                     updatedModel
 
         Nothing ->
-            let
-                _ =
-                    Debug.log "appendFetchedAssets" ("Preserving imageIndex: " ++ String.fromInt model.imageIndex)
-            in
             -- No timeline re-sorting, preserve current index
             { model
                 | knownAssets = updatedKnownAssets
