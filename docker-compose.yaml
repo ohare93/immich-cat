@@ -1,0 +1,10 @@
+services:
+  frontend:
+    extends:
+      file: ./frontend/docker-compose.yaml
+      service: elm-container
+  backend:
+    extends:
+      file: ./backend/docker-compose.yaml
+      service: backend-container
+      

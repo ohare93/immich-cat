@@ -1,0 +1,8 @@
+services:
+  backend-container:
+    container_name: image-backend
+    build: .
+    volumes:
+    - .:/mnt
+    ports:
+    - 3333:3333

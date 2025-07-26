@@ -55,7 +55,7 @@ view model =
             [ class "btn btn-primary", onClick Increment ]
             [ text "+" ]
         , img
-            [ src "http://localhost:3333/images/dcemployees.jpg", class "img-fluid" ]
+            [ src "http://localhost:3333/images/imafight.jpg", class "img-fluid" ]
             []
         ]
 
