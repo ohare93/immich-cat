@@ -445,6 +445,9 @@ handleGridKeyPress key state assets =
         "ArrowLeft" ->
             moveSelection "ArrowLeft" state assets
 
+        "Backspace" ->
+            moveSelection "ArrowLeft" state assets
+
         "ArrowRight" ->
             moveSelection "ArrowRight" state assets
 

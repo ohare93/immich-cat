@@ -520,6 +520,68 @@
       app.ports.clearStorage.subscribe(function () {
         window.storageAPI.clear();
       });
+
+      async function yankAssetToClipboard(assetId) {
+        try {
+          // Find the asset URL from the cache based on asset ID
+          let assetBlobUrl = null;
+          
+          // Look for the asset in our cache
+          for (const [url, blobUrl] of assetCache.entries()) {
+            if (url.includes(assetId)) {
+              assetBlobUrl = blobUrl;
+              break;
+            }
+          }
+          
+          if (!assetBlobUrl) {
+            return;
+          }
+          
+          // Fetch the blob from the object URL
+          const response = await fetch(assetBlobUrl);
+          const originalBlob = await response.blob();
+          
+          // Only handle images - videos don't work with clipboard
+          if (!originalBlob.type.startsWith('image/')) {
+            return;
+          }
+          
+          // Check if clipboard API is available
+          if (!navigator.clipboard || !navigator.clipboard.write) {
+            return;
+          }
+          
+          // Try PNG blob approach (this works for chat apps)
+          try {
+            const pngBlob = new Blob([originalBlob], { type: 'image/png' });
+            await navigator.clipboard.write([
+              new ClipboardItem({
+                'image/png': pngBlob
+              })
+            ]);
+            return;
+          } catch (error) {
+            // Fallback: try the original blob type
+            try {
+              await navigator.clipboard.write([
+                new ClipboardItem({
+                  [originalBlob.type]: originalBlob
+                })
+              ]);
+            } catch (fallbackError) {
+              // Silent failure
+            }
+          }
+          
+        } catch (error) {
+          // Silent failure
+        }
+      }
+
+      app.ports.yankAssetToClipboard.subscribe(function (assetId) {
+        yankAssetToClipboard(assetId);
+      });
     </script>
   </body>
 </html>

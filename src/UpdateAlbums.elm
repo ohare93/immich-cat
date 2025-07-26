@@ -91,48 +91,43 @@ handleAlbumBrowseInput key search albumKeybindings knownAlbums =
             in
             UpdateAlbumSearch newSearch
 
+        "Control+d" ->
+            let
+                newSearch =
+                    { search | pagination = halfPageDown search.pagination }
+            in
+            UpdateAlbumSearch newSearch
+
+        "Control+u" ->
+            let
+                newSearch =
+                    { search | pagination = halfPageUp search.pagination }
+            in
+            UpdateAlbumSearch newSearch
+
+        "Control+f" ->
+            let
+                newSearch =
+                    { search | pagination = pageDown search.pagination }
+            in
+            UpdateAlbumSearch newSearch
+
+        "Control+b" ->
+            let
+                newSearch =
+                    { search | pagination = pageUp search.pagination }
+            in
+            UpdateAlbumSearch newSearch
+
+        " " ->
+            let
+                newSearch =
+                    { search | pagination = pageDown search.pagination }
+            in
+            UpdateAlbumSearch newSearch
+
         _ ->
-            if String.contains "Control" key then
-                case String.replace "Control+" "" key of
-                    "d" ->
-                        let
-                            newSearch =
-                                { search | pagination = halfPageDown search.pagination }
-                        in
-                        UpdateAlbumSearch newSearch
-
-                    "u" ->
-                        let
-                            newSearch =
-                                { search | pagination = halfPageUp search.pagination }
-                        in
-                        UpdateAlbumSearch newSearch
-
-                    "f" ->
-                        let
-                            newSearch =
-                                { search | pagination = pageDown search.pagination }
-                        in
-                        UpdateAlbumSearch newSearch
-
-                    "b" ->
-                        let
-                            newSearch =
-                                { search | pagination = pageUp search.pagination }
-                        in
-                        UpdateAlbumSearch newSearch
-
-                    _ ->
-                        NoAlbumAction
-
-            else if key == " " then
-                let
-                    newSearch =
-                        { search | pagination = pageDown search.pagination }
-                in
-                UpdateAlbumSearch newSearch
-
-            else if not (String.isEmpty search.searchString) && isSupportedSearchLetter key then
+            if not (String.isEmpty search.searchString) && isSupportedSearchLetter key then
                 -- We're already in text search mode, continue with text search
                 let
                     newSearch =

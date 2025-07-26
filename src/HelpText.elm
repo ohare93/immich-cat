@@ -225,6 +225,7 @@ viewAssetViewHelp inputMode =
             , viewKeybinding "D" "Toggle delete/archive"
             , viewKeybinding "F" "Toggle favorite"
             , viewKeybinding "K" "Open in Immich (new tab)"
+            , viewKeybinding "Y" "Yank (copy to clipboard)"
             , viewKeybinding "I" "Enter album search mode"
             , viewKeybinding "R" "Reload albums from server"
             , viewKeybinding "T" "Toggle time view (Absolute/Relative)"
@@ -256,12 +257,27 @@ viewAssetViewHelp inputMode =
                 ScrollViewMode _ ->
                     column [ Element.spacingXY 0 8 ]
                         [ el [ Font.size 16, Font.bold ] (text "Scroll View Mode")
-                        , viewKeybinding "j" "Scroll down"
-                        , viewKeybinding "k" "Scroll up"
-                        , viewKeybinding "h" "Scroll left"
-                        , viewKeybinding "l" "Scroll right"
-                        , viewKeybinding "S" "Exit scroll view"
-                        , viewKeybinding "Escape" "Exit scroll view"
+                        , column [ Element.spacingXY 0 5 ]
+                            [ el [ Font.size 14, Font.bold ] (text "Basic Navigation")
+                            , viewKeybinding "j" "Scroll down (small)"
+                            , viewKeybinding "k" "Scroll up (small)"
+                            , viewKeybinding "h" "Scroll left (small)"
+                            , viewKeybinding "l" "Scroll right (small)"
+                            ]
+                        , column [ Element.spacingXY 0 5 ]
+                            [ el [ Font.size 14, Font.bold ] (text "Page Navigation")
+                            , viewKeybinding "PageUp" "Scroll up (full page)"
+                            , viewKeybinding "PageDown" "Scroll down (full page)"
+                            , viewKeybinding "Ctrl+U" "Scroll up (half page)"
+                            , viewKeybinding "Ctrl+D" "Scroll down (half page)"
+                            , viewKeybinding "Ctrl+B" "Scroll up (full page)"
+                            , viewKeybinding "Ctrl+F" "Scroll down (full page)"
+                            ]
+                        , column [ Element.spacingXY 0 5 ]
+                            [ el [ Font.size 14, Font.bold ] (text "Exit")
+                            , viewKeybinding "S" "Exit scroll view"
+                            , viewKeybinding "Escape" "Exit scroll view"
+                            ]
                         , el [ Font.size 13, Element.paddingXY 0 5 ] (text "Use this mode for very large images that need scrolling")
                         ]
 

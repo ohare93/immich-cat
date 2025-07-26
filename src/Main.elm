@@ -1,7 +1,7 @@
 port module Main exposing (main)
 
 import Browser exposing (element)
-import Browser.Events exposing (onKeyDown, onResize)
+import Browser.Events exposing (onKeyDown, onKeyUp, onResize)
 import Date
 import Dict exposing (Dict)
 import Element exposing (Element, alignRight, alignTop, clipY, column, el, fill, fillPortion, height, minimum, paddingXY, px, row, text, width)
@@ -43,8 +43,12 @@ port clearStorage : () -> Cmd msg
 port storageLoaded : (( String, Maybe String ) -> msg) -> Sub msg
 
 
+port yankAssetToClipboard : String -> Cmd msg
+
+
 type Msg
     = KeyPress String
+    | KeyRelease String
     | ImmichMsg Immich.Msg
     | LoadDataAgain
     | ClearReloadFeedback
@@ -111,6 +115,7 @@ type alias Model =
     , imageSearchConfig : ImageSearchConfig
     , timeViewMode : TimeViewMode
     , reloadFeedback : Maybe String
+    , controlPressed : Bool
 
     -- Configuration fields
     , configuredApiUrl : Maybe String
@@ -268,6 +273,7 @@ init flags =
       , imageSearchConfig = { order = CreatedDesc, categorisation = Uncategorised, mediaType = AllMedia, status = AllStatuses }
       , timeViewMode = Absolute
       , reloadFeedback = Nothing
+      , controlPressed = False
 
       -- Configuration fields
       , configuredApiUrl = Nothing
@@ -913,6 +919,20 @@ handleAssetResult assetResult model =
                 _ ->
                     ( model, Cmd.none )
 
+        AssetYankToClipboard ->
+            -- Handle yanking asset to clipboard
+            case model.userMode of
+                ViewAssets assetState ->
+                    case assetState of
+                        EditAsset _ asset _ ->
+                            ( model, yankAssetToClipboard asset.asset.id )
+
+                        _ ->
+                            ( model, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
         AssetCreateAlbum albumName ->
             -- Handle album creation
             ( { model | userMode = LoadingAssets { fetchedAssetList = Nothing, fetchedAssetMembership = Nothing } }, Immich.createAlbum model.immichApiPaths albumName |> Cmd.map ImmichMsg )
@@ -1211,26 +1231,49 @@ update msg model =
                     ( model, Cmd.none )
 
         KeyPress key ->
-            case model.userMode of
-                MainMenu menuState ->
-                    handleMenuResult (updateMenus (MenuKeyPress key) menuState model.knownAlbums model.immichApiPaths model.screenHeight) model
+            if key == "Control" then
+                -- Control key pressed - just track state, don't pass to handlers
+                ( { model | controlPressed = True }, Cmd.none )
 
-                ViewAssets assetState ->
-                    handleAssetResult (updateAsset (AssetKeyPress key) assetState model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets model.knownAssets) model
+            else
+                let
+                    -- If Control is pressed, prefix the key with "Control+"
+                    effectiveKey =
+                        if model.controlPressed then
+                            "Control+" ++ key
 
-                LoadingAssets _ ->
-                    case key of
-                        "Escape" ->
-                            ( { model | userMode = MainMenu MainMenuHome }, Cmd.none )
+                        else
+                            key
+                in
+                case model.userMode of
+                    MainMenu menuState ->
+                        handleMenuResult (updateMenus (MenuKeyPress effectiveKey) menuState model.knownAlbums model.immichApiPaths model.screenHeight) model
 
-                        "g" ->
-                            ( { model | userMode = MainMenu Settings }, Cmd.none )
+                    ViewAssets assetState ->
+                        handleAssetResult (updateAsset (AssetKeyPress effectiveKey) assetState model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets model.knownAssets) model
 
-                        "T" ->
-                            ( { model | theme = nextTheme model.theme }, Cmd.none )
+                    LoadingAssets _ ->
+                        case effectiveKey of
+                            "Escape" ->
+                                ( { model | userMode = MainMenu MainMenuHome }, Cmd.none )
 
-                        _ ->
-                            ( model, Cmd.none )
+                            "g" ->
+                                ( { model | userMode = MainMenu Settings }, Cmd.none )
+
+                            "T" ->
+                                ( { model | theme = nextTheme model.theme }, Cmd.none )
+
+                            _ ->
+                                ( model, Cmd.none )
+
+        KeyRelease key ->
+            if key == "Control" then
+                -- Control key released - clear state
+                ( { model | controlPressed = False }, Cmd.none )
+
+            else
+                -- Ignore other key releases
+                ( model, Cmd.none )
 
         WindowResize width height ->
             let
@@ -2449,6 +2492,7 @@ subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.batch
         [ onKeyDown (Decode.map KeyPress (Decode.field "key" Decode.string))
+        , onKeyUp (Decode.map KeyRelease (Decode.field "key" Decode.string))
         , onResize WindowResize
         , storageLoaded (\( key, value ) -> ConfigLoaded key value)
         ]

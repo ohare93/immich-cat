@@ -63,6 +63,7 @@ type AssetResult msg
     | AssetBulkRemoveFromAlbum (List ImmichAssetId) ImmichAlbumId
     | AssetRequestLoadMore
     | AssetReloadAlbums
+    | AssetYankToClipboard
 
 
 
@@ -96,6 +97,7 @@ type AssetAction
     | ToggleScrollView
     | ScrollImage Int Int
     | ReloadAlbums
+    | YankToClipboard
     | NoAssetAction
 
 
@@ -130,6 +132,9 @@ handleEditAssetInput key inputMode asset search albumKeybindings knownAlbums scr
 
                     "K" ->
                         OpenInImmich
+
+                    "Y" ->
+                        YankToClipboard
 
                     "T" ->
                         ToggleTimeView
@@ -204,25 +209,22 @@ handleInsertModeInput key inputMode asset search albumKeybindings knownAlbums =
                 in
                 UpdateAssetSearch updatedSearch
 
-            else if String.contains "Control" key then
-                case String.replace "Control+" "" key of
-                    "d" ->
+            else
+                case key of
+                    "Control+d" ->
                         UpdateAssetSearch { search | pagination = halfPageDown search.pagination }
 
-                    "u" ->
+                    "Control+u" ->
                         UpdateAssetSearch { search | pagination = halfPageUp search.pagination }
 
-                    "f" ->
+                    "Control+f" ->
                         UpdateAssetSearch { search | pagination = pageDown search.pagination }
 
-                    "b" ->
+                    "Control+b" ->
                         UpdateAssetSearch { search | pagination = pageUp search.pagination }
 
                     _ ->
                         NoAssetAction
-
-            else
-                NoAssetAction
 
 
 
@@ -292,26 +294,20 @@ handleKeybindingModeInput key inputMode asset search albumKeybindings knownAlbum
             "?" ->
                 ShowAssetHelp
 
+            "Control+d" ->
+                UpdateAssetSearch { search | pagination = halfPageDown search.pagination }
+
+            "Control+u" ->
+                UpdateAssetSearch { search | pagination = halfPageUp search.pagination }
+
+            "Control+f" ->
+                UpdateAssetSearch { search | pagination = pageDown search.pagination }
+
+            "Control+b" ->
+                UpdateAssetSearch { search | pagination = pageUp search.pagination }
+
             _ ->
-                if String.contains "Control" key then
-                    case String.replace "Control+" "" key of
-                        "d" ->
-                            UpdateAssetSearch { search | pagination = halfPageDown search.pagination }
-
-                        "u" ->
-                            UpdateAssetSearch { search | pagination = halfPageUp search.pagination }
-
-                        "f" ->
-                            UpdateAssetSearch { search | pagination = pageDown search.pagination }
-
-                        "b" ->
-                            UpdateAssetSearch { search | pagination = pageUp search.pagination }
-
-                        _ ->
-                            NoAssetAction
-
-                else
-                    NoAssetAction
+                NoAssetAction
 
 
 
@@ -355,6 +351,9 @@ handleNormalModeInput key inputMode asset search screenHeight currentAssets =
         "ArrowLeft" ->
             ChangeImageIndex -1
 
+        "Backspace" ->
+            ChangeImageIndex -1
+
         "ArrowRight" ->
             ChangeImageIndex 1
 
@@ -379,26 +378,20 @@ handleNormalModeInput key inputMode asset search screenHeight currentAssets =
         "R" ->
             ReloadAlbums
 
+        "Control+d" ->
+            UpdateAssetSearch { search | pagination = halfPageDown search.pagination }
+
+        "Control+u" ->
+            UpdateAssetSearch { search | pagination = halfPageUp search.pagination }
+
+        "Control+f" ->
+            UpdateAssetSearch { search | pagination = pageDown search.pagination }
+
+        "Control+b" ->
+            UpdateAssetSearch { search | pagination = pageUp search.pagination }
+
         _ ->
-            if String.contains "Control" key then
-                case String.replace "Control+" "" key of
-                    "d" ->
-                        UpdateAssetSearch { search | pagination = halfPageDown search.pagination }
-
-                    "u" ->
-                        UpdateAssetSearch { search | pagination = halfPageUp search.pagination }
-
-                    "f" ->
-                        UpdateAssetSearch { search | pagination = pageDown search.pagination }
-
-                    "b" ->
-                        UpdateAssetSearch { search | pagination = pageUp search.pagination }
-
-                    _ ->
-                        NoAssetAction
-
-            else
-                NoAssetAction
+            NoAssetAction
 
 
 
@@ -411,7 +404,15 @@ handleScrollViewModeInput key scrollState =
         scrollStep =
             50
 
-        -- pixels to scroll per key press
+        -- pixels to scroll per key press for hjkl
+        halfPageScroll =
+            400
+
+        -- pixels to scroll for half page (Ctrl+U/D)
+        fullPageScroll =
+            800
+
+        -- pixels to scroll for full page (PageUp/Down, Ctrl+F/B)
     in
     case key of
         "j" ->
@@ -430,6 +431,30 @@ handleScrollViewModeInput key scrollState =
             ScrollImage -scrollStep 0
 
         -- Scroll image left to see more to the right
+        "PageUp" ->
+            ScrollImage 0 fullPageScroll
+
+        -- Scroll image up by full page
+        "PageDown" ->
+            ScrollImage 0 -fullPageScroll
+
+        -- Scroll image down by full page
+        "Control+u" ->
+            ScrollImage 0 halfPageScroll
+
+        -- Scroll image up by half page
+        "Control+d" ->
+            ScrollImage 0 -halfPageScroll
+
+        -- Scroll image down by half page
+        "Control+b" ->
+            ScrollImage 0 fullPageScroll
+
+        -- Scroll image up by full page
+        "Control+f" ->
+            ScrollImage 0 -fullPageScroll
+
+        -- Scroll image down by full page
         "Escape" ->
             ChangeInputMode NormalMode
 
@@ -539,26 +564,20 @@ handleSelectAlbumInput key searchResults albumKeybindings knownAlbums =
             "PageDown" ->
                 UpdateAssetSearch { searchResults | pagination = pageDown searchResults.pagination }
 
+            "Control+d" ->
+                UpdateAssetSearch { searchResults | pagination = halfPageDown searchResults.pagination }
+
+            "Control+u" ->
+                UpdateAssetSearch { searchResults | pagination = halfPageUp searchResults.pagination }
+
+            "Control+f" ->
+                UpdateAssetSearch { searchResults | pagination = pageDown searchResults.pagination }
+
+            "Control+b" ->
+                UpdateAssetSearch { searchResults | pagination = pageUp searchResults.pagination }
+
             _ ->
-                if String.contains "Control" key then
-                    case String.replace "Control+" "" key of
-                        "d" ->
-                            UpdateAssetSearch { searchResults | pagination = halfPageDown searchResults.pagination }
-
-                        "u" ->
-                            UpdateAssetSearch { searchResults | pagination = halfPageUp searchResults.pagination }
-
-                        "f" ->
-                            UpdateAssetSearch { searchResults | pagination = pageDown searchResults.pagination }
-
-                        "b" ->
-                            UpdateAssetSearch { searchResults | pagination = pageUp searchResults.pagination }
-
-                        _ ->
-                            NoAssetAction
-
-                else
-                    NoAssetAction
+                NoAssetAction
 
 
 
@@ -837,6 +856,9 @@ convertAssetActionToResult action inputMode asset search currentAssets =
         OpenInImmich ->
             AssetOpenInImmich
 
+        YankToClipboard ->
+            AssetYankToClipboard
+
         ShowAssetHelp ->
             StayInAssets (ShowEditAssetHelp inputMode asset search)
 
@@ -901,9 +923,41 @@ convertAssetActionToResult action inputMode asset search currentAssets =
             case inputMode of
                 ScrollViewMode scrollState ->
                     let
+                        -- Calculate bounds to prevent scrolling image completely out of view
+                        -- These bounds ensure a significant portion of the image remains visible
+                        -- Based on typical viewport sizes and image dimensions
+                        maxScrollX =
+                            500
+
+                        -- Allow scrolling right (negative translate = scroll right)
+                        minScrollX =
+                            -500
+
+                        -- Allow scrolling left (positive translate = scroll left)
+                        maxScrollY =
+                            400
+
+                        -- Allow scrolling down (negative translate = scroll down)
+                        minScrollY =
+                            -1200
+
+                        -- Allow scrolling up more for tall images (positive translate = scroll up)
+                        -- Apply bounds checking to new scroll position
+                        newScrollX =
+                            scrollState.scrollX
+                                + deltaX
+                                |> max minScrollX
+                                |> min maxScrollX
+
+                        newScrollY =
+                            scrollState.scrollY
+                                + deltaY
+                                |> max minScrollY
+                                |> min maxScrollY
+
                         newScrollState =
-                            { scrollX = scrollState.scrollX + deltaX
-                            , scrollY = scrollState.scrollY + deltaY
+                            { scrollX = newScrollX
+                            , scrollY = newScrollY
                             }
                     in
                     StayInAssets (EditAsset (ScrollViewMode newScrollState) asset search)
