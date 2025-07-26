@@ -12,23 +12,54 @@ type Msg
     = Increment
     | KeyPress String
 
-
 type alias Model =
     { count : Int
     , key : String
+    , currentImage : String
+    , albums : List Album
+    , images : List ImageWithMetadata
     }
+
+type alias ImageWithMetadata =
+    { id : String
+    , url : String
+    , title : String
+    , inAlbumns : List String
+    }
+
+type alias Album = 
+    { id : String
+    , name : String
+    }
+
+init : () -> ( Model, Cmd Msg )
+init _ = ({
+            count = 7
+            , key = ""
+            , currentImage = "0001"
+            , albums = [ { id = "a", name = "Album A" }
+                       , { id = "b", name = "Album B" } 
+                       , { id = "c", name = "Album C" }
+                       , { id = "d", name = "Album D" }
+                       , { id = "e", name = "Album E" }
+                       ]
+            , images = [ { id = "0001", url = "http://localhost:3333/images/imafight.jpg", title = "Image A", inAlbumns = ["a"] }
+                       , { id = "0002", url = "http://localhost:3333/images/dcemployees.jpg", title = "Image B", inAlbumns = ["b"] }
+                       , { id = "0003", url = "http://localhost:3333/images/c.jpg", title = "Image C", inAlbumns = ["a", "b"] } ]
+            }
+        , Cmd.none
+        )
     
 
-getImageFromKey : String -> String
-getImageFromKey key =
-    case key of
-        "a" -> "http://localhost:3333/images/imafight.jpg"
-        "b" -> "http://localhost:3333/images/dcemployees.jpg"
-        "c" -> "http://localhost:3333/images/c.jpg"
-        -- "d" -> "http://image-backend:3333/images/imafight.jpg"
-        -- "e" -> "http://image-backend/images/imafight.jpg"
-        _ -> ""
-        
+showAlbumsForImage : List Album -> ImageWithMetadata -> Html msg
+showAlbumsForImage albums image =
+    let
+        albumNames =
+            List.map (\album -> album.name) (List.filter (\album -> List.member album.id image.inAlbumns) albums)
+    in
+    div []
+        [ text ("Albums: " ++ String.join ", " albumNames) ]
+
 imageOrBlank : String -> Html msg
 imageOrBlank key =
     if key == "" then
@@ -36,15 +67,40 @@ imageOrBlank key =
     else
         img [ src key, class "img-fluid" ] []
         
-imageWithTitle : String -> Html msg
-imageWithTitle key =
+showCurrentImage : Model -> Html msg
+showCurrentImage model =
     let
-        url = getImageFromKey key
+        maybeCurrentImage =
+            List.head (List.filter (\image -> image.id == model.currentImage) model.images)
     in
-    div []
-        [ imageOrBlank url
-        , div [] [ text ("Image for url: " ++ url) ]
-        ]
+    case maybeCurrentImage of
+        Just currentImage ->
+            div []
+                [ imageOrBlank currentImage.url
+                , div [] [ text currentImage.title ]
+                , showAlbumsForImage model.albums currentImage
+                ]
+
+        Nothing ->
+            div [] [ text "No image found" ]
+            
+moveImagePointer : Model -> Int -> Model
+moveImagePointer model step =
+    let
+        currentIndex =
+            List.indexedMap (\index image -> if image.id == model.currentImage then Just index else Nothing) model.images
+                |> List.filterMap identity
+                |> List.head
+                |> Maybe.withDefault 0
+
+        newIndex =
+            modBy (List.length model.images) (currentIndex + step)
+
+        newImageId =
+            List.head (List.map (\image -> image.id) (List.drop newIndex model.images))
+                |> Maybe.withDefault ""
+    in
+    { model | currentImage = newImageId }
 
 
 view : Model -> Html Msg
@@ -55,7 +111,7 @@ view model =
         , button
             [ class "btn btn-primary", onClick Increment ]
             [ text "+" ]
-        , imageWithTitle model.key
+        , showCurrentImage model
         ]
 
 
@@ -66,10 +122,17 @@ update msg model =
             ( { model | count = model.count + 1 }, Cmd.none )
 
         KeyPress key ->
-            if key == " " then
-                ( { model | key = "" }, Cmd.none )
-            else
-                ( { model | key = key }, Cmd.none )
+            case key of
+                "ArrowLeft" ->
+                    ( moveImagePointer model -1, Cmd.none )
+
+                "ArrowRight" ->
+                    ( moveImagePointer model 1, Cmd.none )
+
+                " "->
+                    ( { model | key = ""}, Cmd.none )
+                _ ->
+                    ( { model | key = key}, Cmd.none )
 
 
 subscriptions : Model -> Sub Msg
@@ -80,7 +143,7 @@ subscriptions _ =
 main : Program () Model Msg
 main =
     element
-        { init = \_ -> ( { count = 0, key = "" }, Cmd.none )
+        { init = init
         , view = view
         , update = update
         , subscriptions = subscriptions
