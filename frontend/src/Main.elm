@@ -8,6 +8,7 @@ import Dict exposing (Dict)
 import Element exposing (Element, alignBottom, alignRight, alignTop, centerX, centerY, column, el, fill, fillPortion, height, paddingXY, row, text, width)
 import Element.Background as Background
 import Element.Font as Font
+import Element.Input exposing (button)
 import Helpers exposing (regexFromString)
 import Html exposing (Html)
 import Html.Attributes
@@ -19,6 +20,7 @@ import Regex
 type Msg
     = KeyPress String
     | ImmichMsg Immich.Msg
+    | LoadDataAgain
 
 type alias Flags =
     { test : Int
@@ -146,11 +148,11 @@ init flags =
             ]
 
         testAlbums =
-            [ ImmichAlbum "a" "J" 200 [] "000001" (Date.fromOrdinalDate 2025 1)
-            , ImmichAlbum "b" "ToBeSorted" 3000 [] "000002" (Date.fromOrdinalDate 2025 1)
-            , ImmichAlbum "c" "The World" 50 [] "000003" (Date.fromOrdinalDate 2025 1)
-            , ImmichAlbum "d" "The Other One" 75 [] "000034" (Date.fromOrdinalDate 2025 1)
-            , ImmichAlbum "e" "Comics" 50 [] "000004" (Date.fromOrdinalDate 2025 1)
+            [ ImmichAlbum "a" "J" 200 [] (Date.fromOrdinalDate 2025 1)
+            , ImmichAlbum "b" "ToBeSorted" 3000 [] (Date.fromOrdinalDate 2025 1)
+            , ImmichAlbum "c" "The World" 50 [] (Date.fromOrdinalDate 2025 1)
+            , ImmichAlbum "d" "The Other One" 75 [] (Date.fromOrdinalDate 2025 1)
+            , ImmichAlbum "e" "Comics" 50 [] (Date.fromOrdinalDate 2025 1)
             ]
     in
     ( { key = ""
@@ -167,8 +169,8 @@ init flags =
       , apiUrl = flags.immichApiUrl
       , apiKey = flags.immichApiKey
       }
-    , Cmd.none
-      -- getAllAlbums flags.immichApiUrl flags.immichApiKey |> Cmd.map ImmichMsg
+      -- , Cmd.none
+    , getAllAlbums flags.immichApiUrl flags.immichApiKey |> Cmd.map ImmichMsg
     )
 
 usefulColours : String -> Element.Color
@@ -231,7 +233,7 @@ viewAsset assetPrepend asset =
 
 assetIsImage : ImmichAsset -> Bool
 assetIsImage asset =
-    List.member asset.mimeType [ "jpg", "png", "gif" ]
+    List.member asset.mimeType [ "image/jpg", "image/png", "image/gif" ]
 
 viewImage : ImmichAsset -> String -> Element msg
 viewImage asset path =
@@ -242,7 +244,7 @@ viewImage asset path =
 
 assetIsVideo : ImmichAsset -> Bool
 assetIsVideo asset =
-    List.member asset.mimeType [ "mp4" ]
+    List.member asset.mimeType [ "video/mp4" ]
 
 viewVideo : List (Element.Attribute msg) -> { poster : String, source : String } -> Element msg
 viewVideo attrs { poster, source } =
@@ -293,7 +295,10 @@ viewMainWindow : Model -> Element Msg
 viewMainWindow model =
     case model.userMode of
         MainMenu ->
-            text "Select Asset Source"
+            column []
+                [ text "Select Asset Source"
+                , button [] { onPress = Just LoadDataAgain, label = text "Load albums" }
+                ]
         SearchAssetInput searchString ->
             column []
                 [ text "Input Search String"
@@ -439,10 +444,38 @@ isSupportedSearchLetter testString =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        ImmichMsg immichMsg ->
-            Immich.update immichMsg model |> Tuple.mapBoth (\a -> a) (Cmd.map ImmichMsg)
+        LoadDataAgain ->
+            ( model, Immich.getAllAlbums model.apiUrl model.apiKey |> Cmd.map ImmichMsg )
         KeyPress key ->
             handleUserInput model key
+        ImmichMsg Immich.StartLoading ->
+            ( { model | albumsLoadState = ImmichLoading, imagesLoadState = ImmichLoading }, getAllAlbums model.apiUrl model.apiKey |> Cmd.map ImmichMsg )
+
+        ImmichMsg (Immich.AlbumsFetched (Ok albums)) ->
+            ( { model | albums = albums, albumsLoadState = ImmichLoadSuccess }, Cmd.none )
+
+        ImmichMsg (Immich.AlbumsFetched (Err error)) ->
+            ( { model | albums = [], albumsLoadState = ImmichLoadError error }, Cmd.none )
+
+        ImmichMsg (Immich.RandomImagesFetched (Ok assets)) ->
+            let
+                firstAsset =
+                    List.head assets
+                newUserMode =
+                    if model.userMode == LoadingAssets then
+                        case firstAsset of
+                            Just asset ->
+                                EditAsset NormalMode (getAssetWithActions asset) <| getAlbumSearch "" model.albums
+                            Nothing ->
+                                model.userMode
+                        --TODO: Show error
+                    else
+                        model.userMode
+            in
+            ( { model | userMode = newUserMode, images = assets, imagesLoadState = ImmichLoadSuccess }, Cmd.none )
+
+        ImmichMsg (Immich.RandomImagesFetched (Err error)) ->
+            ( { model | images = [], imagesLoadState = ImmichLoadError error }, Cmd.none )
 
 handleUserInput : Model -> String -> ( Model, Cmd Msg )
 handleUserInput model key =
@@ -460,7 +493,10 @@ handleUserInput model key =
                         _ ->
                             UnknownAction
             in
-            handleGeneralActions model generalAction
+            if generalAction == ChangeUserModeToEditAsset then
+                ( { model | userMode = LoadingAssets }, Immich.fetchRandomImages model.apiUrl model.apiKey |> Cmd.map ImmichMsg )
+            else
+                handleGeneralActions model generalAction
         SearchAssetInput searchString ->
             let
                 userAction =

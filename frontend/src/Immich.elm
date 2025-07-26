@@ -36,7 +36,7 @@ type alias ImmichAlbum =
     , albumName : String
     , assetCount : Int
     , assets : List ImmichAsset
-    , albumThumbnailAssetId : String
+    -- , albumThumbnailAssetId : String
     , createdAt : Date
     }
 
@@ -79,12 +79,12 @@ fetchRandomImages url key =
 
 albumDecoder : Decode.Decoder ImmichAlbum
 albumDecoder =
-    Decode.map6 ImmichAlbum
+    Decode.map5 ImmichAlbum
         (Decode.field "id" Decode.string)
         (Decode.field "albumName" Decode.string)
         (Decode.field "assetCount" Decode.int)
         (Decode.field "assets" (Decode.list imageDecoder))
-        (Decode.field "albumThumbnailAssetId" Decode.string)
+        -- (Decode.field "albumThumbnailAssetId" Decode.string)
         (Decode.field "createdAt" dateDecoder)
 
 
@@ -115,9 +115,9 @@ imageDecoder : Decode.Decoder ImmichAsset
 imageDecoder =
     Decode.map6 ImmichAsset
         (Decode.field "id" Decode.string)
-        (Decode.field "originalMimeType" Decode.string)
-        (Decode.field "originalFilePath" Decode.string)
+        (Decode.field "originalPath" Decode.string)
         (Decode.field "originalFileName" Decode.string)
+        (Decode.field "originalMimeType" Decode.string)
         (Decode.field "isFavorite" Decode.bool)
         (Decode.field "isArchived" Decode.bool)
 
@@ -140,22 +140,3 @@ type alias Model r =
         , apiUrl : String
         , apiKey : String
     }
-
-
-update : Msg -> Model r -> ( Model r, Cmd Msg )
-update msg model =
-    case msg of
-        StartLoading ->
-            ( { model | albumsLoadState = ImmichLoading, imagesLoadState = ImmichLoading }, getAllAlbums model.apiUrl model.apiKey )
-
-        AlbumsFetched (Ok albums) ->
-            ( { model | albums = albums, albumsLoadState = ImmichLoadSuccess }, fetchRandomImages model.apiUrl model.apiKey )
-
-        AlbumsFetched (Err error) ->
-            ( { model | albums = [], albumsLoadState = ImmichLoadError error }, Cmd.none )
-
-        RandomImagesFetched (Ok images) ->
-            ( { model | images = images, imagesLoadState = ImmichLoadSuccess }, Cmd.none )
-
-        RandomImagesFetched (Err error) ->
-            ( { model | images = [], imagesLoadState = ImmichLoadError error }, Cmd.none )

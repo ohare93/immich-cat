@@ -14,8 +14,8 @@
     flags: {
 	test: Date.now(),
         imagePrepend: "${BACKEND_URL}",
-	immichApiKey: "${IMMICH_URL}",
-	immichApiUrl: "${IMMICH_API_KEY}",
+	immichApiKey: "${IMMICH_API_KEY}",
+	immichApiUrl: "${IMMICH_URL}",
     }
   });
   </script>
