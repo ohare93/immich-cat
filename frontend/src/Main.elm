@@ -9,6 +9,7 @@ import Html.Attributes exposing (class, src)
 import Html.Events exposing (onClick)
 import Immich exposing (ImageWithMetadata, ImmichAlbum, ImmichLoadState(..), getAllAlbums)
 import Json.Decode as Decode
+import Regex exposing (Regex)
 
 
 type Msg
@@ -44,25 +45,17 @@ type alias Model =
 type AssetSource
     = NoAssets
     | Uncategorised
-
-
--- | Search String
--- | Album ImmichAlbum
+    | Search String
+    | Album ImmichAlbum
 
 type UserMode
-    = SelectAssets String
+    = Normal
+    | SearchAssetInput String
+    | SelectAlbumInput String (List ImmichAlbum)
     | EditAsset AssetSource Int (List AssetChange)
 
 type BucketMode
-    = Normal
-
-
--- type alias TestModel =
---     { images : Array ImageWithMetadata
---     , image : ImageWithMetadata
---     , index : int
---     , changesToBeMade : List AssetChange
---     }
+    = BucketNormal
 
 type AssetChange
     = AddToAlbum ImmichAlbum
@@ -101,18 +94,18 @@ init flags =
 
         testAlbums =
             Array.fromList
-                [ ImmichAlbum "a" "Test" 50 Array.empty "000001" (Date.fromOrdinalDate 2025 1)
-                , ImmichAlbum "b" "Test2" 50 Array.empty "000002" (Date.fromOrdinalDate 2025 1)
-                , ImmichAlbum "c" "Test3" 50 Array.empty "000003" (Date.fromOrdinalDate 2025 1)
-                , ImmichAlbum "d" "Test4" 50 Array.empty "000004" (Date.fromOrdinalDate 2025 1)
+                [ ImmichAlbum "a" "J" 200 Array.empty "000001" (Date.fromOrdinalDate 2025 1)
+                , ImmichAlbum "b" "ToBeSorted" 3000 Array.empty "000002" (Date.fromOrdinalDate 2025 1)
+                , ImmichAlbum "c" "The World" 50 Array.empty "000003" (Date.fromOrdinalDate 2025 1)
+                , ImmichAlbum "d" "Comics" 50 Array.empty "000004" (Date.fromOrdinalDate 2025 1)
                 ]
     in
     ( { count = 7
       , key = ""
       , imagePrepend = flags.imagePrepend
-      , userMode = SelectAssets ""
+      , userMode = Normal
       , assetSelectMode = NoAssets
-      , bucketMode = Normal
+      , bucketMode = BucketNormal
       , test = flags.test
       -- Immich fields
       , images = testImages
@@ -122,7 +115,8 @@ init flags =
       , apiUrl = flags.immichApiUrl
       , apiKey = flags.immichApiKey
       }
-    , getAllAlbums flags.immichApiUrl flags.immichApiKey |> Cmd.map ImmichMsg
+    , Cmd.none
+      -- getAllAlbums flags.immichApiUrl flags.immichApiKey |> Cmd.map ImmichMsg
     )
 
 
@@ -169,8 +163,15 @@ viewImage imagePrepend index images =
 view : Model -> Html Msg
 view model =
     case model.userMode of
-        SelectAssets searchString ->
-            div [] [ text "Select Assets" ]
+        Normal ->
+            div [] [ text "Select Asset Source" ]
+        SearchAssetInput searchString ->
+            div []
+                [ text "Input Search String"
+                , div [] [ text searchString ]
+                ]
+        SelectAlbumInput searchString matchingAlbums ->
+            viewSelectAlbum searchString matchingAlbums
         EditAsset _ index pendingChanges ->
             viewEditAsset model.test model.imagePrepend model.count model.key model.images index pendingChanges
 
@@ -188,6 +189,23 @@ viewEditAsset test imagePrepend count key images index pendingChanges =
         , text (String.fromInt test)
         ]
 
+viewSelectAlbum : String -> List ImmichAlbum -> Html Msg
+viewSelectAlbum searchString matchingAlbums =
+    div []
+        [ div [] [ text "Select Album" ]
+        , div [] [ text searchString ]
+        , div []
+            [ text "Matching Albums: "
+            , div []
+                (List.map
+                    (\album ->
+                        div [] [ text album.albumName ]
+                    )
+                    matchingAlbums
+                )
+            ]
+        ]
+
 
 
 -- UPDATE --
@@ -198,58 +216,147 @@ loopImageIndexOverArray index step length =
     modBy length (index + step)
 
 
+isSupportedSearchLetter : String -> Bool
+isSupportedSearchLetter testString =
+    let
+        regex =
+            Regex.fromString "^[a-zA-Z0-9 ]$" |> Maybe.withDefault Regex.never
+    in
+    Regex.contains regex testString
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
-    case model.userMode of
-        SelectAssets searchString ->
-            updateSelectAssets msg model
-        EditAsset assetSource index pendingChanges ->
-            updateEditAsset msg model assetSource index pendingChanges
-
-
-updateSelectAssets : Msg -> Model -> ( Model, Cmd Msg )
-updateSelectAssets msg model =
     case msg of
-        KeyPress key ->
-            case key of
-                "u" ->
-                    ( { model | userMode = EditAsset Uncategorised 0 [] }, Cmd.none )
-                _ ->
-                    ( model, Cmd.none )
-        _ ->
-            ( model, Cmd.none )
-
-updateEditAsset : Msg -> Model -> AssetSource -> Int -> List AssetChange -> ( Model, Cmd Msg )
-updateEditAsset msg model assetSource index pendingChanges =
-    case msg of
-        Increment ->
-            ( { model | count = model.count + 1 }, Cmd.none )
-
-        KeyPress key ->
-            case key of
-                "ArrowLeft" ->
-                    let
-                        newIndex =
-                            loopImageIndexOverArray index -1 (Array.length model.images)
-                    in
-                    ( { model | userMode = EditAsset assetSource newIndex pendingChanges }, Cmd.none )
-
-                "ArrowRight" ->
-                    let
-                        newIndex =
-                            loopImageIndexOverArray index 1 (Array.length model.images)
-                    in
-                    ( { model | userMode = EditAsset assetSource newIndex pendingChanges }, Cmd.none )
-
-                " " ->
-                    ( { model | key = "" }, Cmd.none )
-
-                _ ->
-                    ( { model | key = key }, Cmd.none )
-
         ImmichMsg immichMsg ->
             Immich.update immichMsg model |> Tuple.mapBoth (\a -> a) (Cmd.map ImmichMsg)
+        Increment ->
+            ( { model | count = model.count + 1 }, Cmd.none )
+        KeyPress key ->
+            case model.userMode of
+                Normal ->
+                    handleKeyInNormal key model
+                SearchAssetInput searchString ->
+                    handleKeyInSearchAsset key model searchString
+                SelectAlbumInput searchString matchingAlbums ->
+                    handleKeyInSelectAlbum key model searchString matchingAlbums
+                EditAsset assetSource index pendingChanges ->
+                    handleKeyInEditAsset key model assetSource index pendingChanges
 
+handleKeyInNormal : String -> Model -> ( Model, Cmd Msg )
+handleKeyInNormal key model =
+    if key == "u" then
+        ( { model | userMode = EditAsset Uncategorised 0 [] }, Cmd.none )
+
+    else if key == "a" then
+        ( { model | userMode = SelectAlbumInput "" (getMatchingAlbumsOrdered "" model.albums) }, Cmd.none )
+
+    else if key == "s" || key == "/" then
+        ( { model | userMode = SearchAssetInput "" }, Cmd.none )
+
+    else
+        ( model, Cmd.none )
+
+handleKeyInSearchAsset : String -> Model -> String -> ( Model, Cmd Msg )
+handleKeyInSearchAsset key model searchString =
+    if isSupportedSearchLetter key then
+        let
+            newSearchString =
+                searchString ++ key
+        in
+        ( { model | userMode = SearchAssetInput newSearchString }, Cmd.none )
+    else
+        case key of
+            "Escape" ->
+                ( { model | userMode = Normal }, Cmd.none )
+
+            "Backspace" ->
+                let
+                    newSearchString =
+                        String.slice 0 (String.length searchString - 1) searchString
+                in
+                ( { model | userMode = SearchAssetInput newSearchString }, Cmd.none )
+
+            "Enter" ->
+                ( { model | userMode = EditAsset (Search searchString) 0 [] }, Cmd.none )
+            _ ->
+                ( model, Cmd.none )
+
+handleKeyInSelectAlbum : String -> Model -> String -> List ImmichAlbum -> ( Model, Cmd Msg )
+handleKeyInSelectAlbum key model searchString matchingAlbums =
+    if isSupportedSearchLetter key then
+        let
+            newSearchString =
+                searchString ++ key
+        in
+        ( { model | userMode = SelectAlbumInput newSearchString (getMatchingAlbumsOrdered newSearchString model.albums) }, Cmd.none )
+    else
+        case key of
+            "Escape" ->
+                ( { model | userMode = Normal }, Cmd.none )
+
+            "Backspace" ->
+                let
+                    newSearchString =
+                        String.slice 0 (String.length searchString - 1) searchString
+                in
+                ( { model | userMode = SelectAlbumInput newSearchString (getMatchingAlbumsOrdered newSearchString model.albums) }, Cmd.none )
+
+            "Enter" ->
+                case matchingAlbums of
+                    [] ->
+                        ( model, Cmd.none )
+                    [ album ] ->
+                        ( { model | userMode = EditAsset (Album album) 0 [] }, Cmd.none )
+                    _ ->
+                        ( model, Cmd.none )
+            _ ->
+                ( model, Cmd.none )
+
+handleKeyInEditAsset : String -> Model -> AssetSource -> Int -> List AssetChange -> ( Model, Cmd Msg )
+handleKeyInEditAsset key model assetSource index pendingChanges =
+    case key of
+        "ArrowLeft" ->
+            let
+                newIndex =
+                    loopImageIndexOverArray index -1 (Array.length model.images)
+            in
+            ( { model | userMode = EditAsset assetSource newIndex pendingChanges }, Cmd.none )
+
+        "ArrowRight" ->
+            let
+                newIndex =
+                    loopImageIndexOverArray index 1 (Array.length model.images)
+            in
+            ( { model | userMode = EditAsset assetSource newIndex pendingChanges }, Cmd.none )
+
+        "Escape" ->
+            ( { model | userMode = Normal }, Cmd.none )
+
+        " " ->
+            ( { model | key = "" }, Cmd.none )
+
+        _ ->
+            ( { model | key = key }, Cmd.none )
+
+
+getMatchingAlbumsOrdered : String -> Array ImmichAlbum -> List ImmichAlbum
+getMatchingAlbumsOrdered searchString albums =
+    let
+        regex =
+            Regex.fromStringWith { caseInsensitive = True, multiline = False } (".*" ++ searchString ++ ".*") |> Maybe.withDefault Regex.never
+
+        matchingAlbums =
+            if searchString == "" then
+                Array.toList albums
+            else
+                Array.toList albums
+                    |> List.filter (\album -> Regex.contains regex album.albumName)
+    in
+    List.sortBy (\album -> album.assetCount) matchingAlbums
+
+
+-- SUBSCRIPTIONS --
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
