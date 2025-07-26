@@ -1,0 +1,151 @@
+module Immich exposing (..)
+
+import Date exposing (Date, fromIsoString)
+import Html exposing (..)
+import Http
+import Json.Decode as Decode
+import Json.Encode as Encode
+import List exposing (head)
+import String exposing (split)
+
+
+type alias ImmichModel =
+    { images : List ImageWithMetadata
+    , imagesLoadState : LoadState
+    , albums : List ImmichAlbum
+    , albumsLoadState : LoadState
+    , apiUrl : String
+    , apiKey : String
+    , errorOnLoad : String
+    }
+
+type LoadState
+    = Loading
+    | Success
+    | Error Http.Error
+
+
+type alias ImageWithMetadata =
+    { id : String
+    , path : String
+    , title : String
+    , mimeType : String
+    }
+
+
+type alias ImmichAlbum =
+    { id : String
+    , albumName : String
+    , assetCount : Int
+    , assets : List ImageWithMetadata
+    , albumThumbnailAssetId : String
+    , createdAt : Date
+    }
+
+
+type alias ImmichConfig =
+    { apiUrl : String
+    , apiKey : String
+    }
+
+
+getAllAlbums : String -> String -> Cmd ImmichMsg
+getAllAlbums url key =
+    Http.request
+        { method = "GET"
+        , headers = [ Http.header "Content-Type" "application/json", Http.header "x-api-key" key ]
+        , url = url ++ "/albums"
+        , body = Http.emptyBody
+        , expect = Http.expectJson AlbumsFetched (Decode.list albumDecoder)
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+fetchRandomImages : String -> String -> Cmd ImmichMsg
+fetchRandomImages url key =
+    Http.request
+        { method = "POST"
+        , headers = [ Http.header "Content-Type" "application/json", Http.header "Accept" "application/json", Http.header "x-api-key" key ]
+        , url = url ++ "/search/random"
+        , body =
+            Http.jsonBody
+                (Encode.object
+                    [ ( "isNotInAlbum", Encode.bool True ) ]
+                )
+        , expect = Http.expectJson RandomImagesFetched (Decode.list imageDecoder)
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+albumDecoder : Decode.Decoder ImmichAlbum
+albumDecoder =
+    Decode.map6 ImmichAlbum
+        (Decode.field "id" Decode.string)
+        (Decode.field "albumName" Decode.string)
+        (Decode.field "assetCount" Decode.int)
+        (Decode.field "assets" (Decode.list imageDecoder))
+        (Decode.field "albumThumbnailAssetId" Decode.string)
+        (Decode.field "createdAt" dateDecoder)
+
+
+splitDateTimeToDate : String -> String
+splitDateTimeToDate str =
+    if String.contains "T" str then
+        Maybe.withDefault str (head (split "T" str))
+
+    else
+        str
+
+
+dateDecoder : Decode.Decoder Date
+dateDecoder =
+    Decode.string
+        |> Decode.andThen
+            (\dateString ->
+                case fromIsoString (splitDateTimeToDate dateString) of
+                    Ok date ->
+                        Decode.succeed date
+
+                    Err _ ->
+                        Decode.fail "Invalid date format"
+            )
+
+
+imageDecoder : Decode.Decoder ImageWithMetadata
+imageDecoder =
+    Decode.map4 ImageWithMetadata
+        (Decode.field "id" Decode.string)
+        (Decode.field "originalMimeType" Decode.string)
+        (Decode.field "originalFilePath" Decode.string)
+        (Decode.field "originalFileName" Decode.string)
+
+
+
+-- UPDATE --
+
+
+type ImmichMsg
+    = StartLoading
+    | AlbumsFetched (Result Http.Error (List ImmichAlbum))
+    | RandomImagesFetched (Result Http.Error (List ImageWithMetadata))
+
+
+update : ImmichMsg -> ImmichModel -> ( ImmichModel, Cmd ImmichMsg )
+update msg model =
+    case msg of
+        StartLoading ->
+            ( { model | albumsLoadState = Loading, imagesLoadState = Loading }, getAllAlbums model.apiUrl model.apiKey )
+
+        AlbumsFetched (Ok albums) ->
+            ( { model | albums = albums, albumsLoadState = Success }, fetchRandomImages model.apiUrl model.apiKey )
+
+        AlbumsFetched (Err error) ->
+            ( { model | albums = [], albumsLoadState = Error error }, Cmd.none )
+
+        RandomImagesFetched (Ok images) ->
+            ( { model | images = images, imagesLoadState = Success }, Cmd.none )
+
+        RandomImagesFetched (Err error) ->
+            ( { model | images = [], imagesLoadState = Error error }, Cmd.none )
