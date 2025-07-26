@@ -17,9 +17,11 @@ type Msg
 type alias Model =
     { count : Int
     , key : String
-    , currentImage : String
+    , currentImage : Maybe ImageWithMetadata
     , albums : List Album
     , images : Dict String ImageWithMetadata
+    , imageNumToId : Dict Int String
+    , currentImageIndex : Int
     }
 
 
@@ -39,9 +41,15 @@ type alias Album =
 
 init : () -> ( Model, Cmd Msg )
 init _ =
+    let
+        testImages =
+            [ { id = "0001", url = "http://localhost:3333/images/imafight.jpg", title = "Image A", inAlbumns = [ "a" ] }
+            , { id = "0002", url = "http://localhost:3333/images/dcemployees.jpg", title = "Image B", inAlbumns = [ "b" ] }
+            , { id = "0003", url = "http://localhost:3333/images/jordan.jpg", title = "Image C", inAlbumns = [ "a", "b" ] }
+            ]
+    in
     ( { count = 7
       , key = ""
-      , currentImage = "0001"
       , albums =
             [ { id = "a", name = "Album A" }
             , { id = "b", name = "Album B" }
@@ -51,12 +59,10 @@ init _ =
             ]
       , images =
             Dict.fromList
-                (List.map (\image -> ( image.id, image ))
-                    [ { id = "0001", url = "http://localhost:3333/images/imafight.jpg", title = "Image A", inAlbumns = [ "a" ] }
-                    , { id = "0002", url = "http://localhost:3333/images/dcemployees.jpg", title = "Image B", inAlbumns = [ "b" ] }
-                    , { id = "0003", url = "http://localhost:3333/images/jordan.jpg", title = "Image C", inAlbumns = [ "a", "b" ] }
-                    ]
-                )
+                (List.map (\image -> ( image.id, image )) testImages)
+      , imageNumToId = Dict.fromList (List.indexedMap (\index image -> ( index, image.id )) testImages)
+      , currentImage = List.head testImages
+      , currentImageIndex = 0
       }
     , Cmd.none
     )
@@ -90,11 +96,7 @@ imageOrBlank key =
 
 showCurrentImage : Model -> Html msg
 showCurrentImage model =
-    let
-        maybeCurrentImage =
-            Dict.get model.currentImage model.images
-    in
-    case maybeCurrentImage of
+    case model.currentImage of
         Just currentImage ->
             div []
                 [ imageOrBlank currentImage.url
@@ -109,31 +111,17 @@ showCurrentImage model =
 moveImagePointer : Model -> Int -> Model
 moveImagePointer model step =
     let
-        imageValues =
-            model.images |> Dict.values
-
-        currentIndex =
-            List.indexedMap
-                (\index image ->
-                    if image.id == model.currentImage then
-                        Just index
-
-                    else
-                        Nothing
-                )
-                imageValues
-                |> List.filterMap identity
-                |> List.head
-                |> Maybe.withDefault 0
-
         newIndex =
-            modBy (List.length imageValues) (currentIndex + step)
+            modBy (Dict.size model.imageNumToId) (model.currentImageIndex + step)
 
         newImageId =
-            List.head (List.map (\image -> image.id) (List.drop newIndex imageValues))
-                |> Maybe.withDefault ""
+            Dict.get newIndex model.imageNumToId
+
+        newImage =
+            newImageId
+                |> Maybe.andThen (\number -> Dict.get number model.images)
     in
-    { model | currentImage = newImageId }
+    { model | currentImageIndex = newIndex, currentImage = newImage }
 
 
 view : Model -> Html Msg
@@ -145,6 +133,7 @@ view model =
             [ class "btn btn-primary", onClick Increment ]
             [ text "+" ]
         , showCurrentImage model
+        , text (String.fromInt model.currentImageIndex)
         ]
 
 
