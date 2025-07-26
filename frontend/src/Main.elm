@@ -13,7 +13,7 @@ import Helpers exposing (send)
 import Html exposing (Html, button, div)
 import Html.Attributes exposing (class, src)
 import Html.Events exposing (onClick)
-import Immich exposing (ImageWithMetadata, ImmichAlbum, ImmichLoadState(..), getAllAlbums)
+import Immich exposing (ImmichAlbum, ImmichAsset, ImmichLoadState(..), getAllAlbums)
 import Json.Decode as Decode
 import Regex exposing (Regex)
 
@@ -37,7 +37,7 @@ type alias Model =
     , userMode : UserMode
     , test : Int
     -- Immich fields
-    , images : Array ImageWithMetadata
+    , images : Array ImmichAsset
     , imagesLoadState : ImmichLoadState
     , albums : Array ImmichAlbum
     , albumsLoadState : ImmichLoadState
@@ -96,20 +96,10 @@ init flags =
     let
         testImages =
             Array.fromList
-                [ ImageWithMetadata "0001"
-                    "images/imafight.jpg"
-                    "Imafight"
-                    "jpg"
-                , ImageWithMetadata
-                    "0002"
-                    "images/dcemployees.jpg"
-                    "dcemployees"
-                    "jpg"
-                , ImageWithMetadata
-                    "0003"
-                    "images/jordan.jpg"
-                    "Jordan"
-                    "jpg"
+                [ ImmichAsset "0001" "images/imafight.jpg" "Imafight" "jpg"
+                , ImmichAsset "0002" "images/dcemployees.jpg" "dcemployees" "jpg"
+                , ImmichAsset "0003" "images/jordan.jpg" "Jordan" "jpg"
+                , ImmichAsset "0004" "images/router-password.mp4" "router password" "mp4"
                 ]
 
         testAlbums =
@@ -158,32 +148,75 @@ init flags =
 --         ]
 
 
-viewImage : String -> Int -> Array ImageWithMetadata -> Element msg
-viewImage imagePrepend index images =
+viewAsset : String -> Int -> Array ImmichAsset -> Element msg
+viewAsset assetPrepend index assets =
     let
-        currentImage =
-            Array.get index images
+        currentAsset =
+            Array.get index assets
     in
-    case currentImage of
-        Just image ->
-            if image.path == "" then
-                el [] (text "No Image")
-
+    case currentAsset of
+        Just asset ->
+            if asset.path == "" then
+                el [] (text "No Asset")
             else
-                column [ width fill, height fill ]
-                    [ Element.image [ centerY, centerX ] { src = imagePrepend ++ image.path, description = "" }
-                    , el [ centerX ] (text image.title)
-                    ]
+                let
+                    fullAssetPath =
+                        assetPrepend ++ asset.path
+                in
+                if assetIsImage asset then
+                    viewImage asset fullAssetPath
+                else if assetIsVideo asset then
+                    viewVideo
+                        [ Background.color (Element.rgb 0 0 0) ]
+                        { poster = ""
+                        , source = fullAssetPath
+                        }
+
+                else
+                    text (String.join " " [ "Error with", asset.title, "Unknown mimetype:", asset.mimeType ])
 
         Nothing ->
-            text "No Image"
+            text "No Asset"
 
+assetIsImage : ImmichAsset -> Bool
+assetIsImage asset =
+    List.member asset.mimeType [ "jpg", "png", "gif" ]
 
-viewEditAsset : Int -> String -> String -> Array ImageWithMetadata -> Int -> List AssetChange -> Element Msg
+viewImage : ImmichAsset -> String -> Element msg
+viewImage asset path =
+    column [ width fill, height fill ]
+        [ Element.image [ centerY, centerX ] { src = path, description = "" }
+        , el [ centerX ] (text asset.title)
+        ]
+
+assetIsVideo : ImmichAsset -> Bool
+assetIsVideo asset =
+    List.member asset.mimeType [ "mp4" ]
+
+viewVideo : List (Element.Attribute msg) -> { poster : String, source : String } -> Element msg
+viewVideo attrs { poster, source } =
+    el attrs <|
+        Element.html <|
+            Html.video
+                [ Html.Attributes.attribute "controls" "controls"
+                , Html.Attributes.preload "none"
+                -- , Html.Attributes.poster poster
+                , Html.Attributes.autoplay True
+                , Html.Attributes.loop True
+                ]
+                [ Html.source
+                    [ Html.Attributes.id "mp4"
+                    , Html.Attributes.src source
+                    , Html.Attributes.type_ "video/mp4"
+                    ]
+                    []
+                ]
+
+viewEditAsset : Int -> String -> String -> Array ImmichAsset -> Int -> List AssetChange -> Element Msg
 viewEditAsset test imagePrepend key images index pendingChanges =
     column [ width fill, height fill ]
         [ el [ alignTop ] (text "Top Bar")
-        , viewImage imagePrepend index images
+        , viewAsset imagePrepend index images
         , column [ alignBottom ]
             [ text (String.fromInt index ++ "  ")
             , text (String.fromInt test)

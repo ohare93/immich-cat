@@ -15,7 +15,7 @@ type ImmichLoadState
     | ImmichLoadError Http.Error
 
 
-type alias ImageWithMetadata =
+type alias ImmichAsset =
     { id : String
     , path : String
     , title : String
@@ -27,7 +27,7 @@ type alias ImmichAlbum =
     { id : String
     , albumName : String
     , assetCount : Int
-    , assets : Array ImageWithMetadata
+    , assets : Array ImmichAsset
     , albumThumbnailAssetId : String
     , createdAt : Date
     }
@@ -103,9 +103,9 @@ dateDecoder =
             )
 
 
-imageDecoder : Decode.Decoder ImageWithMetadata
+imageDecoder : Decode.Decoder ImmichAsset
 imageDecoder =
-    Decode.map4 ImageWithMetadata
+    Decode.map4 ImmichAsset
         (Decode.field "id" Decode.string)
         (Decode.field "originalMimeType" Decode.string)
         (Decode.field "originalFilePath" Decode.string)
@@ -119,12 +119,12 @@ imageDecoder =
 type Msg
     = StartLoading
     | AlbumsFetched (Result Http.Error (Array ImmichAlbum))
-    | RandomImagesFetched (Result Http.Error (Array ImageWithMetadata))
+    | RandomImagesFetched (Result Http.Error (Array ImmichAsset))
 
 
 type alias Model r =
     { r
-        | images : Array ImageWithMetadata
+        | images : Array ImmichAsset
         , imagesLoadState : ImmichLoadState
         , albums : Array ImmichAlbum
         , albumsLoadState : ImmichLoadState
