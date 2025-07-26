@@ -6,6 +6,7 @@ import Html exposing (Html, button, div, text, img)
 import Html.Attributes exposing (class, src)
 import Html.Events exposing (onClick)
 import Json.Decode as Decode
+import Dict exposing (Dict)
 
 
 type Msg
@@ -17,7 +18,7 @@ type alias Model =
     , key : String
     , currentImage : String
     , albums : List Album
-    , images : List ImageWithMetadata
+    , images : Dict String ImageWithMetadata
     }
 
 type alias ImageWithMetadata =
@@ -43,9 +44,9 @@ init _ = ({
                        , { id = "d", name = "Album D" }
                        , { id = "e", name = "Album E" }
                        ]
-            , images = [ { id = "0001", url = "http://localhost:3333/images/imafight.jpg", title = "Image A", inAlbumns = ["a"] }
+            , images = Dict.fromList (List.map (\image -> (image.id, image)) [ { id = "0001", url = "http://localhost:3333/images/imafight.jpg", title = "Image A", inAlbumns = ["a"] }
                        , { id = "0002", url = "http://localhost:3333/images/dcemployees.jpg", title = "Image B", inAlbumns = ["b"] }
-                       , { id = "0003", url = "http://localhost:3333/images/jordan.jpg", title = "Image C", inAlbumns = ["a", "b"] } ]
+                       , { id = "0003", url = "http://localhost:3333/images/jordan.jpg", title = "Image C", inAlbumns = ["a", "b"] } ] )
             }
         , Cmd.none
         )
@@ -75,8 +76,7 @@ imageOrBlank key =
 showCurrentImage : Model -> Html msg
 showCurrentImage model =
     let
-        maybeCurrentImage =
-            List.head (List.filter (\image -> image.id == model.currentImage) model.images)
+        maybeCurrentImage = Dict.get model.currentImage model.images
     in
     case maybeCurrentImage of
         Just currentImage ->
@@ -92,17 +92,18 @@ showCurrentImage model =
 moveImagePointer : Model -> Int -> Model
 moveImagePointer model step =
     let
+        imageValues = (model.images |> Dict.values)
         currentIndex =
-            List.indexedMap (\index image -> if image.id == model.currentImage then Just index else Nothing) model.images
+            List.indexedMap (\index image -> if image.id == model.currentImage then Just index else Nothing) imageValues
                 |> List.filterMap identity
                 |> List.head
                 |> Maybe.withDefault 0
 
         newIndex =
-            modBy (List.length model.images) (currentIndex + step)
+            modBy (List.length imageValues) (currentIndex + step)
 
         newImageId =
-            List.head (List.map (\image -> image.id) (List.drop newIndex model.images))
+            List.head (List.map (\image -> image.id) (List.drop newIndex imageValues))
                 |> Maybe.withDefault ""
     in
     { model | currentImage = newImageId }
