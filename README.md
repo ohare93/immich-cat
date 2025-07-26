@@ -22,6 +22,30 @@ A keyboard-driven image categorization tool built with Elm that integrates with 
 
 ## Quick Start
 
+### Option 1: Docker (Recommended for Trying Out)
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd image-categoriser
+   ```
+
+2. **Set up environment variables**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your Immich server details
+   ```
+
+3. **Start with Docker**
+   ```bash
+   docker-compose up
+   ```
+
+4. **Open your browser**
+   Navigate to `http://localhost:8000`
+
+### Option 2: Local Development
+
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
@@ -41,7 +65,7 @@ A keyboard-driven image categorization tool built with Elm that integrates with 
    ```
 
 4. **Open your browser**
-   Navigate to `http://localhost:3000`
+   Navigate to `http://localhost:8000`
 
 ## Configuration
 
@@ -88,6 +112,47 @@ elm-test
 # Run tests with specific seed for reproducible results
 elm-test --seed 12345
 ```
+
+## Docker
+
+### Quick Docker Commands
+
+```bash
+# Build and start (recommended)
+docker-compose up
+
+# Build and start in background
+docker-compose up -d
+
+# Stop the container
+docker-compose down
+
+# Rebuild and start (after code changes)
+docker-compose up --build
+
+# View logs
+docker-compose logs -f
+```
+
+### Manual Docker Build
+
+```bash
+# Build the image
+npm run docker:build
+
+# Run with environment file
+npm run docker:run
+
+# Or run manually
+docker run -p 8000:8000 -e IMMICH_URL=https://your-immich.com -e IMMICH_API_KEY=your-key image-categoriser
+```
+
+### Docker Development
+
+The Docker setup includes both production and development modes:
+
+- **Production mode** (default): Builds optimized Elm code and serves via production server
+- **Development mode**: Uncomment volume mounts in docker-compose.yml for live reload
 
 ## Architecture
 

@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  image-categoriser:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - IMMICH_URL=${IMMICH_URL}
+      - IMMICH_API_KEY=${IMMICH_API_KEY}
+      - PORT=8000
+    env_file:
+      - .env
+    restart: unless-stopped
+    
+    # Optional: for development with live reload
+    # volumes:
+    #   - ./src:/app/src
+    #   - ./elm.json:/app/elm.json

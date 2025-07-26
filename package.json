@@ -5,7 +5,12 @@
     "dev": "node scripts/dev-server.js",
     "start": "node scripts/start-dev.js",
     "build": "node scripts/build.js",
-    "dev-secure": "node scripts/dev-server.js"
+    "dev-secure": "node scripts/dev-server.js",
+    "docker:build": "docker build -t image-categoriser .",
+    "docker:run": "docker run -p 8000:8000 --env-file .env image-categoriser",
+    "docker:up": "docker-compose up",
+    "docker:down": "docker-compose down",
+    "docker:rebuild": "docker-compose up --build"
   },
   "dependencies": {
     "dotenv": "^16.0.3",

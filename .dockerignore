@@ -1,0 +1,46 @@
+# Dependency directories
+node_modules/
+elm-stuff/
+
+# Build outputs
+dist/
+
+# Development files
+.env
+.devbox/
+.git/
+.jj/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Runtime data
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# nyc test coverage
+.nyc_output/
+
+# Temporary files
+temp.*
+
+# Review artifacts
+review/
+
+# Cache directories
+.cache/
+.elm/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
