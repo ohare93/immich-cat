@@ -322,13 +322,6 @@ shouldLoadMore state totalItems =
     scrollBottom >= loadMoreThreshold && totalHeight > viewportHeight
 
 
-{-| Decode scroll position from scroll event
--}
-decodeScrollTop : String -> Json.Decode.Decoder Float
-decodeScrollTop _ =
-    Json.Decode.at [ "target", "scrollTop" ] Json.Decode.float
-
-
 toggleAssetSelection : ImmichAssetId -> Dict ImmichAssetId Bool -> Dict ImmichAssetId Bool
 toggleAssetSelection assetId selectedAssets =
     if Dict.member assetId selectedAssets then
@@ -584,9 +577,6 @@ viewGridItems apiPaths apiKey state gridItems hasMorePages isLoadingMore toMsg =
             toFloat visibleRange.startRow * rowHeight
 
         -- Check if we should trigger load more
-        shouldTriggerLoadMore =
-            shouldLoadMore state totalItems && hasMorePages && not isLoadingMore
-
         -- Container styles for virtual scrolling
         containerStyle =
             [ Html.Attributes.style "position" "relative"
@@ -706,26 +696,6 @@ viewGridItem apiPaths apiKey toMsg item =
             , Html.Attributes.style "background" "#f8f9fa"
             ]
                 ++ [ Html.Attributes.style ":hover" "transform: scale(1.02); box-shadow: 0 6px 20px rgba(0,0,0,0.15)" ]
-
-        overlayStyle =
-            [ Html.Attributes.style "position" "absolute"
-            , Html.Attributes.style "top" "0"
-            , Html.Attributes.style "left" "0"
-            , Html.Attributes.style "right" "0"
-            , Html.Attributes.style "bottom" "0"
-            , Html.Attributes.style "background"
-                (if item.isSelected then
-                    "rgba(80, 200, 120, 0.3)"
-
-                 else
-                    "transparent"
-                )
-            , Html.Attributes.style "display" "flex"
-            , Html.Attributes.style "align-items" "flex-end"
-            , Html.Attributes.style "justify-content" "center"
-            , Html.Attributes.style "padding" "5px"
-            , Html.Attributes.style "pointer-events" "none"
-            ]
 
         metadataStyle =
             [ Html.Attributes.style "background" "linear-gradient(to top, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.6) 50%, transparent 100%)"

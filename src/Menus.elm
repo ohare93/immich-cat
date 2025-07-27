@@ -7,14 +7,8 @@ module Menus exposing
     , defaultAlbumConfig
     , defaultSearchConfig
     , defaultTimelineConfig
-    , filterByMediaType
-    , filterByStatus
     , generateSearchSuggestions
-    , toggleCategorisation
-    , toggleMediaType
-    , toggleOrder
     , toggleSearchContext
-    , toggleStatus
     , viewAlbumView
     , viewMainMenu
     , viewSearchView
@@ -30,6 +24,7 @@ import Element.Border as Border
 import Element.Font as Font
 import Element.Input as Input exposing (button)
 import HelpText exposing (AlbumBrowseState(..), ViewContext(..), viewContextHelp)
+import Helpers exposing (categorisationToString, mediaTypeToString, orderToString, statusToString)
 import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImmichAlbum, ImmichAsset, ImmichAssetId, ImmichLoadState(..), MediaTypeFilter(..), StatusFilter(..))
 
 
@@ -310,19 +305,6 @@ viewSettings model onUrlChange onApiKeyChange onSaveConfig onClearConfig =
         ]
 
 
-maskApiKey : String -> String
-maskApiKey apiKey =
-    let
-        keyLength =
-            String.length apiKey
-    in
-    if keyLength > 5 then
-        String.left 5 apiKey ++ String.repeat (keyLength - 5) "*"
-
-    else
-        apiKey
-
-
 
 -- Filter panel views
 
@@ -370,61 +352,6 @@ viewFilterValue label value =
 -- String conversion functions
 
 
-mediaTypeToString : MediaTypeFilter -> String
-mediaTypeToString mediaType =
-    case mediaType of
-        AllMedia ->
-            "All"
-
-        ImagesOnly ->
-            "Images"
-
-        VideosOnly ->
-            "Videos"
-
-
-categorisationToString : CategorisationFilter -> String
-categorisationToString categorisation =
-    case categorisation of
-        All ->
-            "All"
-
-        Uncategorised ->
-            "Uncategorised"
-
-
-orderToString : ImageOrder -> String
-orderToString order =
-    case order of
-        CreatedDesc ->
-            "Newest Created"
-
-        CreatedAsc ->
-            "Oldest Created"
-
-        ModifiedDesc ->
-            "Newest Modified"
-
-        ModifiedAsc ->
-            "Oldest Modified"
-
-        Random ->
-            "Random"
-
-
-statusToString : StatusFilter -> String
-statusToString status =
-    case status of
-        AllStatuses ->
-            "All"
-
-        FavoritesOnly ->
-            "Favorites"
-
-        ArchivedOnly ->
-            "Archived"
-
-
 searchContextToString : SearchContext -> String
 searchContextToString context =
     case context of
@@ -440,61 +367,6 @@ searchContextToString context =
 
 
 -- Toggle functions
-
-
-toggleMediaType : MediaTypeFilter -> MediaTypeFilter
-toggleMediaType current =
-    case current of
-        AllMedia ->
-            ImagesOnly
-
-        ImagesOnly ->
-            VideosOnly
-
-        VideosOnly ->
-            AllMedia
-
-
-toggleCategorisation : CategorisationFilter -> CategorisationFilter
-toggleCategorisation current =
-    case current of
-        All ->
-            Uncategorised
-
-        Uncategorised ->
-            All
-
-
-toggleOrder : ImageOrder -> ImageOrder
-toggleOrder current =
-    case current of
-        CreatedDesc ->
-            CreatedAsc
-
-        CreatedAsc ->
-            ModifiedDesc
-
-        ModifiedDesc ->
-            ModifiedAsc
-
-        ModifiedAsc ->
-            Random
-
-        Random ->
-            CreatedDesc
-
-
-toggleStatus : StatusFilter -> StatusFilter
-toggleStatus current =
-    case current of
-        AllStatuses ->
-            FavoritesOnly
-
-        FavoritesOnly ->
-            ArchivedOnly
-
-        ArchivedOnly ->
-            AllStatuses
 
 
 toggleSearchContext : SearchContext -> SearchContext
@@ -542,36 +414,6 @@ defaultAlbumConfig =
     , order = CreatedDesc
     , status = AllStatuses
     }
-
-
-
--- Filter functions
-
-
-filterByMediaType : MediaTypeFilter -> List ImmichAsset -> List ImmichAsset
-filterByMediaType mediaFilter assets =
-    case mediaFilter of
-        AllMedia ->
-            assets
-
-        ImagesOnly ->
-            List.filter (\asset -> String.startsWith "image/" asset.mimeType) assets
-
-        VideosOnly ->
-            List.filter (\asset -> String.startsWith "video/" asset.mimeType) assets
-
-
-filterByStatus : StatusFilter -> List ImmichAsset -> List ImmichAsset
-filterByStatus statusFilter assets =
-    case statusFilter of
-        AllStatuses ->
-            assets
-
-        FavoritesOnly ->
-            List.filter (\asset -> asset.isFavourite) assets
-
-        ArchivedOnly ->
-            List.filter (\asset -> asset.isArchived) assets
 
 
 

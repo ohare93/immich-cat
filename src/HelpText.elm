@@ -5,7 +5,7 @@ module HelpText exposing
     , viewKeybinding
     )
 
-import Element exposing (Element, alignTop, column, el, fill, paragraph, px, row, text, width)
+import Element exposing (Element, column, el, fill, px, row, text, width)
 import Element.Background as Background
 import Element.Font as Font
 import ViewAlbums exposing (InputMode(..), usefulColours)

@@ -8,12 +8,12 @@ import Element exposing (Element, alignRight, alignTop, clipY, column, el, fill,
 import Element.Background as Background
 import Element.Font as Font
 import HelpText exposing (AlbumBrowseState(..), ViewContext(..), viewContextHelp)
-import Helpers
+import Helpers exposing (filterByMediaType, filterByStatus)
 import Html exposing (Html)
 import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImageSearchConfig, ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..), MediaTypeFilter(..), StatusFilter(..), getAllAlbums, getImmichApiPaths)
 import Json.Decode as Decode
 import KeybindBranches exposing (generateAlbumKeybindings)
-import Menus exposing (AlbumConfig, SearchContext, defaultAlbumConfig, defaultSearchConfig, filterByMediaType, filterByStatus)
+import Menus exposing (AlbumConfig, SearchContext, defaultAlbumConfig, defaultSearchConfig)
 import Process
 import Task
 import UpdateAlbums exposing (AlbumMsg)
@@ -1187,13 +1187,15 @@ update msg model =
                 ( finalModel, autoClearCmd )
 
         ClearConfig ->
-            ( { model 
+            ( { model
                 | configuredApiUrl = Nothing
                 , configuredApiKey = Nothing
                 , settingsApiUrl = ""
                 , settingsApiKey = ""
                 , configValidationMessage = Nothing
-              }, clearStorage () )
+              }
+            , clearStorage ()
+            )
 
         UpdateSettingsApiUrl url ->
             ( { model | settingsApiUrl = url, configValidationMessage = Nothing }, Cmd.none )
@@ -1651,13 +1653,6 @@ update msg model =
                             let
                                 updatedModel =
                                     model |> handleFetchAlbums albums
-
-                                clearFeedbackCmd =
-                                    if updatedModel.reloadFeedback /= Nothing then
-                                        Process.sleep 3000 |> Task.perform (always ClearReloadFeedback)
-
-                                    else
-                                        Cmd.none
                             in
                             updatedModel
 
@@ -1706,8 +1701,8 @@ update msg model =
                                 -- Filter and sort album assets client-side since API doesn't respect orderBy with albumIds
                                 filteredAssets =
                                     album.assets
-                                        |> Menus.filterByMediaType mediaType
-                                        |> Menus.filterByStatus status
+                                        |> filterByMediaType mediaType
+                                        |> filterByStatus status
                                         |> (case order of
                                                 CreatedAsc ->
                                                     List.sortBy (.fileCreatedAt >> Date.toRataDie)
@@ -2247,42 +2242,6 @@ updateAlbumAssetCount albumId countChange model =
 
 
 -- Normalize asset PropertyChange states after successful API call
-
-
-normalizeAssetMembershipStates : Model -> ImmichAlbumId -> Bool -> Model
-normalizeAssetMembershipStates model albumId isAddition =
-    let
-        newStableState =
-            if isAddition then
-                RemainTrue
-
-            else
-                RemainFalse
-
-        -- Update the current asset in userMode if it's ViewAssets EditAsset
-        updatedUserMode =
-            case model.userMode of
-                ViewAssets assetState ->
-                    case assetState of
-                        EditAsset inputMode asset search ->
-                            let
-                                updatedAsset =
-                                    { asset
-                                        | albumMembership =
-                                            Dict.update albumId
-                                                (\_ -> Just newStableState)
-                                                asset.albumMembership
-                                    }
-                            in
-                            ViewAssets (EditAsset inputMode updatedAsset search)
-
-                        _ ->
-                            model.userMode
-
-                _ ->
-                    model.userMode
-    in
-    { model | userMode = updatedUserMode }
 
 
 switchToEditIfAssetFound : Model -> ImageIndex -> ( Model, Cmd Msg )

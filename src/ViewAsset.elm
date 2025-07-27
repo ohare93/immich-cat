@@ -17,7 +17,7 @@ import Html exposing (node)
 import Html.Attributes
 import Immich exposing (ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..))
 import Time
-import ViewAlbums exposing (AssetWithActions, InputMode(..), usefulColours)
+import ViewAlbums exposing (AssetWithActions, InputMode(..))
 import ViewGrid exposing (GridMsg, GridState)
 
 

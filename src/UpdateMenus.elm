@@ -9,10 +9,10 @@ module UpdateMenus exposing
     )
 
 import Dict exposing (Dict)
-import Helpers exposing (isSupportedSearchLetter)
+import Helpers exposing (isSupportedSearchLetter, toggleCategorisation, toggleMediaType, toggleOrder, toggleStatus)
 import Immich exposing (ImageSearchConfig, ImmichAlbum, ImmichAlbumId, ImmichApiPaths)
 import KeybindBranches exposing (generateAlbumKeybindings)
-import Menus exposing (AlbumConfig, SearchConfig, TimelineConfig, defaultAlbumConfig, defaultSearchConfig, defaultTimelineConfig, toggleCategorisation, toggleMediaType, toggleOrder, toggleSearchContext, toggleStatus)
+import Menus exposing (AlbumConfig, SearchConfig, TimelineConfig, defaultAlbumConfig, defaultSearchConfig, defaultTimelineConfig, toggleSearchContext)
 import UpdateAlbums
 import ViewAlbums exposing (AlbumSearch, createAlbumSearchWithWarning, getAlbumSearchWithHeight)
 
