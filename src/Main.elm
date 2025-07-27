@@ -311,6 +311,13 @@ init flags =
     , Cmd.batch
         [ loadFromStorage "immichApiUrl"
         , loadFromStorage "immichApiKey"
+
+        -- If valid credentials are provided in flags, trigger album loading immediately
+        , if String.isEmpty flags.immichApiUrl || String.isEmpty flags.immichApiKey then
+            Cmd.none
+
+          else
+            getAllAlbums flags.immichApiUrl flags.immichApiKey |> Cmd.map ImmichMsg
         ]
     )
 
