@@ -1,252 +1,119 @@
 # Image Categoriser
 
-A keyboard-driven image categorization tool built with Elm that integrates with the [Immich](https://immich.app/) photo management system. Provides an efficient interface for categorizing and managing large photo collections with vim-style navigation.
+A keyboard-driven image categorization tool built with Elm that integrates with [Immich](https://immich.app/). Efficiently categorize and manage large photo collections with vim-style navigation.
 
 ## Features
 
-- **Keyboard-driven interface** - Navigate with vim-style keybindings
-- **Real-time image/video viewing** - Authenticated asset loading from Immich
-- **Smart album management** - Categorize assets with automatic count tracking  
-- **Intelligent keybinding system** - Conflict-free album shortcuts with fuzzy matching
-- **Advanced search** - Fuzzy search for albums and smart asset filtering
+- **Keyboard-driven interface** - Vim-style navigation and shortcuts
+- **Real-time viewing** - Authenticated image/video loading from Immich
+- **Smart album management** - Categorize assets with automatic count tracking
+- **Intelligent keybindings** - Conflict-free album shortcuts with fuzzy matching
+- **Advanced search** - Fuzzy search and filtering capabilities
 - **Batch operations** - Bulk favorites, archiving, and album management
 - **Asset preloading** - Intelligent caching for smooth navigation
-- **External integration** - Open assets directly in Immich web interface
-
-## Prerequisites
-
-- [Immich](https://immich.app/) server running and accessible
-- Immich API key with appropriate permissions
-- [Elm](https://elm-lang.org/) 0.19.1
-- [Node.js](https://nodejs.org/) (for development server)
 
 ## Quick Start
 
-### Option 1: Docker (Recommended for Trying Out)
+### Docker (Recommended)
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd image-categoriser
-   ```
+```bash
+cp .env.example .env
+# Edit .env with your Immich server details
+docker-compose up
+```
 
-2. **Set up environment variables**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your Immich server details
-   ```
+Open `http://localhost:8000` in your browser.
 
-3. **Start with Docker**
-   ```bash
-   docker-compose up
-   ```
+> **Note**: Docker images can be pulled from GitHub Container Registry for easier deployment.
 
-4. **Open your browser**
-   Navigate to `http://localhost:8000`
+### Devbox (For Development)
 
-### Option 2: Local Development
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd image-categoriser
-   ```
-
-2. **Set up environment variables**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your Immich server details
-   ```
-
-3. **Install dependencies and start development server**
-   ```bash
-   npm install
-   npm run dev
-   ```
-
-4. **Open your browser**
-   Navigate to `http://localhost:8000`
+```bash
+cp .env.example .env
+# Edit .env with your Immich server details
+devbox shell
+npm run dev
+```
 
 ## Configuration
 
-Create a `.env` file in the project root:
+Set up your Immich connection in `.env`:
 
 ```env
 IMMICH_URL=https://your-immich-server.com
 IMMICH_API_KEY=your_immich_api_key_here
 ```
 
-### Getting an Immich API Key
+Get your API key from Immich web interface → Account Settings → API Keys.
 
-1. Log into your Immich web interface
-2. Go to Account Settings → API Keys
-3. Create a new API key
-4. Copy the key to your `.env` file
+## How it Works
 
-## Development
+The app connects to your existing Immich server and loads all your albums and assets. You don't need to recreate anything - it works with your current photo organization.
 
-### Commands
-
-```bash
-# Compile the Elm application
-elm make src/Main.elm --output dist/index.html
-
-# Run tests
-elm-test
-
-# Start development server
-npm run dev
-
-# Build for production
-npm run build
-```
-
-### Testing
-
-The project includes comprehensive test coverage:
-
-```bash
-# Run all tests
-elm-test
-
-# Run tests with specific seed for reproducible results
-elm-test --seed 12345
-```
-
-## Docker
-
-### Quick Docker Commands
-
-```bash
-# Build and start (recommended)
-docker-compose up
-
-# Build and start in background
-docker-compose up -d
-
-# Stop the container
-docker-compose down
-
-# Rebuild and start (after code changes)
-docker-compose up --build
-
-# View logs
-docker-compose logs -f
-```
-
-### Manual Docker Build
-
-```bash
-# Build the image
-npm run docker:build
-
-# Run with environment file
-npm run docker:run
-
-# Or run manually
-docker run -p 8000:8000 -e IMMICH_URL=https://your-immich.com -e IMMICH_API_KEY=your-key image-categoriser
-```
-
-### Docker Development
-
-The Docker setup includes both production and development modes:
-
-- **Production mode** (default): Builds optimized Elm code and serves via production server
-- **Development mode**: Uncomment volume mounts in docker-compose.yml for live reload
-
-## Architecture
-
-### Frontend (Elm)
-
-- **Entry Point:** `src/Main.elm` - Main application using Elm Architecture
-- **API Integration:** `src/Immich.elm` - HTTP request builders for Immich API
-- **Utilities:** `src/Helpers.elm` - Common utility functions
-- **Key Bindings:** `src/KeybindingGenerator.elm` - Smart keybinding generation
-- **UI Framework:** elm-ui for layout and styling
-
-### Key Architecture Patterns
-
-- **Elm Architecture** - Predictable state management with Model-View-Update
-- **Generic HTTP builders** - Centralized request handling
-- **Custom web components** - Authenticated asset loading with caching
-- **Smart keybinding system** - Conflict-free shortcuts with prefix detection
-
-### Security Features
-
-- **Zero secret persistence** - API keys never written to disk
-- **In-memory injection** - Environment variables loaded at runtime
-- **Clean builds** - Production artifacts contain no embedded secrets
-- **Secure development** - API key masking in development UI
+**The key advantage:** In Immich's web interface, adding a photo to an album requires multiple clicks (select photo → add to album → search/select album → confirm). Here, it's **just one keypress** per album thanks to automatically generated keybindings.
 
 ## Usage
 
-### Navigation Modes
+### Getting Started
 
-- **Normal Mode** - Default navigation mode with vim-style keybindings
-- **Insert Mode** - Text input for search and album creation
-- **Scroll View Mode** - For viewing large images that require scrolling
+1. After starting the app, it will load your Immich albums and assets
+2. Use vim-style navigation to browse through your photos
+3. See your top albums with their auto-generated keybindings displayed on screen (like `a` for "Animals", `v` for "Vacation 2024")
+4. Navigate to any photo and press the album's key to instantly add it (e.g., press `a` to add current photo to "Animals")
+5. Press `?` anytime to see all available shortcuts
+
+### Quick Album Assignment (Main Feature)
+
+The app automatically generates single-key shortcuts for your most-used albums and **displays them on screen at all times**:
+
+- `a` might be "Animals"
+- `v` might be "Vacation 2024"
+- `f` might be "Family"
+- And so on...
+
+Simply navigate to any photo and press the letter - **that's it!** No menus, no clicking, no searching. The keybindings are always visible.
+
+### Interface Modes
+
+- **Normal Mode** (default): Navigate and manage assets with keyboard shortcuts (top album keybindings always visible)
+- **Insert Mode**: Search for albums not shown on screen, or create new albums
+- **Scroll View Mode**: For viewing large images that need scrolling
 
 ### Key Bindings
 
 #### Navigation
-- `h/j/k/l` - Navigate left/down/up/right
-- `g/G` - Go to first/last item
-- `Ctrl+u/d` - Half page up/down
-- `Ctrl+f/b` - Full page up/down
+
+- `h/j/k/l` - Move left/down/up/right (vim-style)
+- `g/G` - Jump to first/last item
+- `Ctrl+u/d` - Page up/down
+- `Ctrl+f/b` - Full page forward/back
 
 #### Asset Management
-- `F` - Toggle favorite
-- `D` - Toggle delete/archive
-- `K` - Open in Immich (new tab)
-- `Y` - Yank (copy to clipboard)
+
+- `F` - Toggle favorite status
+- `D` - Toggle archive/delete
+- `K` - Open current asset in Immich web interface
+- `Y` - Copy asset information
 - `R` - Reload albums from server
 
-#### Search and Albums
-- `I` - Enter album search mode
+#### Album Operations
+
+- `a-z` (displayed on screen) - **Instantly add current photo to specific album**
+- `I` - Search for albums not visible on screen, or create new albums
 - `i` - Insert mode for text input
-- `?` - Show help
+- `Esc` - Return to normal mode
+- `?` - Show help with all current keybindings
 
-## File Structure
-
-```
-src/
-├── Main.elm                    # Application entry point
-├── Immich.elm                 # API integration
-├── Helpers.elm                # Utility functions
-├── KeybindingGenerator.elm    # Keybinding system
-├── UpdateAlbums.elm           # Album update logic
-├── UpdateAsset.elm            # Asset update logic
-├── UpdateMenus.elm            # Menu update logic
-├── ViewGrid.elm               # Grid view components
-├── HelpText.elm               # Help text components
-└── index.html                 # HTML with custom web components
-
-tests/
-├── ImmichTest.elm            # Unit tests for API module
-└── ApiIntegrationTest.elm    # Integration tests
-
-scripts/
-├── dev-server.js             # Development server
-├── start-dev.js              # Server launcher
-└── build.js                  # Production build
-
-docs/
-└── immich-api/               # API documentation and examples
-```
+> **Example:** With "Animals" = `a` visible on screen, just press `a` while viewing any photo to add it to Animals album. Use `I` only if you need an album that's not displayed.
 
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Add tests for new functionality
-4. Ensure all tests pass: `elm-test`
-5. Submit a pull request
+4. Submit a pull request
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License - see [LICENSE](LICENSE) file for details.
 
-## Related Projects
-
-- [Immich](https://immich.app/) - Self-hosted photo and video management solution
-- [Elm](https://elm-lang.org/) - Functional programming language for web applications
