@@ -502,8 +502,8 @@ viewGrid apiPaths apiKey state assets hasMorePages isLoadingMore toMsg =
                 bulkActionsRow =
                     if selectedCount > 0 then
                         row [ spacing 10, paddingXY 0 5 ]
-                            [ viewBulkActionButton "Favorite" (toMsg (GridBulkFavorite True))
-                            , viewBulkActionButton "Unfavorite" (toMsg (GridBulkFavorite False))
+                            [ viewBulkActionButton "♥ Favorite" (toMsg (GridBulkFavorite True))
+                            , viewBulkActionButton "♡ Unfavorite" (toMsg (GridBulkFavorite False))
                             , viewBulkActionButton "Archive" (toMsg (GridBulkArchive True))
                             , viewBulkActionButton "Unarchive" (toMsg (GridBulkArchive False))
                             , viewBulkActionButton "Add to Album" (toMsg GridBulkAddToAlbum)
@@ -823,7 +823,7 @@ viewGridItem apiPaths apiKey toMsg item =
                 )
             ]
         , Html.div favoriteIndicator
-            [ Html.text "★" ]
+            [ Html.text "♥" ]
         , Html.div metadataStyle [ Html.text item.asset.title ]
         , Html.div selectionIndicatorStyle
             [ Html.text

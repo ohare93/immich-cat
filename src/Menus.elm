@@ -193,36 +193,10 @@ viewAlbumView model album config loadAlbumAssetsMsg =
             , viewAlbumFilters config
             , button [] { onPress = Just (loadAlbumAssetsMsg album), label = text "[Enter/Space] Load & View Assets" }
             ]
-        , column [ width (fillPortion 6), height fill ]
-            [ checkForEmptyFilterResults model config album
-            ]
         , column [ width (fillPortion 4 |> minimum 300), height fill, paddingXY 15 15 ]
             [ viewContextHelp (AlbumBrowseContext ConfiguringView)
             ]
         ]
-
-
-checkForEmptyFilterResults : { a | albumKeybindings : Dict ImmichAssetId String, currentAssets : List ImmichAssetId, imagesLoadState : ImmichLoadState, knownAlbums : Dict ImmichAssetId ImmichAlbum } -> AlbumConfig -> ImmichAlbum -> Element msg
-checkForEmptyFilterResults model config album =
-    case model.imagesLoadState of
-        ImmichLoadSuccess ->
-            if List.isEmpty model.currentAssets then
-                column [ centerX, centerY, Element.spacingXY 0 20 ]
-                    [ el [ Font.size 18, Font.bold, Font.color <| Element.rgb 0.7 0.7 0.7 ] (text "No assets found")
-                    , el [ Font.size 14, Font.color <| Element.rgb 0.5 0.5 0.5 ] (text "Try adjusting your filters:")
-                    , column [ Element.spacingXY 0 8 ]
-                        [ viewFilterValue "Media Type" (mediaTypeToString config.mediaType)
-                        , viewFilterValue "Order" (orderToString config.order)
-                        , viewFilterValue "Status" (statusToString config.status)
-                        ]
-                    , el [ Font.size 12, Font.color <| Element.rgb 0.5 0.5 0.5 ] (text "Press [m], [o], or [s] to change filters")
-                    ]
-
-            else
-                text "Album assets will appear here"
-
-        _ ->
-            text "Loading album assets..."
 
 
 

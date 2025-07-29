@@ -133,6 +133,8 @@ type alias Model =
     , albumsLoadState : ImmichLoadState
     , baseUrl : String
     , apiKey : String
+    , envBaseUrl : String -- Original env values for defaulting back
+    , envApiKey : String
     , immichApiPaths : ImmichApiPaths
     , screenHeight : Int
     , screenWidth : Int
@@ -219,7 +221,7 @@ getBackgroundColor theme =
             Element.rgb 0.98 0.98 0.98
 
         Dark ->
-            Element.rgb 0.1 0.1 0.1
+            Element.rgb 0.05 0.05 0.05
 
         System ->
             ViewAlbums.usefulColours "darkgrey"
@@ -253,10 +255,49 @@ getSecondaryColor theme =
             Element.rgb 0.6 0.6 0.6
 
         Dark ->
-            Element.rgb 0.5 0.5 0.5
+            Element.rgb 0.7 0.7 0.7
 
         System ->
             Element.rgb 0.6 0.6 0.6
+
+
+getMutedTextColor : Theme -> Element.Color
+getMutedTextColor theme =
+    case theme of
+        Light ->
+            Element.rgb 0.5 0.5 0.5
+
+        Dark ->
+            Element.rgb 0.6 0.6 0.6
+
+        System ->
+            Element.rgb 0.5 0.5 0.5
+
+
+getKeybindTextColor : Theme -> Element.Color
+getKeybindTextColor theme =
+    case theme of
+        Light ->
+            Element.rgb 0.1 0.1 0.1
+
+        Dark ->
+            Element.rgb 0.9 0.9 0.9
+
+        System ->
+            Element.rgb 0.1 0.1 0.1
+
+
+getHighlightColor : Theme -> Element.Color
+getHighlightColor theme =
+    case theme of
+        Light ->
+            Element.fromRgb { red = 0.8, green = 0.2, blue = 0.2, alpha = 1 }
+
+        Dark ->
+            Element.fromRgb { red = 1.0, green = 0.4, blue = 0.4, alpha = 1 }
+
+        System ->
+            Element.fromRgb { red = 0.8, green = 0.2, blue = 0.2, alpha = 1 }
 
 
 
@@ -291,11 +332,13 @@ init flags =
       , albumsLoadState = ImmichLoading
       , baseUrl = flags.immichApiUrl
       , apiKey = flags.immichApiKey
+      , envBaseUrl = flags.immichApiUrl
+      , envApiKey = flags.immichApiKey
       , immichApiPaths = getImmichApiPaths flags.immichApiUrl flags.immichApiKey
       , screenHeight = 800 -- Default, will be updated by window resize
       , screenWidth = 1200 -- Default, will be updated by window resize
       , deviceClass = classifyDevice 1200 800 -- Will be updated by WindowResize
-      , theme = System -- Default to system theme
+      , theme = Dark -- Default to dark theme
       , pendingAlbumChange = Nothing
       , paginationState =
             { currentConfig = Nothing
@@ -312,12 +355,8 @@ init flags =
         [ loadFromStorage "immichApiUrl"
         , loadFromStorage "immichApiKey"
 
-        -- If valid credentials are provided in flags, trigger album loading immediately
-        , if String.isEmpty flags.immichApiUrl || String.isEmpty flags.immichApiKey then
-            Cmd.none
-
-          else
-            getAllAlbums flags.immichApiUrl flags.immichApiKey |> Cmd.map ImmichMsg
+        -- Don't load albums immediately - wait for localStorage config to load first
+        -- to avoid duplicate API calls with different credentials
         ]
     )
 
@@ -527,7 +566,7 @@ viewMenuState model menuState =
                                 el [ Font.color <| Element.fromRgb { red = 1, green = 0.2, blue = 0.2, alpha = 1 }, Font.size 12 ] <| text "No matches"
 
                               else
-                                el [ Font.color <| Element.fromRgb { red = 0.5, green = 0.5, blue = 0.5, alpha = 1 }, Font.size 12 ] <| text ("Next: " ++ nextCharString)
+                                el [ Font.color <| getMutedTextColor model.theme, Font.size 12 ] <| text ("Next: " ++ nextCharString)
                             ]
 
                       else
@@ -538,11 +577,11 @@ viewMenuState model menuState =
 
                         Nothing ->
                             text ""
-                    , ViewAlbums.viewSidebarAlbums search model.albumKeybindings model.knownAlbums SelectAlbum
+                    , ViewAlbums.viewSidebarAlbums search model.albumKeybindings model.knownAlbums SelectAlbum (getKeybindTextColor model.theme) (getMutedTextColor model.theme) (getHighlightColor model.theme)
                     ]
                 , Element.column [ width (fillPortion 5), height fill, paddingXY 20 20 ]
                     [ el [ Font.size 16 ] (text "Select an album from the left to configure and view its contents.")
-                    , el [ Font.size 14, Font.color <| Element.fromRgb { red = 0.6, green = 0.6, blue = 0.6, alpha = 1 } ] (text "Type album name or keybinding to filter the list.")
+                    , el [ Font.size 14, Font.color <| getMutedTextColor model.theme ] (text "Type album name or keybinding to filter the list.")
                     ]
                 , Element.column [ width (fillPortion 4 |> minimum 300), height fill, paddingXY 15 15 ]
                     [ viewContextHelp (AlbumBrowseContext SelectingAlbum)
@@ -599,7 +638,7 @@ viewAssetState model assetState =
 
         SelectAlbumInput search ->
             ViewAlbums.viewWithSidebar
-                (ViewAlbums.viewSidebarAlbums search model.albumKeybindings model.knownAlbums SelectAlbum)
+                (ViewAlbums.viewSidebarAlbums search model.albumKeybindings model.knownAlbums SelectAlbum (getKeybindTextColor model.theme) (getMutedTextColor model.theme) (getHighlightColor model.theme))
                 (column []
                     [ text "Select Album"
                     , text search.searchString
@@ -611,16 +650,51 @@ viewAssetState model assetState =
                 viewTitle =
                     createDetailedViewTitle model.currentAssetsSource
             in
-            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) SelectAlbum) (ViewAsset.viewEditAsset model.immichApiPaths model.apiKey model.imageIndex (List.length model.currentAssets) viewTitle asset model.currentAssets model.knownAssets model.currentDateMillis model.timeViewMode inputMode)
+            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) SelectAlbum (getKeybindTextColor model.theme) (getMutedTextColor model.theme) (getHighlightColor model.theme)) (ViewAsset.viewEditAsset model.immichApiPaths model.apiKey model.imageIndex (List.length model.currentAssets) viewTitle asset model.currentAssets model.knownAssets model.currentDateMillis model.timeViewMode inputMode)
 
         CreateAlbumConfirmation _ asset search albumName ->
-            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums Nothing SelectAlbum) (ViewAsset.viewCreateAlbumConfirmation albumName)
+            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums Nothing SelectAlbum (getKeybindTextColor model.theme) (getMutedTextColor model.theme) (getHighlightColor model.theme)) (ViewAsset.viewCreateAlbumConfirmation albumName)
 
         ShowEditAssetHelp inputMode asset search ->
-            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) SelectAlbum) (ViewAsset.viewEditAssetHelp inputMode)
+            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) SelectAlbum (getKeybindTextColor model.theme) (getMutedTextColor model.theme) (getHighlightColor model.theme)) (ViewAsset.viewEditAssetHelp inputMode)
 
         GridView gridState ->
             ViewAsset.viewGridAssets model.immichApiPaths model.apiKey gridState model.currentAssets model.knownAssets model.paginationState.hasMorePages model.paginationState.isLoadingMore (AssetMsg << AssetGridMsg)
+
+
+isInInputMode : UserMode -> Bool
+isInInputMode userMode =
+    case userMode of
+        MainMenu menuState ->
+            case menuState of
+                SearchView config ->
+                    config.inputFocused
+
+                _ ->
+                    False
+
+        ViewAssets assetState ->
+            case assetState of
+                SearchAssetInput _ ->
+                    True
+
+                SelectAlbumInput _ ->
+                    True
+
+                EditAsset editInputMode _ _ ->
+                    editInputMode == InsertMode
+
+                CreateAlbumConfirmation editInputMode _ _ _ ->
+                    editInputMode == InsertMode
+
+                ShowEditAssetHelp editInputMode _ _ ->
+                    editInputMode == InsertMode
+
+                _ ->
+                    False
+
+        LoadingAssets _ ->
+            False
 
 
 viewInputMode : UserMode -> Theme -> Element msg
@@ -1087,7 +1161,22 @@ update msg model =
         SaveConfig url apiKey ->
             let
                 validation =
-                    validateConfig url apiKey
+                    validateConfig url apiKey model.envBaseUrl model.envApiKey
+
+                -- Use env defaults if fields are empty
+                finalUrl =
+                    if String.isEmpty (String.trim url) then
+                        model.envBaseUrl
+
+                    else
+                        url
+
+                finalApiKey =
+                    if String.isEmpty (String.trim apiKey) then
+                        model.envApiKey
+
+                    else
+                        apiKey
             in
             case validation of
                 Just errorMsg ->
@@ -1096,15 +1185,15 @@ update msg model =
                 Nothing ->
                     ( { model
                         | configValidationMessage = Just "Saving configuration..."
-                        , configuredApiUrl = Just url
-                        , configuredApiKey = Just apiKey
-                        , baseUrl = url
-                        , apiKey = apiKey
-                        , immichApiPaths = getImmichApiPaths url apiKey
+                        , configuredApiUrl = Just finalUrl
+                        , configuredApiKey = Just finalApiKey
+                        , baseUrl = finalUrl
+                        , apiKey = finalApiKey
+                        , immichApiPaths = getImmichApiPaths finalUrl finalApiKey
                       }
                     , Cmd.batch
-                        [ saveToStorage ( "immichApiUrl", url )
-                        , saveToStorage ( "immichApiKey", apiKey )
+                        [ saveToStorage ( "immichApiUrl", finalUrl )
+                        , saveToStorage ( "immichApiKey", finalApiKey )
                         , Process.sleep 1000
                             |> Task.perform (always (ConfigLoaded "saveSuccess" (Just "✅ Configuration saved successfully!")))
                         ]
@@ -1172,11 +1261,35 @@ update msg model =
                     updatedModel.configuredApiKey
                         |> Maybe.withDefault model.apiKey
 
+                -- Check if credentials actually changed to determine if we need to reset albums
+                credentialsChanged =
+                    finalUrl /= model.baseUrl || finalApiKey /= model.apiKey
+
                 finalModel =
                     { updatedModel
                         | baseUrl = finalUrl
                         , apiKey = finalApiKey
                         , immichApiPaths = getImmichApiPaths finalUrl finalApiKey
+
+                        -- Clear albums if credentials changed to avoid mixing data from different accounts
+                        , knownAlbums =
+                            if credentialsChanged then
+                                Dict.empty
+
+                            else
+                                updatedModel.knownAlbums
+                        , albumKeybindings =
+                            if credentialsChanged then
+                                Dict.empty
+
+                            else
+                                updatedModel.albumKeybindings
+                        , albumsLoadState =
+                            if credentialsChanged then
+                                ImmichLoading
+
+                            else
+                                updatedModel.albumsLoadState
                     }
 
                 autoClearCmd =
@@ -1197,9 +1310,14 @@ update msg model =
             ( { model
                 | configuredApiUrl = Nothing
                 , configuredApiKey = Nothing
-                , settingsApiUrl = ""
-                , settingsApiKey = ""
+                , settingsApiUrl = model.envBaseUrl
+                , settingsApiKey = model.envApiKey
                 , configValidationMessage = Nothing
+
+                -- Clear albums when clearing config to avoid mixing data
+                , knownAlbums = Dict.empty
+                , albumKeybindings = Dict.empty
+                , albumsLoadState = ImmichLoading
               }
             , clearStorage ()
             )
@@ -1262,7 +1380,11 @@ update msg model =
                 in
                 case model.userMode of
                     MainMenu menuState ->
-                        handleMenuResult (updateMenus (MenuKeyPress effectiveKey) menuState model.knownAlbums model.immichApiPaths model.screenHeight) model
+                        if effectiveKey == "T" && not (isInInputMode model.userMode) then
+                            ( { model | theme = nextTheme model.theme }, Cmd.none )
+
+                        else
+                            handleMenuResult (updateMenus (MenuKeyPress effectiveKey) menuState model.knownAlbums model.immichApiPaths model.screenHeight) model
 
                     ViewAssets assetState ->
                         handleAssetResult (updateAsset (AssetKeyPress effectiveKey) assetState model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets model.knownAssets) model
@@ -2376,18 +2498,33 @@ appendFetchedAssets newAssets model =
 -- VALIDATION --
 
 
-validateConfig : String -> String -> Maybe String
-validateConfig url apiKey =
-    if String.isEmpty (String.trim url) then
-        Just "URL cannot be empty"
+validateConfig : String -> String -> String -> String -> Maybe String
+validateConfig url apiKey envUrl envApiKey =
+    let
+        finalUrl =
+            if String.isEmpty (String.trim url) then
+                envUrl
 
-    else if String.isEmpty (String.trim apiKey) then
-        Just "API key cannot be empty"
+            else
+                url
 
-    else if not (String.startsWith "http" url) then
+        finalApiKey =
+            if String.isEmpty (String.trim apiKey) then
+                envApiKey
+
+            else
+                apiKey
+    in
+    if String.isEmpty (String.trim finalUrl) then
+        Just "URL cannot be empty (no environment default available)"
+
+    else if String.isEmpty (String.trim finalApiKey) then
+        Just "API key cannot be empty (no environment default available)"
+
+    else if not (String.startsWith "http" finalUrl) then
         Just "URL must start with http:// or https://"
 
-    else if String.length apiKey < 10 then
+    else if String.length finalApiKey < 10 then
         Just "API key appears to be too short"
 
     else

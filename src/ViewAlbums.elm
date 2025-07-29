@@ -156,8 +156,8 @@ viewWithSidebar sidebarView viewToBeNextToSidebar =
 -- Main sidebar view
 
 
-viewSidebar : AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Maybe InputMode -> (ImmichAlbum -> msg) -> Element msg
-viewSidebar asset search albumKeybindings albums maybeInputMode selectAlbumMsg =
+viewSidebar : AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Maybe InputMode -> (ImmichAlbum -> msg) -> Element.Color -> Element.Color -> Element.Color -> Element msg
+viewSidebar asset search albumKeybindings albums maybeInputMode selectAlbumMsg keybindTextColor mutedTextColor highlightColor =
     column [ alignTop, height fill ]
         [ el [ alignTop ] <| text "Asset Changes"
         , if search.searchString /= "" then
@@ -193,16 +193,16 @@ viewSidebar asset search albumKeybindings albums maybeInputMode selectAlbumMsg =
         , row [ alignTop ]
             [ case asset.isFavourite of
                 ChangeToTrue ->
-                    el [ Font.color <| usefulColours "green" ] <| text "Fav"
+                    el [ Font.color <| usefulColours "green" ] <| text "♥"
 
                 ChangeToFalse ->
-                    el [ Font.color <| usefulColours "red" ] <| text "!Fav"
+                    el [ Font.color <| usefulColours "red" ] <| text "♡"
 
                 RemainTrue ->
-                    el [ Font.color <| usefulColours "grey" ] <| text "Fav"
+                    el [ Font.color <| usefulColours "grey" ] <| text "♥"
 
                 RemainFalse ->
-                    el [ Font.color <| usefulColours "grey" ] <| text "!Fav"
+                    el [ Font.color <| usefulColours "grey" ] <| text "♡"
             , case asset.isArchived of
                 ChangeToTrue ->
                     el [ Font.color <| usefulColours "red" ] <| text "Delete"
@@ -216,7 +216,7 @@ viewSidebar asset search albumKeybindings albums maybeInputMode selectAlbumMsg =
                 RemainFalse ->
                     el [ Font.color <| usefulColours "grey" ] <| text ""
             ]
-        , el [ height fill ] <| viewSidebarAlbumsForCurrentAsset asset search albumKeybindings albums maybeInputMode selectAlbumMsg
+        , el [ height fill ] <| viewSidebarAlbumsForCurrentAsset asset search albumKeybindings albums maybeInputMode selectAlbumMsg keybindTextColor mutedTextColor highlightColor
         ]
 
 
@@ -224,8 +224,8 @@ viewSidebar asset search albumKeybindings albums maybeInputMode selectAlbumMsg =
 -- Sidebar albums view for general album browsing
 
 
-viewSidebarAlbums : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> (ImmichAlbum -> msg) -> Element msg
-viewSidebarAlbums search albumKeybindings albums selectAlbumMsg =
+viewSidebarAlbums : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> (ImmichAlbum -> msg) -> Element.Color -> Element.Color -> Element.Color -> Element msg
+viewSidebarAlbums search albumKeybindings albums selectAlbumMsg keybindTextColor mutedTextColor highlightColor =
     let
         allFilteredAlbums =
             Dict.values <| filterToOnlySearchedForAlbums search albumKeybindings albums
@@ -273,7 +273,7 @@ viewSidebarAlbums search albumKeybindings albums selectAlbumMsg =
                         else
                             ""
                 in
-                [ el [ Font.size 12, Font.color <| Element.fromRgb { red = 0.5, green = 0.5, blue = 0.5, alpha = 1 } ] <|
+                [ el [ Font.size 12, Font.color <| mutedTextColor ] <|
                     text (pageInfo ++ remainingInfo)
                 ]
 
@@ -297,10 +297,7 @@ viewSidebarAlbums search albumKeybindings albums selectAlbumMsg =
                             else
                                 let
                                     normalColor =
-                                        usefulColours "black"
-
-                                    highlightColor =
-                                        Element.fromRgb { red = 0.8, green = 0.2, blue = 0.2, alpha = 1 }
+                                        keybindTextColor
 
                                     keybindingElements =
                                         if search.partialKeybinding /= "" && String.startsWith search.partialKeybinding keybinding then
@@ -336,8 +333,8 @@ viewSidebarAlbums search albumKeybindings albums selectAlbumMsg =
 -- Sidebar albums view for current asset editing
 
 
-viewSidebarAlbumsForCurrentAsset : AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Maybe InputMode -> (ImmichAlbum -> msg) -> Element msg
-viewSidebarAlbumsForCurrentAsset asset search albumKeybindings albums maybeInputMode selectAlbumMsg =
+viewSidebarAlbumsForCurrentAsset : AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Maybe InputMode -> (ImmichAlbum -> msg) -> Element.Color -> Element.Color -> Element.Color -> Element msg
+viewSidebarAlbumsForCurrentAsset asset search albumKeybindings albums maybeInputMode selectAlbumMsg keybindTextColor mutedTextColor highlightColor =
     let
         allFilteredAlbums =
             getFilteredAlbumsListForAsset search albumKeybindings albums asset
@@ -385,7 +382,7 @@ viewSidebarAlbumsForCurrentAsset asset search albumKeybindings albums maybeInput
                         else
                             ""
                 in
-                [ el [ Font.size 12, Font.color <| Element.fromRgb { red = 0.5, green = 0.5, blue = 0.5, alpha = 1 } ] <|
+                [ el [ Font.size 12, Font.color <| mutedTextColor ] <|
                     text (pageInfo ++ remainingInfo)
                 ]
 
@@ -437,10 +434,7 @@ viewSidebarAlbumsForCurrentAsset asset search albumKeybindings albums maybeInput
                             else
                                 let
                                     normalColor =
-                                        usefulColours "black"
-
-                                    highlightColor =
-                                        Element.fromRgb { red = 0.8, green = 0.2, blue = 0.2, alpha = 1 }
+                                        keybindTextColor
 
                                     keybindingElements =
                                         if search.partialKeybinding /= "" && String.startsWith search.partialKeybinding keybinding then
