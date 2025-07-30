@@ -18,14 +18,14 @@ module Menus exposing
 
 import Date
 import Dict exposing (Dict)
-import Element exposing (Element, centerX, centerY, column, el, fill, fillPortion, height, minimum, paddingXY, px, row, text, width)
+import Element exposing (Element, column, el, fill, fillPortion, height, minimum, paddingXY, px, row, text, width)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Font as Font
 import Element.Input as Input exposing (button)
 import HelpText exposing (AlbumBrowseState(..), ViewContext(..), viewContextHelp)
 import Helpers exposing (categorisationToString, mediaTypeToString, orderToString, statusToString)
-import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImmichAlbum, ImmichAsset, ImmichAssetId, ImmichLoadState(..), MediaTypeFilter(..), StatusFilter(..))
+import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImmichAlbum, ImmichAsset, ImmichAssetId, ImmichLoadState, MediaTypeFilter(..), StatusFilter(..))
 
 
 

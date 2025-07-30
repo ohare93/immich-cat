@@ -1825,6 +1825,10 @@ update msg model =
                             model
                                 |> handleFetchAssetMembership assetWithMembership
 
+                        Immich.AssetMembershipFetched (Err httpError) ->
+                            -- Asset membership fetch failed - log error and continue
+                            { model | reloadFeedback = Just ("Album membership fetch failed: " ++ Immich.errorToString httpError) }
+
                         Immich.AlbumFetchedWithClientSideFiltering order mediaType status (Ok album) ->
                             let
                                 -- Filter and sort album assets client-side since API doesn't respect orderBy with albumIds
@@ -2103,8 +2107,38 @@ handleFetchAssetMembership assetWithMembership model =
             let
                 newAsset =
                     { asset | albumMembership = assetWithMembership.albumIds }
+
+                updatedModel =
+                    { model | knownAssets = Dict.insert assetWithMembership.assetId newAsset model.knownAssets }
+
+                -- Check if we're currently viewing this asset and need to update the view state
+                currentAssetId =
+                    updatedModel.currentAssets
+                        |> List.drop updatedModel.imageIndex
+                        |> List.head
+
+                isCurrentlyViewingThisAsset =
+                    currentAssetId == Just assetWithMembership.assetId
+
+                finalModel =
+                    if isCurrentlyViewingThisAsset then
+                        case updatedModel.userMode of
+                            ViewAssets (EditAsset inputMode _ search) ->
+                                { updatedModel | userMode = ViewAssets (EditAsset inputMode (ViewAlbums.getAssetWithActions newAsset) search) }
+
+                            ViewAssets (CreateAlbumConfirmation inputMode _ search albumName) ->
+                                { updatedModel | userMode = ViewAssets (CreateAlbumConfirmation inputMode (ViewAlbums.getAssetWithActions newAsset) search albumName) }
+
+                            ViewAssets (ShowEditAssetHelp inputMode _ search) ->
+                                { updatedModel | userMode = ViewAssets (ShowEditAssetHelp inputMode (ViewAlbums.getAssetWithActions newAsset) search) }
+
+                            _ ->
+                                updatedModel
+
+                    else
+                        updatedModel
             in
-            Tuple.first <| switchToEditIfAssetFound { model | knownAssets = Dict.insert assetWithMembership.assetId newAsset model.knownAssets } model.imageIndex
+            finalModel
 
 
 handleFetchAssets : List ImmichAsset -> Model -> Model
@@ -2288,12 +2322,8 @@ handleUpdateLoadingState updateType model =
                 --     { loadState | fetchedAssetList = Just True }
                 updatedModel =
                     { model | userMode = LoadingAssets updatedLoadState }
-
-                -- Check if loading is complete and transition to ViewAssets
-                ( finalModel, _ ) =
-                    checkIfLoadingComplete updatedModel
             in
-            finalModel
+            updatedModel
 
         _ ->
             model
@@ -2319,8 +2349,7 @@ checkIfLoadingComplete model =
 
 isLoadStateCompleted : SourceLoadState -> Bool
 isLoadStateCompleted loadState =
-    isLoadCompletedForProp loadState.fetchedAssetMembership
-        && isLoadCompletedForProp loadState.fetchedAssetList
+    isLoadCompletedForProp loadState.fetchedAssetList
 
 
 isLoadCompletedForProp : Maybe Bool -> Bool
@@ -2383,11 +2412,7 @@ switchToEditIfAssetFound model index =
             (\asset ->
                 let
                     cmdToSend =
-                        -- if List.isEmpty asset.albumMembership then
                         Immich.fetchMembershipForAsset model.immichApiPaths asset.id |> Cmd.map ImmichMsg
-
-                    -- else
-                    --     Cmd.none
                 in
                 ( { model | imageIndex = index, userMode = ViewAssets (EditAsset NormalMode (ViewAlbums.getAssetWithActions asset) (ViewAlbums.getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight)) }, cmdToSend )
             )
