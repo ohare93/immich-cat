@@ -12,6 +12,20 @@ A keyboard-driven image categorization tool built with Elm that integrates with 
 - **Batch operations** - Bulk favorites, archiving, and album management
 - **Asset preloading** - Intelligent caching for smooth navigation
 
+## Demo
+
+See Immich Cat in action - this 1-minute demo shows the core workflow of efficiently categorizing photos with single-keypress album assignment:
+
+![Demo Video](assets/demo.mp4)
+
+**What you'll see in the demo:**
+
+- Loading albums from Immich and navigating through photos with vim-style keys
+- Album keybindings displayed on screen (like `a` for "Animals", `f` for "Family")
+- Single-keypress photo categorization - just press a letter to add the current photo to that album
+- Search mode for finding albums not shown on screen
+- The speed difference: traditional web interfaces require multiple clicks per photo, here it's one keypress per album
+
 ## Quick Start
 
 ### Docker (Recommended)
@@ -52,6 +66,8 @@ The app connects to your existing Immich server and loads all your albums and as
 
 **The key advantage:** In Immich's web interface, adding a photo to an album requires multiple clicks (select photo → add to album → search/select album → confirm). Here, it's **just one keypress** per album thanks to automatically generated keybindings.
 
+> 💡 **See it in action:** Watch the [demo above](#demo) to see exactly how this works!
+
 ## Usage
 
 ### Getting Started
@@ -61,6 +77,8 @@ The app connects to your existing Immich server and loads all your albums and as
 3. See your top albums with their auto-generated keybindings displayed on screen (like `a` for "Animals", `v` for "Vacation 2024")
 4. Navigate to any photo and press the album's key to instantly add it (e.g., press `a` to add current photo to "Animals")
 5. Press `?` anytime to see all available shortcuts
+
+> 📺 **New to the workflow?** Check out the [demo video](#demo) for a visual walkthrough!
 
 ### Quick Album Assignment (Main Feature)
 
@@ -106,14 +124,6 @@ Simply navigate to any photo and press the letter - **that's it!** No menus, no 
 
 > **Example:** With "Animals" = `a` visible on screen, just press `a` while viewing any photo to add it to Animals album. Use `I` only if you need an album that's not displayed.
 
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Submit a pull request
-
 ## License
 
 MIT License - see [LICENSE](LICENSE) file for details.
-
