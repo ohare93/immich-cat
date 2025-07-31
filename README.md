@@ -1,4 +1,4 @@
-# Image Categoriser
+# Immich Cat
 
 A keyboard-driven image categorization tool built with Elm that integrates with [Immich](https://immich.app/). Efficiently categorize and manage large photo collections with vim-style navigation.
 

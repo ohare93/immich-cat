@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This is an image categorization tool built with Elm that integrates with the Immich photo management system. It provides a keyboard-driven interface for efficiently categorizing and managing large photo collections.
+This is Immich Cat, an image categorization tool built with Elm that integrates with the Immich photo management system. It provides a keyboard-driven interface for efficiently categorizing and managing large photo collections.
 
 ## User Preferences
 
