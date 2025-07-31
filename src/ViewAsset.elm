@@ -502,7 +502,7 @@ viewLoadingAssets imagesLoadState =
             text "Loading images"
 
         ImmichLoadSuccess ->
-            text "Loaded. Should move states...."
+            text "Loading complete..."
 
         ImmichLoadError error ->
             let

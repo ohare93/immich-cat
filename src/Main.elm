@@ -1243,15 +1243,6 @@ update msg model =
                         _ ->
                             model
 
-                -- If we have both URL and API key configured, initialize Immich
-                shouldInitializeImmich =
-                    case ( updatedModel.configuredApiUrl, updatedModel.configuredApiKey ) of
-                        ( Just url, Just apiKey ) ->
-                            True
-
-                        _ ->
-                            False
-
                 -- Use configured values if available, otherwise fall back to flags
                 finalUrl =
                     updatedModel.configuredApiUrl
@@ -1260,6 +1251,10 @@ update msg model =
                 finalApiKey =
                     updatedModel.configuredApiKey
                         |> Maybe.withDefault model.apiKey
+
+                -- If we have both URL and API key configured, initialize Immich
+                shouldInitializeImmich =
+                    not (String.isEmpty finalUrl) && not (String.isEmpty finalApiKey)
 
                 -- Check if credentials actually changed to determine if we need to reset albums
                 credentialsChanged =
@@ -2034,7 +2029,12 @@ update msg model =
                             else
                                 Cmd.none
                     in
-                    ( modelWithLoadingState, nextPageCmd )
+                    if shouldFetchMore then
+                        ( modelWithLoadingState, nextPageCmd )
+
+                    else
+                        -- No more pages to fetch, check if loading is complete and transition if needed
+                        checkIfLoadingComplete modelWithLoadingState
 
                 Immich.MoreImagesFetched page (Ok paginatedResponse) ->
                     -- Auto-fetch next page if there are more assets
@@ -2085,7 +2085,12 @@ update msg model =
                             else
                                 Cmd.none
                     in
-                    ( modelWithLoadingState, nextPageCmd )
+                    if shouldFetchMore then
+                        ( modelWithLoadingState, nextPageCmd )
+
+                    else
+                        -- No more pages to fetch, check if loading is complete and transition if needed
+                        checkIfLoadingComplete modelWithLoadingState
 
                 Immich.PaginatedImagesFetched (Err _) ->
                     checkIfLoadingComplete newModel
