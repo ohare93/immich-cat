@@ -1254,7 +1254,18 @@ update msg model =
 
                 -- If we have both URL and API key configured, initialize Immich
                 shouldInitializeImmich =
-                    not (String.isEmpty finalUrl) && not (String.isEmpty finalApiKey)
+                    case ( updatedModel.configuredApiUrl, updatedModel.configuredApiKey ) of
+                        ( Just url, Just apiKey ) ->
+                            -- Both localStorage values loaded - use them
+                            True
+
+                        ( Nothing, Nothing ) ->
+                            -- Both localStorage values are empty - fall back to env variables if valid
+                            not (String.isEmpty finalUrl) && not (String.isEmpty finalApiKey)
+
+                        _ ->
+                            -- Only one localStorage value loaded - wait for the other one
+                            False
 
                 -- Check if credentials actually changed to determine if we need to reset albums
                 credentialsChanged =
