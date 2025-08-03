@@ -16,7 +16,9 @@ A keyboard-driven image categorization tool built with Elm that integrates with 
 
 See Immich Cat in action - this 1-minute demo shows the core workflow of efficiently categorizing photos with single-keypress album assignment:
 
-![Demo Video](assets/demo.mp4)
+<video src="assets/demo.mp4" controls width="100%">
+  <p>Your browser doesn't support HTML video. <a href="assets/demo.mp4">Download the demo video</a> instead.</p>
+</video>
 
 **What you'll see in the demo:**
 
