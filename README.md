@@ -60,6 +60,20 @@ IMMICH_API_KEY=your_immich_api_key_here
 
 Get your API key from Immich web interface → Account Settings → API Keys.
 
+### CORS Configuration
+
+To allow this webapp to access your Immich server's API, you need to configure CORS (Cross-Origin Resource Sharing) settings. If you're running Immich behind Traefik, add these middleware labels to your Immich service:
+
+```yaml
+- traefik.http.routers.immich.middlewares=immich-cors
+- traefik.http.middlewares.immich-cors.headers.accessControlAllowOriginList=http://localhost:8000
+- traefik.http.middlewares.immich-cors.headers.accessControlAllowMethods=GET, PUT, POST, DELETE, OPTIONS
+- traefik.http.middlewares.immich-cors.headers.accessControlAllowHeaders=X-Api-Key, User-Agent, Content-Type
+- traefik.http.middlewares.immich-cors.headers.accessControlMaxAge=1728000
+```
+
+> **Note**: Adjust `http://localhost:8000` to match where you're hosting this webapp. For other reverse proxy setups, configure equivalent CORS headers to allow requests from your webapp's domain.
+
 ## How it Works
 
 The app connects to your existing Immich server and loads all your albums and assets. You don't need to recreate anything - it works with your current photo organization.
