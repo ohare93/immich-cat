@@ -1779,7 +1779,7 @@ update msg model =
                     case imsg of
                         Immich.SingleAlbumFetched (Ok album) ->
                             model
-                                |> handleFetchAlbums [ album ]
+                                |> handleFetchAlbums False [ album ]
                                 |> handleFetchAssets album.assets
                                 -- |> handleProgressLoadingState FetchedAlbums
                                 |> handleUpdateLoadingState FetchedAssetList
@@ -1787,7 +1787,7 @@ update msg model =
                         Immich.AlbumsFetched (Ok albums) ->
                             let
                                 updatedModel =
-                                    model |> handleFetchAlbums albums
+                                    model |> handleFetchAlbums True albums
                             in
                             updatedModel
 
@@ -1795,7 +1795,7 @@ update msg model =
                             let
                                 updatedModel =
                                     model
-                                        |> handleFetchAlbums [ album ]
+                                        |> handleFetchAlbums False [ album ]
                             in
                             updatedModel
 
@@ -1869,7 +1869,7 @@ update msg model =
 
                                     else
                                         model
-                                            |> handleFetchAlbums [ album ]
+                                            |> handleFetchAlbums False [ album ]
                                             |> handleFetchAssets filteredAssets
                                             |> handleUpdateLoadingState FetchedAssetList
                             in
@@ -2281,8 +2281,8 @@ applySortingToAssets order assets =
 -- All keybinding functions are now imported from KeybindingGenerator module
 
 
-handleFetchAlbums : List ImmichAlbum -> Model -> Model
-handleFetchAlbums albums model =
+handleFetchAlbums : Bool -> List ImmichAlbum -> Model -> Model
+handleFetchAlbums showReloadFeedback albums model =
     let
         updatedKnownAlbums =
             Helpers.listOverrideDict albums (\a -> ( a.id, a )) model.knownAlbums
@@ -2300,19 +2300,23 @@ handleFetchAlbums albums model =
             Dict.isEmpty model.knownAlbums
 
         feedbackMessage =
-            if albumCount > 0 then
-                let
-                    actionText =
-                        if isFirstLoad then
-                            "Loaded"
+            if showReloadFeedback then
+                if albumCount > 0 then
+                    let
+                        actionText =
+                            if isFirstLoad then
+                                "Loaded"
 
-                        else
-                            "Reloaded"
-                in
-                Just (actionText ++ " " ++ String.fromInt albumCount ++ " albums")
+                            else
+                                "Reloaded"
+                    in
+                    Just (actionText ++ " " ++ String.fromInt albumCount ++ " albums")
+
+                else
+                    Just "No albums found"
 
             else
-                Just "No albums found"
+                model.reloadFeedback
     in
     { model
         | knownAlbums = updatedKnownAlbums
