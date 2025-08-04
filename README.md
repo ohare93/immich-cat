@@ -28,25 +28,58 @@ https://github.com/user-attachments/assets/99238b3a-b2aa-4b6e-ac43-89fb06f3976b
 
 ## Quick Start
 
-### Docker (Recommended)
+### 🚀 Docker (Fastest - Recommended)
+
+**Pull and run the latest published image:**
 
 ```bash
-cp .env.example .env
-# Edit .env with your Immich server details
-docker-compose up
+# Create environment file
+cat > .env << EOF
+IMMICH_URL=https://your-immich-server.com
+IMMICH_API_KEY=your_immich_api_key_here
+EOF
+
+# Run the application
+docker run -p 8000:8000 --env-file .env ghcr.io/ohare93/immich-cat:latest
 ```
+
+**Or with docker-compose:**
+
+```yaml
+# docker-compose.yml
+version: "3.8"
+services:
+  immich-cat:
+    image: ghcr.io/ohare93/immich-cat:latest
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+```
+
+Then run: `docker-compose up`
 
 Open `http://localhost:8000` in your browser.
 
-> **Note**: Docker images can be pulled from GitHub Container Registry for easier deployment.
+### 🛠️ Development Setup
 
-### Devbox (For Development)
+**For local development or building from source:**
 
 ```bash
+# Clone the repository
+git clone https://github.com/your-username/immich-cat.git
+cd immich-cat
+
+# Set up environment
 cp .env.example .env
 # Edit .env with your Immich server details
+
+# Option 1: Using devbox (recommended for development)
 devbox shell
 npm run dev
+
+# Option 2: Using Docker Compose (build locally)
+docker-compose up --build
 ```
 
 ## Configuration
