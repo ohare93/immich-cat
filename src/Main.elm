@@ -2299,7 +2299,7 @@ update msg model =
                             newLoadedAssets >= modelWithClearedLoading.paginationState.maxAssetsToFetch
 
                         shouldFetchMore =
-                            paginatedResponse.hasNextPage && not reachedLimit
+                            paginatedResponse.hasNextPage && not reachedLimit && modelWithClearedLoading.paginationState.currentQuery == Nothing
 
                         modelWithLoadingState =
                             if shouldFetchMore then
@@ -2355,7 +2355,7 @@ update msg model =
                             newLoadedAssets >= modelWithClearedLoading.paginationState.maxAssetsToFetch
 
                         shouldFetchMore =
-                            paginatedResponse.hasNextPage && not reachedLimit
+                            paginatedResponse.hasNextPage && not reachedLimit && modelWithClearedLoading.paginationState.currentQuery == Nothing
 
                         modelWithLoadingState =
                             if shouldFetchMore then
@@ -2783,7 +2783,7 @@ updatePaginationState paginatedResponse page model =
             newLoadedAssets >= model.paginationState.maxAssetsToFetch
 
         hasMoreToLoad =
-            paginatedResponse.hasNextPage && not reachedLimit
+            paginatedResponse.hasNextPage && not reachedLimit && model.paginationState.currentQuery == Nothing
     in
     { model
         | paginationState =
