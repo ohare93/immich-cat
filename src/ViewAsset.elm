@@ -612,6 +612,7 @@ viewVideoConfirm apiPaths apiKey asset duration =
         , el [ Font.size 14, centerX, paddingXY 0 10 ] (text "This video is longer than 5 minutes and may take time to load.")
         , column [ Element.spacingXY 0 8, centerX ]
             [ viewKeybinding "L" "Load video"
+            , viewKeybinding "K" "Open in Immich (new tab)"
             , viewKeybinding "Escape" "Cancel and return to previous view"
             , viewKeybinding "← / →" "Navigate to previous/next asset"
             ]
