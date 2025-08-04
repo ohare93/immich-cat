@@ -2,6 +2,8 @@
 
 A keyboard-driven image categorization tool built with Elm that integrates with [Immich](https://immich.app/). Efficiently categorize and manage large photo collections with vim-style navigation.
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/S6S81LJQ7)
+
 ## Features
 
 - **Keyboard-driven interface** - Vim-style navigation and shortcuts
