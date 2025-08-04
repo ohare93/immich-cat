@@ -116,6 +116,12 @@ type alias Model =
     , timeViewMode : TimeViewMode
     , reloadFeedback : Maybe String
     , controlPressed : Bool
+    , altPressed : Bool
+
+    -- Navigation history (stack + current + queue model)
+    , navigationBackStack : List NavigationHistoryEntry
+    , currentNavigationState : Maybe NavigationHistoryEntry
+    , navigationForwardQueue : List NavigationHistoryEntry
 
     -- Configuration fields
     , configuredApiUrl : Maybe String
@@ -183,6 +189,15 @@ type UserMode
     = MainMenu MenuState
     | ViewAssets AssetState
     | LoadingAssets SourceLoadState
+
+
+type alias NavigationHistoryEntry =
+    { userMode : UserMode
+    , currentAssetsSource : AssetSource
+    , currentAssets : List ImmichAssetId
+    , imageIndex : ImageIndex
+    , paginationState : PaginationState
+    }
 
 
 type alias ImageIndex =
@@ -315,6 +330,12 @@ init flags =
       , timeViewMode = Absolute
       , reloadFeedback = Nothing
       , controlPressed = False
+      , altPressed = False
+
+      -- Navigation history (stack + current + queue model)
+      , navigationBackStack = []
+      , currentNavigationState = Nothing
+      , navigationForwardQueue = []
 
       -- Configuration fields
       , configuredApiUrl = Nothing
@@ -473,6 +494,163 @@ createDetailedViewTitle assetSource =
 
         NoAssets ->
             ""
+
+
+
+-- NAVIGATION HISTORY HELPERS --
+
+
+recordNavigationState : UserMode -> Model -> Model
+recordNavigationState newMode model =
+    case newMode of
+        ViewAssets _ ->
+            -- When entering ViewAssets, just clear forward queue (vim-style branching)
+            -- Don't add to back stack - that should only happen when LEAVING ViewAssets
+            { model | navigationForwardQueue = [] }
+
+        _ ->
+            -- Don't record MainMenu, LoadingAssets, etc.
+            model
+
+
+
+-- Helper to set current navigation state after model is updated
+
+
+setCurrentNavigationState : Model -> Model
+setCurrentNavigationState model =
+    case model.userMode of
+        ViewAssets _ ->
+            let
+                currentEntry =
+                    { userMode = model.userMode
+                    , currentAssetsSource = model.currentAssetsSource
+                    , currentAssets = model.currentAssets
+                    , imageIndex = model.imageIndex
+                    , paginationState = model.paginationState
+                    }
+            in
+            { model | currentNavigationState = Just currentEntry }
+
+        _ ->
+            model
+
+
+updateCurrentHistoryEntry : Model -> Model
+updateCurrentHistoryEntry model =
+    -- Update the current navigation state with the latest imageIndex and state
+    -- Used when user navigates between assets in the same view
+    let
+        updatedCurrentState =
+            case model.currentNavigationState of
+                Just currentEntry ->
+                    Just
+                        { currentEntry
+                            | imageIndex = model.imageIndex
+                            , currentAssets = model.currentAssets
+                            , currentAssetsSource = model.currentAssetsSource
+                            , paginationState = model.paginationState
+                        }
+
+                Nothing ->
+                    -- Create new current state if none exists
+                    Just
+                        { userMode = model.userMode
+                        , currentAssetsSource = model.currentAssetsSource
+                        , currentAssets = model.currentAssets
+                        , imageIndex = model.imageIndex
+                        , paginationState = model.paginationState
+                        }
+    in
+    { model | currentNavigationState = updatedCurrentState }
+
+
+navigateHistoryBack : Model -> ( Model, Cmd Msg )
+navigateHistoryBack model =
+    case model.navigationBackStack of
+        previousEntry :: remainingBackStack ->
+            -- Pop from back stack, push current to forward queue
+            let
+                newForwardQueue =
+                    case model.currentNavigationState of
+                        Just currentEntry ->
+                            currentEntry :: model.navigationForwardQueue
+
+                        Nothing ->
+                            model.navigationForwardQueue
+
+                -- Restore the complete state
+                restoredModel =
+                    { model
+                        | userMode = previousEntry.userMode
+                        , currentAssetsSource = previousEntry.currentAssetsSource
+                        , currentAssets = previousEntry.currentAssets
+                        , imageIndex = previousEntry.imageIndex
+                        , paginationState = previousEntry.paginationState
+                        , navigationBackStack = remainingBackStack
+                        , currentNavigationState = Just previousEntry
+                        , navigationForwardQueue = newForwardQueue
+                    }
+
+                -- If restoring to ViewAssets, ensure the UI shows the correct asset
+                finalResult =
+                    case previousEntry.userMode of
+                        ViewAssets _ ->
+                            -- Trigger proper asset loading and UI refresh
+                            switchToAssetWithoutHistory restoredModel previousEntry.imageIndex
+
+                        _ ->
+                            ( restoredModel, Cmd.none )
+            in
+            finalResult
+
+        [] ->
+            -- No history to go back to
+            ( model, Cmd.none )
+
+
+navigateHistoryForward : Model -> ( Model, Cmd Msg )
+navigateHistoryForward model =
+    case model.navigationForwardQueue of
+        nextEntry :: remainingForwardQueue ->
+            -- Pop from forward queue, push current to back stack
+            let
+                newBackStack =
+                    case model.currentNavigationState of
+                        Just currentEntry ->
+                            currentEntry :: model.navigationBackStack
+
+                        Nothing ->
+                            model.navigationBackStack
+
+                -- Restore the complete state
+                restoredModel =
+                    { model
+                        | userMode = nextEntry.userMode
+                        , currentAssetsSource = nextEntry.currentAssetsSource
+                        , currentAssets = nextEntry.currentAssets
+                        , imageIndex = nextEntry.imageIndex
+                        , paginationState = nextEntry.paginationState
+                        , navigationBackStack = newBackStack
+                        , currentNavigationState = Just nextEntry
+                        , navigationForwardQueue = remainingForwardQueue
+                    }
+
+                -- If restoring to ViewAssets, ensure the UI shows the correct asset
+                finalResult =
+                    case nextEntry.userMode of
+                        ViewAssets _ ->
+                            -- Trigger proper asset loading and UI refresh
+                            switchToAssetWithoutHistory restoredModel nextEntry.imageIndex
+
+                        _ ->
+                            ( restoredModel, Cmd.none )
+            in
+            finalResult
+
+        [] ->
+            -- No forward history available
+            ( model, Cmd.none )
 
 
 view : Model -> Html Msg
@@ -845,10 +1023,53 @@ handleAssetResult : AssetResult msg -> Model -> ( Model, Cmd Msg )
 handleAssetResult assetResult model =
     case assetResult of
         StayInAssets newAssetState ->
-            ( { model | userMode = ViewAssets newAssetState }, Cmd.none )
+            let
+                newUserMode =
+                    ViewAssets newAssetState
+
+                -- Record navigation state when transitioning to ViewAssets
+                updatedModel =
+                    { model | userMode = newUserMode }
+                        |> recordNavigationState newUserMode
+                        |> setCurrentNavigationState
+            in
+            ( updatedModel, Cmd.none )
 
         GoToMainMenu ->
-            ( { model | userMode = MainMenu MainMenuHome }, Cmd.none )
+            -- Save current ViewAssets state before going to MainMenu
+            let
+                updatedModel =
+                    case model.userMode of
+                        ViewAssets _ ->
+                            -- Save current ViewAssets state to back stack so we can return to it
+                            let
+                                currentEntry =
+                                    { userMode = model.userMode
+                                    , currentAssetsSource = model.currentAssetsSource
+                                    , currentAssets = model.currentAssets
+                                    , imageIndex = model.imageIndex
+                                    , paginationState = model.paginationState
+                                    }
+
+                                updatedBackStack =
+                                    case model.currentNavigationState of
+                                        Just existing ->
+                                            -- Push existing current state to back stack
+                                            List.take 19 (existing :: model.navigationBackStack)
+
+                                        Nothing ->
+                                            model.navigationBackStack
+                            in
+                            { model
+                                | navigationBackStack = updatedBackStack
+                                , currentNavigationState = Just currentEntry
+                                , navigationForwardQueue = [] -- Clear forward queue
+                            }
+
+                        _ ->
+                            model
+            in
+            ( { updatedModel | userMode = MainMenu MainMenuHome }, Cmd.none )
 
         GoToSearchView query ->
             ( { model | userMode = MainMenu (SearchView { defaultSearchConfig | query = query }) }, Cmd.none )
@@ -880,7 +1101,9 @@ handleAssetResult assetResult model =
             ( loadModel, loadCmd )
 
         AssetSwitchToAssetIndex newIndex ->
-            switchToEditIfAssetFound model newIndex
+            -- Update current history entry and switch to asset index
+            -- This is asset navigation within the same view, not a new navigation
+            switchToAssetWithoutHistory model newIndex
 
         AssetToggleFavorite ->
             -- Handle favorite toggle
@@ -1040,8 +1263,17 @@ handleAssetResult assetResult model =
 
                 gridState =
                     ViewGrid.initGridState screenWidth model.screenHeight
+
+                newUserMode =
+                    ViewAssets (GridView gridState)
+
+                -- Record navigation state when transitioning to ViewAssets
+                updatedModel =
+                    { model | userMode = newUserMode }
+                        |> recordNavigationState newUserMode
+                        |> setCurrentNavigationState
             in
-            ( { model | userMode = ViewAssets (GridView gridState) }, Cmd.none )
+            ( updatedModel, Cmd.none )
 
         AssetSwitchToDetailView assetId ->
             -- Switch to detail view for specific asset
@@ -1374,45 +1606,100 @@ update msg model =
                 -- Control key pressed - just track state, don't pass to handlers
                 ( { model | controlPressed = True }, Cmd.none )
 
+            else if key == "Alt" then
+                -- Alt key pressed - just track state, don't pass to handlers
+                ( { model | altPressed = True }, Cmd.none )
+
             else
                 let
-                    -- If Control is pressed, prefix the key with "Control+"
+                    -- If Control or Alt is pressed, prefix the key appropriately
                     effectiveKey =
                         if model.controlPressed then
                             "Control+" ++ key
 
+                        else if model.altPressed then
+                            "Alt+" ++ key
+
                         else
                             key
                 in
-                case model.userMode of
-                    MainMenu menuState ->
-                        if effectiveKey == "T" && not (isInInputMode model.userMode) then
-                            ( { model | theme = nextTheme model.theme }, Cmd.none )
+                -- Handle navigation keys at top level (work in all views)
+                case effectiveKey of
+                    "Alt+o" ->
+                        navigateHistoryBack model
 
-                        else
-                            handleMenuResult (updateMenus (MenuKeyPress effectiveKey) menuState model.knownAlbums model.immichApiPaths model.screenHeight) model
+                    "Alt+i" ->
+                        navigateHistoryForward model
 
-                    ViewAssets assetState ->
-                        handleAssetResult (updateAsset (AssetKeyPress effectiveKey) assetState model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets model.knownAssets) model
+                    _ ->
+                        case model.userMode of
+                            MainMenu menuState ->
+                                if effectiveKey == "T" && not (isInInputMode model.userMode) then
+                                    ( { model | theme = nextTheme model.theme }, Cmd.none )
 
-                    LoadingAssets _ ->
-                        case effectiveKey of
-                            "Escape" ->
-                                ( { model | userMode = MainMenu MainMenuHome }, Cmd.none )
+                                else
+                                    handleMenuResult (updateMenus (MenuKeyPress effectiveKey) menuState model.knownAlbums model.immichApiPaths model.screenHeight) model
 
-                            "g" ->
-                                ( { model | userMode = MainMenu Settings }, Cmd.none )
+                            ViewAssets assetState ->
+                                handleAssetResult (updateAsset (AssetKeyPress effectiveKey) assetState model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets model.knownAssets) model
 
-                            "T" ->
-                                ( { model | theme = nextTheme model.theme }, Cmd.none )
+                            LoadingAssets _ ->
+                                case effectiveKey of
+                                    "Escape" ->
+                                        -- Save current state if transitioning from ViewAssets context
+                                        let
+                                            updatedModel =
+                                                case model.currentAssetsSource of
+                                                    NoAssets ->
+                                                        model
 
-                            _ ->
-                                ( model, Cmd.none )
+                                                    _ ->
+                                                        -- We have asset context, save it
+                                                        let
+                                                            currentEntry =
+                                                                { userMode = model.userMode
+                                                                , currentAssetsSource = model.currentAssetsSource
+                                                                , currentAssets = model.currentAssets
+                                                                , imageIndex = model.imageIndex
+                                                                , paginationState = model.paginationState
+                                                                }
+
+                                                            updatedBackStack =
+                                                                case model.currentNavigationState of
+                                                                    Just existing ->
+                                                                        List.take 19 (existing :: model.navigationBackStack)
+
+                                                                    Nothing ->
+                                                                        model.navigationBackStack
+
+                                                            newCurrentState =
+                                                                Just currentEntry
+                                                        in
+                                                        { model
+                                                            | navigationBackStack = updatedBackStack
+                                                            , currentNavigationState = newCurrentState
+                                                            , navigationForwardQueue = []
+                                                        }
+                                        in
+                                        ( { updatedModel | userMode = MainMenu MainMenuHome }, Cmd.none )
+
+                                    "g" ->
+                                        ( { model | userMode = MainMenu Settings }, Cmd.none )
+
+                                    "T" ->
+                                        ( { model | theme = nextTheme model.theme }, Cmd.none )
+
+                                    _ ->
+                                        ( model, Cmd.none )
 
         KeyRelease key ->
             if key == "Control" then
                 -- Control key released - clear state
                 ( { model | controlPressed = False }, Cmd.none )
+
+            else if key == "Alt" then
+                -- Alt key released - clear state
+                ( { model | altPressed = False }, Cmd.none )
 
             else
                 -- Ignore other key releases
@@ -2431,12 +2718,46 @@ switchToEditIfAssetFound model index =
         |> Maybe.map
             (\asset ->
                 let
+                    newViewAssetsMode =
+                        ViewAssets (EditAsset NormalMode (ViewAlbums.getAssetWithActions asset) (ViewAlbums.getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight))
+
+                    -- Record navigation state when transitioning to ViewAssets
+                    updatedModel =
+                        { model | imageIndex = index, userMode = newViewAssetsMode }
+                            |> recordNavigationState newViewAssetsMode
+                            |> setCurrentNavigationState
+
                     cmdToSend =
                         Immich.fetchMembershipForAsset model.immichApiPaths asset.id |> Cmd.map ImmichMsg
                 in
-                ( { model | imageIndex = index, userMode = ViewAssets (EditAsset NormalMode (ViewAlbums.getAssetWithActions asset) (ViewAlbums.getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight)) }, cmdToSend )
+                ( updatedModel, cmdToSend )
             )
         |> Maybe.withDefault ( createLoadStateForCurrentAssetSource model.currentAssetsSource model, Cmd.none )
+
+
+switchToAssetWithoutHistory : Model -> ImageIndex -> ( Model, Cmd Msg )
+switchToAssetWithoutHistory model index =
+    -- Switch to asset without creating new history entry (for navigation within same view)
+    model.currentAssets
+        |> List.drop index
+        |> List.head
+        |> Maybe.andThen (\id -> Dict.get id model.knownAssets)
+        |> Maybe.map
+            (\asset ->
+                let
+                    newViewAssetsMode =
+                        ViewAssets (EditAsset NormalMode (ViewAlbums.getAssetWithActions asset) (ViewAlbums.getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight))
+
+                    -- Update current history entry with new index, don't create new entry
+                    updatedModel =
+                        updateCurrentHistoryEntry { model | imageIndex = index, userMode = newViewAssetsMode }
+
+                    cmdToSend =
+                        Immich.fetchMembershipForAsset model.immichApiPaths asset.id |> Cmd.map ImmichMsg
+                in
+                ( updatedModel, cmdToSend )
+            )
+        |> Maybe.withDefault ( model, Cmd.none )
 
 
 getCurrentAssetWithActions : Model -> Maybe ( AssetWithActions, AlbumSearch )
