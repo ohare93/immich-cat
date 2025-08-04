@@ -13,8 +13,24 @@ COPY --chown=${DEVBOX_USER}:${DEVBOX_USER} package.json package-lock.json ./
 COPY --chown=${DEVBOX_USER}:${DEVBOX_USER} devbox.json devbox.json
 COPY --chown=${DEVBOX_USER}:${DEVBOX_USER} devbox.lock devbox.lock
 
-# Install devbox packages and npm dependencies
-RUN devbox run -- echo "Packages installed" && nix-store --gc
+# Install devbox packages with platform-specific handling
+RUN set -e && \
+    echo "Building for platform: $(uname -m)" && \
+    if [ "$(uname -m)" = "aarch64" ]; then \
+        echo "ARM64 detected - using alternative installation method"; \
+        export DEVBOX_NO_PROMPT=true; \
+        devbox install --quiet; \
+    else \
+        echo "x86_64 detected - using standard installation"; \
+        devbox install; \
+    fi && \
+    echo "Testing devbox environment..." && \
+    devbox run -- elm --version && \
+    devbox run -- node --version && \
+    echo "Installing npm dependencies..." && \
+    devbox run -- npm ci --only=production && \
+    echo "Cleaning up..." && \
+    nix-store --gc || echo "GC cleanup skipped"
 
 # Copy source code
 COPY --chown=${DEVBOX_USER}:${DEVBOX_USER} src/ src/
