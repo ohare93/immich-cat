@@ -69,7 +69,7 @@ Open `http://localhost:8000` in your browser.
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/immich-cat.git
+git clone https://github.com/ohare93/immich-cat.git
 cd immich-cat
 
 # Set up environment
@@ -150,26 +150,47 @@ Simply navigate to any photo and press the letter - **that's it!** No menus, no 
 
 #### Navigation
 
-- `h/j/k/l` - Move left/down/up/right (vim-style)
-- `g/G` - Jump to first/last item
-- `Ctrl+u/d` - Page up/down
-- `Ctrl+f/b` - Full page forward/back
+- `←/→` (Arrow Keys) - Previous/next asset
+- `Backspace` - Previous asset
+- `Space/Enter` - Next asset
+- `Home/End` - Jump to first/last asset (Grid view only)
+- `Esc` - Return to normal mode/main menu
 
-#### Asset Management
+#### Asset Actions
 
 - `F` - Toggle favorite status
 - `D` - Toggle archive/delete
+- `Y` - Copy image to clipboard
 - `K` - Open current asset in Immich web interface
-- `Y` - Copy asset information
-- `R` - Reload albums from server
+- `L` - Load/toggle video (for long videos)
 
-#### Album Operations
+#### Album Management
 
 - `a-z` (displayed on screen) - **Instantly add current photo to specific album**
 - `I` - Search for albums not visible on screen, or create new albums
-- `i` - Insert mode for text input
-- `Esc` - Return to normal mode
+- `R` - Reload albums from server
+
+#### View Controls
+
+- `G` - Switch to grid view
+- `S` - Toggle scroll view (for viewing large images)
+- `T` - Toggle time view (Absolute/Relative)
 - `?` - Show help with all current keybindings
+
+#### Scroll View Mode (Large Images)
+
+- `h/j/k/l` - Scroll left/down/up/right (vim-style)
+- `PageUp/PageDown` - Scroll full page up/down
+- `Ctrl+u/d` - Scroll half page up/down
+- `Ctrl+f/b` - Scroll full page up/down
+
+#### Album/Search Navigation
+
+- `PageUp/PageDown` - Page through album/search results
+- `Ctrl+u/d` - Half page up/down through results
+- `Ctrl+f/b` - Full page forward/back through results
+
+> **Note:** `Ctrl+u/d/f/b` keys work differently depending on mode: for scrolling images in Scroll View Mode, or for navigating through album/search results in other contexts.
 
 > **Example:** With "Animals" = `a` visible on screen, just press `a` while viewing any photo to add it to Animals album. Use `I` only if you need an album that's not displayed.
 

@@ -214,10 +214,10 @@ viewAssetViewHelp inputMode =
         [ el [ Font.size 18, Font.bold ] (text "Asset Navigation Help")
         , column [ Element.spacingXY 0 8 ]
             [ el [ Font.size 16, Font.bold ] (text "Navigation")
-            , viewKeybinding "←" "Previous asset"
-            , viewKeybinding "→" "Next asset"
-            , viewKeybinding "Space" "Next asset"
-            , viewKeybinding "Enter" "Next asset"
+            , viewKeybinding "←/→" "Previous/next asset"
+            , viewKeybinding "Backspace" "Previous asset"
+            , viewKeybinding "Space/Enter" "Next asset"
+            , viewKeybinding "Home/End" "First/last asset (Grid view)"
             , viewKeybinding "Escape" "Return to main menu"
             ]
         , column [ Element.spacingXY 0 8 ]
@@ -225,7 +225,8 @@ viewAssetViewHelp inputMode =
             , viewKeybinding "D" "Toggle delete/archive"
             , viewKeybinding "F" "Toggle favorite"
             , viewKeybinding "K" "Open in Immich (new tab)"
-            , viewKeybinding "Y" "Yank (copy to clipboard)"
+            , viewKeybinding "Y" "Copy image to clipboard"
+            , viewKeybinding "L" "Load/toggle video (for long videos)"
             , viewKeybinding "I" "Enter album search mode"
             , viewKeybinding "R" "Reload albums from server"
             , viewKeybinding "T" "Toggle time view (Absolute/Relative)"
@@ -239,7 +240,7 @@ viewAssetViewHelp inputMode =
                 , viewKeybinding "Type" "Search albums by name"
                 , viewKeybinding "↑↓" "Navigate through results"
                 , viewKeybinding "Enter" "Add to highlighted album"
-                , viewKeybinding "Tab" "Create new album"
+                , viewKeybinding "PageUp/PageDown" "Page through results"
                 , viewKeybinding "Click" "Click album to add"
                 , viewKeybinding "Escape" "Exit search mode"
                 ]
