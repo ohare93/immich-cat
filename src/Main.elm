@@ -1,7 +1,7 @@
 port module Main exposing (main)
 
 import Browser exposing (element)
-import Browser.Events exposing (onKeyDown, onKeyUp, onResize)
+import Browser.Events exposing (onKeyDown, onKeyUp, onResize, onVisibilityChange)
 import Date
 import Dict exposing (Dict)
 import Element exposing (Element, alignRight, alignTop, clipY, column, el, fill, fillPortion, height, minimum, paddingXY, px, row, text, width)
@@ -46,9 +46,12 @@ port storageLoaded : (( String, Maybe String ) -> msg) -> Sub msg
 port yankAssetToClipboard : String -> Cmd msg
 
 
+
+
 type Msg
     = KeyPress String
     | KeyRelease String
+    | VisibilityChanged Browser.Events.Visibility
     | ImmichMsg Immich.Msg
     | LoadDataAgain
     | ClearReloadFeedback
@@ -1602,7 +1605,57 @@ update msg model =
                     ( model, Cmd.none )
 
         KeyPress key ->
-            if key == "Control" then
+            -- Always reset modifier states on ANY Escape press (even Alt+Escape)
+            if key == "Escape" then
+                let
+                    resetModel =
+                        { model | controlPressed = False, altPressed = False }
+                in
+                -- Continue with normal Escape processing using reset model
+                case resetModel.userMode of
+                    MainMenu menuState ->
+                        handleMenuResult (updateMenus (MenuKeyPress "Escape") menuState resetModel.knownAlbums resetModel.immichApiPaths resetModel.screenHeight) resetModel
+
+                    ViewAssets assetState ->
+                        handleAssetResult (updateAsset (AssetKeyPress "Escape") assetState resetModel.albumKeybindings resetModel.knownAlbums resetModel.screenHeight resetModel.currentAssets resetModel.knownAssets) resetModel
+
+                    LoadingAssets _ ->
+                        -- Save current state if transitioning from ViewAssets context
+                        let
+                            updatedModel =
+                                case resetModel.currentAssetsSource of
+                                    NoAssets ->
+                                        resetModel
+
+                                    _ ->
+                                        -- We have asset context, save it
+                                        let
+                                            currentEntry =
+                                                { userMode = resetModel.userMode
+                                                , currentAssetsSource = resetModel.currentAssetsSource
+                                                , currentAssets = resetModel.currentAssets
+                                                , imageIndex = resetModel.imageIndex
+                                                , paginationState = resetModel.paginationState
+                                                }
+
+                                            updatedBackStack =
+                                                case resetModel.currentNavigationState of
+                                                    Just existing ->
+                                                        -- Push existing current state to back stack
+                                                        List.take 19 (existing :: resetModel.navigationBackStack)
+
+                                                    Nothing ->
+                                                        resetModel.navigationBackStack
+                                        in
+                                        { resetModel
+                                            | navigationBackStack = updatedBackStack
+                                            , currentNavigationState = Just currentEntry
+                                            , navigationForwardQueue = [] -- Clear forward queue
+                                        }
+                        in
+                        ( { updatedModel | userMode = MainMenu MainMenuHome }, Cmd.none )
+
+            else if key == "Control" then
                 -- Control key pressed - just track state, don't pass to handlers
                 ( { model | controlPressed = True }, Cmd.none )
 
@@ -1704,6 +1757,10 @@ update msg model =
             else
                 -- Ignore other key releases
                 ( model, Cmd.none )
+
+        VisibilityChanged visibility ->
+            -- Reset modifier states when window visibility changes (handles Alt+Tab, etc.)
+            ( { model | controlPressed = False, altPressed = False }, Cmd.none )
 
         WindowResize width height ->
             let
@@ -2907,6 +2964,7 @@ subscriptions _ =
         [ onKeyDown (Decode.map KeyPress (Decode.field "key" Decode.string))
         , onKeyUp (Decode.map KeyRelease (Decode.field "key" Decode.string))
         , onResize WindowResize
+        , onVisibilityChange VisibilityChanged
         , storageLoaded (\( key, value ) -> ConfigLoaded key value)
         ]
 
