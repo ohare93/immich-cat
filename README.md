@@ -63,6 +63,39 @@ Then run: `docker-compose up`
 
 Open `http://localhost:8000` in your browser.
 
+### 🧊 Nix/NixOS Installation
+
+**Install and run with Nix flakes:**
+
+```bash
+# Run directly (will prompt for configuration)
+nix run github:yourusername/image-categoriser
+
+# Run with environment file
+nix run github:yourusername/image-categoriser -- --env-file .env
+
+# Install to your profile
+nix profile install github:yourusername/image-categoriser
+```
+
+**NixOS system configuration:**
+
+```nix
+# In your flake.nix inputs
+image-categorizer.url = "github:yourusername/image-categoriser";
+
+# In your NixOS configuration
+services.image-categorizer = {
+  enable = true;
+  port = 8000;
+  immichUrl = "https://immich.example.com";
+  environmentFile = "/run/secrets/image-categorizer.env";
+  openFirewall = true;
+};
+```
+
+See [examples/](examples/) for detailed NixOS and home-manager configurations.
+
 ### 🛠️ Development Setup
 
 **For local development or building from source:**
@@ -76,11 +109,15 @@ cd immich-cat
 cp .env.example .env
 # Edit .env with your Immich server details
 
-# Option 1: Using devbox (recommended for development)
+# Option 1: Using Nix (recommended)
+nix develop  # Enter development shell
+npm run dev
+
+# Option 2: Using devbox
 devbox shell
 npm run dev
 
-# Option 2: Using Docker Compose (build locally)
+# Option 3: Using Docker Compose (build locally)
 docker-compose up --build
 ```
 

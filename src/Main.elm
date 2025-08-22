@@ -46,8 +46,6 @@ port storageLoaded : (( String, Maybe String ) -> msg) -> Sub msg
 port yankAssetToClipboard : String -> Cmd msg
 
 
-
-
 type Msg
     = KeyPress String
     | KeyRelease String
