@@ -11,6 +11,16 @@ require('dotenv').config();
 const DEV_SERVER_PORT = 8000;
 const ELM_LIVE_PORT = 8001;
 
+// Generate or use provided encryption key
+let ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+if (!ENCRYPTION_KEY) {
+  // Auto-generate a random key if none provided
+  ENCRYPTION_KEY = require('crypto').randomBytes(32).toString('hex');
+  console.log('⚠️  No ENCRYPTION_KEY environment variable provided.');
+  console.log('📋 Generated key:', ENCRYPTION_KEY);
+  console.log('💡 Set ENCRYPTION_KEY=' + ENCRYPTION_KEY + ' to persist across restarts');
+}
+
 function startElmLive() {
   const elmLive = spawn('npx', [
     'elm-live',
@@ -44,7 +54,8 @@ function getHtmlWithEnvVars() {
     <script type="text/javascript">
       window.ENV = {
         IMMICH_API_KEY: '${process.env.IMMICH_API_KEY || ''}',
-        IMMICH_URL: '${process.env.IMMICH_URL || 'https://localhost/api'}'
+        IMMICH_URL: '${process.env.IMMICH_URL || 'https://localhost/api'}',
+        ENCRYPTION_KEY: '${ENCRYPTION_KEY}'
       };
 
       let encryptionKey = null;
@@ -52,26 +63,20 @@ function getHtmlWithEnvVars() {
       async function getEncryptionKey() {
         if (encryptionKey) return encryptionKey;
         
-        const stored = sessionStorage.getItem('encKey');
-        if (stored) {
-          encryptionKey = await window.crypto.subtle.importKey(
-            'raw',
-            new Uint8Array(JSON.parse(stored)),
-            { name: 'AES-GCM' },
-            false,
-            ['encrypt', 'decrypt']
-          );
-          return encryptionKey;
+        // Pad or truncate the key to exactly 32 bytes for AES-256
+        const keyMaterial = (window.ENV.ENCRYPTION_KEY + '0'.repeat(64)).slice(0, 64);
+        const keyBytes = new Uint8Array(32);
+        for (let i = 0; i < 32; i++) {
+          keyBytes[i] = parseInt(keyMaterial.slice(i * 2, i * 2 + 2), 16) || 0;
         }
-
-        encryptionKey = await window.crypto.subtle.generateKey(
-          { name: 'AES-GCM', length: 256 },
-          true,
+        
+        encryptionKey = await window.crypto.subtle.importKey(
+          'raw',
+          keyBytes,
+          'AES-GCM',
+          false,
           ['encrypt', 'decrypt']
         );
-
-        const exported = await window.crypto.subtle.exportKey('raw', encryptionKey);
-        sessionStorage.setItem('encKey', JSON.stringify(Array.from(new Uint8Array(exported))));
         
         return encryptionKey;
       }
@@ -153,7 +158,6 @@ function getHtmlWithEnvVars() {
           try {
             localStorage.removeItem('immichApiUrl');
             localStorage.removeItem('immichApiKey');
-            sessionStorage.removeItem('encKey');
             encryptionKey = null;
           } catch (error) {
           }
