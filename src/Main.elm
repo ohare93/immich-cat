@@ -405,6 +405,12 @@ createDetailedViewTitle assetSource =
                         Random ->
                             "[random]"
 
+                        DurationAsc ->
+                            "[duration asc]"
+
+                        DurationDesc ->
+                            "[duration desc]"
+
                 mediaText =
                     case config.mediaType of
                         AllMedia ->
@@ -461,6 +467,12 @@ createDetailedViewTitle assetSource =
 
                         Random ->
                             "[random]"
+
+                        DurationAsc ->
+                            "[duration asc]"
+
+                        DurationDesc ->
+                            "[duration desc]"
 
                 mediaText =
                     case config.mediaType of
@@ -2203,6 +2215,14 @@ update msg model =
 
                                                 Random ->
                                                     identity
+
+                                                DurationAsc ->
+                                                    -- Use created date as fallback for duration sorting in overview
+                                                    List.sortBy (.fileCreatedAt >> Date.toRataDie)
+
+                                                DurationDesc ->
+                                                    -- Use created date as fallback for duration sorting in overview
+                                                    List.sortBy (.fileCreatedAt >> Date.toRataDie) >> List.reverse
                                            )
 
                                 updatedModel =
@@ -2485,14 +2505,29 @@ handleFetchAssetMembership assetWithMembership model =
                 finalModel =
                     if isCurrentlyViewingThisAsset then
                         case updatedModel.userMode of
-                            ViewAssets (EditAsset inputMode _ search) ->
-                                { updatedModel | userMode = ViewAssets (EditAsset inputMode (ViewAlbums.getAssetWithActions newAsset) search) }
+                            ViewAssets (EditAsset inputMode currentAsset search) ->
+                                let
+                                    updatedAsset =
+                                        ViewAlbums.getAssetWithActions newAsset
+                                            |> (\a -> { a | isVideoLoaded = currentAsset.isVideoLoaded })
+                                in
+                                { updatedModel | userMode = ViewAssets (EditAsset inputMode updatedAsset search) }
 
-                            ViewAssets (CreateAlbumConfirmation inputMode _ search albumName) ->
-                                { updatedModel | userMode = ViewAssets (CreateAlbumConfirmation inputMode (ViewAlbums.getAssetWithActions newAsset) search albumName) }
+                            ViewAssets (CreateAlbumConfirmation inputMode currentAsset search albumName) ->
+                                let
+                                    updatedAsset =
+                                        ViewAlbums.getAssetWithActions newAsset
+                                            |> (\a -> { a | isVideoLoaded = currentAsset.isVideoLoaded })
+                                in
+                                { updatedModel | userMode = ViewAssets (CreateAlbumConfirmation inputMode updatedAsset search albumName) }
 
-                            ViewAssets (ShowEditAssetHelp inputMode _ search) ->
-                                { updatedModel | userMode = ViewAssets (ShowEditAssetHelp inputMode (ViewAlbums.getAssetWithActions newAsset) search) }
+                            ViewAssets (ShowEditAssetHelp inputMode currentAsset search) ->
+                                let
+                                    updatedAsset =
+                                        ViewAlbums.getAssetWithActions newAsset
+                                            |> (\a -> { a | isVideoLoaded = currentAsset.isVideoLoaded })
+                                in
+                                { updatedModel | userMode = ViewAssets (ShowEditAssetHelp inputMode updatedAsset search) }
 
                             _ ->
                                 updatedModel
@@ -2832,8 +2867,34 @@ switchToEditIfAssetFound model index =
         |> Maybe.map
             (\asset ->
                 let
+                    -- Check if we're currently viewing the same asset to preserve video loaded state
+                    currentVideoLoadedState =
+                        case model.userMode of
+                            ViewAssets (EditAsset _ currentAsset _) ->
+                                if currentAsset.asset.id == asset.id then
+                                    Just currentAsset.isVideoLoaded
+
+                                else
+                                    Nothing
+
+                            _ ->
+                                Nothing
+
+                    -- Create asset with actions, optionally preserving video loaded state
+                    assetWithActions =
+                        case currentVideoLoadedState of
+                            Just isLoaded ->
+                                let
+                                    baseAsset =
+                                        ViewAlbums.getAssetWithActions asset
+                                in
+                                { baseAsset | isVideoLoaded = isLoaded }
+
+                            Nothing ->
+                                ViewAlbums.getAssetWithActions asset
+
                     newViewAssetsMode =
-                        ViewAssets (EditAsset NormalMode (ViewAlbums.getAssetWithActions asset) (ViewAlbums.getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight))
+                        ViewAssets (EditAsset NormalMode assetWithActions (ViewAlbums.getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight))
 
                     -- Record navigation state when transitioning to ViewAssets
                     updatedModel =
