@@ -13,6 +13,7 @@ module Helpers exposing
     , toggleCategorisation
     , toggleMediaType
     , toggleOrder
+    , toggleOrderHandler
     , toggleStatus
     )
 
@@ -99,6 +100,12 @@ orderToString order =
         Random ->
             "Random"
 
+        DurationAsc ->
+            "Duration ↑"
+
+        DurationDesc ->
+            "Duration ↓"
+
 
 statusToString : StatusFilter -> String
 statusToString status =
@@ -143,6 +150,44 @@ toggleOrder current =
 
         Random ->
             CreatedDesc
+
+        DurationAsc ->
+            DurationDesc
+
+        DurationDesc ->
+            CreatedDesc
+
+
+toggleOrderHandler : MediaTypeFilter -> ImageOrder -> ImageOrder
+toggleOrderHandler mediaType currentOrder =
+    case mediaType of
+        VideosOnly ->
+            -- When viewing videos, include duration sorting options
+            case currentOrder of
+                CreatedDesc ->
+                    CreatedAsc
+
+                CreatedAsc ->
+                    ModifiedDesc
+
+                ModifiedDesc ->
+                    ModifiedAsc
+
+                ModifiedAsc ->
+                    DurationAsc
+
+                DurationAsc ->
+                    DurationDesc
+
+                DurationDesc ->
+                    Random
+
+                Random ->
+                    CreatedDesc
+
+        _ ->
+            -- For all media or images only, use regular toggle
+            toggleOrder currentOrder
 
 
 toggleStatus : StatusFilter -> StatusFilter

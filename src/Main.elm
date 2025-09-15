@@ -2611,6 +2611,61 @@ applySortingToAssets order assets =
                         )
                         assets
 
+                DurationAsc ->
+                    List.sortWith
+                        (\a b ->
+                            let
+                                aDuration =
+                                    a.duration
+                                        |> Maybe.andThen Immich.parseDurationToSeconds
+                                        |> Maybe.withDefault 999999
+
+                                -- Put non-videos at the end
+                                bDuration =
+                                    b.duration
+                                        |> Maybe.andThen Immich.parseDurationToSeconds
+                                        |> Maybe.withDefault 999999
+
+                                -- Put non-videos at the end
+                            in
+                            case compare aDuration bDuration of
+                                EQ ->
+                                    compare a.id b.id
+
+                                -- Secondary sort by ID for predictable ordering
+                                other ->
+                                    other
+                        )
+                        assets
+
+                DurationDesc ->
+                    List.sortWith
+                        (\a b ->
+                            let
+                                aDuration =
+                                    a.duration
+                                        |> Maybe.andThen Immich.parseDurationToSeconds
+                                        |> Maybe.withDefault -1
+
+                                -- Put non-videos at the end
+                                bDuration =
+                                    b.duration
+                                        |> Maybe.andThen Immich.parseDurationToSeconds
+                                        |> Maybe.withDefault -1
+
+                                -- Put non-videos at the end
+                            in
+                            case compare bDuration aDuration of
+                                -- b first for descending
+                                EQ ->
+                                    compare a.id b.id
+
+                                -- Secondary sort by ID for predictable ordering
+                                other ->
+                                    other
+                        )
+                        assets
+
                 Random ->
                     assets
     in

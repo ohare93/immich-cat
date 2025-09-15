@@ -9,7 +9,7 @@ module UpdateMenus exposing
     )
 
 import Dict exposing (Dict)
-import Helpers exposing (isSupportedSearchLetter, toggleCategorisation, toggleMediaType, toggleOrder, toggleStatus)
+import Helpers exposing (isSupportedSearchLetter, toggleCategorisation, toggleMediaType, toggleOrder, toggleOrderHandler, toggleStatus)
 import Immich exposing (ImageSearchConfig, ImmichAlbum, ImmichAlbumId, ImmichApiPaths)
 import KeybindBranches exposing (generateAlbumKeybindings)
 import Menus exposing (AlbumConfig, SearchConfig, TimelineConfig, defaultAlbumConfig, defaultSearchConfig, defaultTimelineConfig, toggleSearchContext)
@@ -131,7 +131,7 @@ handleTimelineViewInput key config =
         "o" ->
             let
                 newOrder =
-                    toggleOrder config.order
+                    toggleOrderHandler config.mediaType config.order
             in
             ChangeMode (LegacyTimelineView { config | order = newOrder })
 
@@ -243,7 +243,7 @@ handleAlbumViewInput key album config knownAlbums screenHeight =
             ChangeMode (LegacyAlbumView album { config | mediaType = toggleMediaType config.mediaType })
 
         "o" ->
-            ChangeMode (LegacyAlbumView album { config | order = toggleOrder config.order })
+            ChangeMode (LegacyAlbumView album { config | order = toggleOrderHandler config.mediaType config.order })
 
         "s" ->
             ChangeMode (LegacyAlbumView album { config | status = toggleStatus config.status })

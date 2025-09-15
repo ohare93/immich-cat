@@ -14,6 +14,8 @@ type ImageOrder
     | ModifiedDesc
     | ModifiedAsc
     | Random
+    | DurationAsc
+    | DurationDesc
 
 
 type CategorisationFilter
@@ -257,6 +259,18 @@ makeSearchBodyWithAlbum config maybeAlbumId size page =
 
                 Random ->
                     []
+
+                DurationAsc ->
+                    -- Immich API doesn't support duration ordering, use created date as fallback
+                    [ ( "order", Encode.string "asc" )
+                    , ( "orderBy", Encode.string "fileCreatedAt" )
+                    ]
+
+                DurationDesc ->
+                    -- Immich API doesn't support duration ordering, use created date as fallback
+                    [ ( "order", Encode.string "desc" )
+                    , ( "orderBy", Encode.string "fileCreatedAt" )
+                    ]
 
         -- Random uses different endpoint
         categorisationField =
