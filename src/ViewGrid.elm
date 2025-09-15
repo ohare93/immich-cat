@@ -582,6 +582,7 @@ viewGridItems apiPaths apiKey state gridItems hasMorePages isLoadingMore toMsg =
             [ Html.Attributes.style "position" "relative"
             , Html.Attributes.style "height" "100%"
             , Html.Attributes.style "overflow-y" "auto"
+            , Html.Attributes.style "overflow-x" "hidden"
             , Html.Events.on "scroll"
                 (Json.Decode.map2
                     (\scrollTop scrollHeight ->
@@ -803,7 +804,14 @@ viewGridItem apiPaths apiKey toMsg item =
                         , Html.Attributes.style "justify-content" "center"
                         , Html.Attributes.style "color" "#999"
                         ]
-                        [ Html.text "No thumbnail" ]
+                        [ Html.text
+                            (if String.startsWith "video/" item.asset.mimeType then
+                                "No video thumb"
+
+                             else
+                                "No thumbnail"
+                            )
+                        ]
     in
     Html.div
         (containerStyle

@@ -2109,8 +2109,12 @@ update msg model =
             ( model, Cmd.none )
 
         AssetMsg assetMsg ->
-            -- This should no longer be called due to new architecture
-            ( model, Cmd.none )
+            case model.userMode of
+                ViewAssets assetState ->
+                    handleAssetResult (updateAsset assetMsg assetState model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets model.knownAssets) model
+
+                _ ->
+                    ( model, Cmd.none )
 
         ToggleTheme ->
             ( { model | theme = nextTheme model.theme }, Cmd.none )
