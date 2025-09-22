@@ -27,6 +27,7 @@ function startElmLive() {
     'src/Main.elm',
     '--host=0.0.0.0',
     '--port=' + ELM_LIVE_PORT,
+    '--start-page=src/index.html',
     '--',
     '--debug',
     '--output=dist/main.js'
@@ -48,9 +49,15 @@ function startElmLive() {
 
 function getHtmlWithEnvVars() {
   const htmlPath = path.join(__dirname, '..', 'src', 'index.html');
-  let htmlTemplate = fs.readFileSync(htmlPath, 'utf8');
+  
+  try {
+    let htmlTemplate = fs.readFileSync(htmlPath, 'utf8');
+    
+    // Fix script paths to work with proxy setup
+    htmlTemplate = htmlTemplate.replace('../dist/main.js', '/dist/main.js');
+    htmlTemplate = htmlTemplate.replace('../node_modules/thumbhash/thumbhash.js', '/node_modules/thumbhash/thumbhash.js');
 
-  const envScript = `
+    const envScript = `
     <script type="text/javascript">
       window.ENV = {
         IMMICH_API_KEY: '${process.env.IMMICH_API_KEY || ''}',
@@ -167,12 +174,18 @@ function getHtmlWithEnvVars() {
       }
     </script>`;
 
-  htmlTemplate = htmlTemplate.replace('<head>', `<head>${envScript}`);
-  
-  return htmlTemplate;
+    htmlTemplate = htmlTemplate.replace('<head>', `<head>${envScript}`);
+    
+    return htmlTemplate;
+  } catch (error) {
+    console.error('Error processing HTML template:', error);
+    throw error;
+  }
 }
 
 function proxyToElmLive(req, res) {
+  console.log('Proxying request:', req.method, req.url);
+  
   const options = {
     hostname: 'localhost',
     port: ELM_LIVE_PORT,
@@ -187,8 +200,9 @@ function proxyToElmLive(req, res) {
   });
 
   proxy.on('error', (err) => {
+    console.error('Proxy error:', err);
     res.writeHead(500);
-    res.end('Proxy error');
+    res.end('Proxy error: ' + err.message);
   });
 
   req.pipe(proxy, { end: true });
@@ -196,6 +210,8 @@ function proxyToElmLive(req, res) {
 
 function createDevServer() {
   const server = http.createServer((req, res) => {
+    console.log('Request received:', req.method, req.url);
+    
     const parsedUrl = url.parse(req.url, true);
     const pathname = parsedUrl.pathname;
 
@@ -214,6 +230,37 @@ function createDevServer() {
         res.end('Error loading page');
       }
     } 
+    // Serve static files directly instead of proxying to elm-live
+    else if (pathname === '/dist/main.js') {
+      try {
+        const filePath = path.join(__dirname, '..', 'dist', 'main.js');
+        const content = fs.readFileSync(filePath);
+        res.writeHead(200, {
+          'Content-Type': 'application/javascript',
+          'Cache-Control': 'no-cache'
+        });
+        res.end(content);
+      } catch (err) {
+        console.error('Error serving main.js:', err);
+        res.writeHead(404);
+        res.end('File not found');
+      }
+    }
+    else if (pathname === '/node_modules/thumbhash/thumbhash.js') {
+      try {
+        const filePath = path.join(__dirname, '..', 'node_modules', 'thumbhash', 'thumbhash.js');
+        const content = fs.readFileSync(filePath);
+        res.writeHead(200, {
+          'Content-Type': 'application/javascript',
+          'Cache-Control': 'no-cache'
+        });
+        res.end(content);
+      } catch (err) {
+        console.error('Error serving thumbhash.js:', err);
+        res.writeHead(404);
+        res.end('File not found');
+      }
+    }
     else {
       proxyToElmLive(req, res);
     }
