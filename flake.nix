@@ -167,7 +167,7 @@
         # Also provide a simpler package that just contains the scripts
         image-categorizer-scripts = pkgs.stdenv.mkDerivation rec {
           pname = "image-categorizer-scripts";
-          version = "0.1.0";
+          version = "1.0.4";
 
           src = ./.;
 
