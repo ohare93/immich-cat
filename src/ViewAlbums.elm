@@ -156,10 +156,17 @@ viewWithSidebar sidebarView viewToBeNextToSidebar =
 -- Main sidebar view
 
 
-viewSidebar : AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Maybe InputMode -> (ImmichAlbum -> msg) -> Element.Color -> Element.Color -> Element.Color -> Element msg
-viewSidebar asset search albumKeybindings albums maybeInputMode selectAlbumMsg keybindTextColor mutedTextColor highlightColor =
+viewSidebar : AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Maybe InputMode -> Maybe ( String, Bool ) -> (ImmichAlbum -> msg) -> Element.Color -> Element.Color -> Element.Color -> Element msg
+viewSidebar asset search albumKeybindings albums maybeInputMode maybeMoveFromInfo selectAlbumMsg keybindTextColor mutedTextColor highlightColor =
     column [ alignTop, height fill ]
         [ el [ alignTop ] <| text "Asset Changes"
+        , case maybeMoveFromInfo of
+            Just ( albumName, True ) ->
+                el [ alignTop, Font.color <| Element.fromRgb { red = 0.2, green = 0.7, blue = 0.2, alpha = 1 }, Font.size 12, Font.bold ]
+                    (text ("Move Mode: " ++ albumName))
+
+            _ ->
+                Element.none
         , if search.searchString /= "" then
             el [ alignTop, Font.color <| usefulColours "blue" ] <| text ("Search: \"" ++ search.searchString ++ "\"")
 

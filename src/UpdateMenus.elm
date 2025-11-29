@@ -248,6 +248,9 @@ handleAlbumViewInput key album config knownAlbums screenHeight =
         "s" ->
             ChangeMode (LegacyAlbumView album { config | status = toggleStatus config.status })
 
+        "x" ->
+            ChangeMode (LegacyAlbumView album { config | moveFromMode = not config.moveFromMode })
+
         "Enter" ->
             LoadAssets (FilteredAlbum album config)
 

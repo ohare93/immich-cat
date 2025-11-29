@@ -511,6 +511,16 @@ createDetailedViewTitle assetSource =
             ""
 
 
+getMoveFromInfo : AssetSource -> Maybe ( String, Bool )
+getMoveFromInfo assetSource =
+    case assetSource of
+        FilteredAlbum album config ->
+            Just ( album.albumName, config.moveFromMode )
+
+        _ ->
+            Nothing
+
+
 
 -- NAVIGATION HISTORY HELPERS --
 
@@ -842,14 +852,25 @@ viewAssetState model assetState =
             let
                 viewTitle =
                     createDetailedViewTitle model.currentAssetsSource
+
+                moveFromInfo =
+                    getMoveFromInfo model.currentAssetsSource
             in
-            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) SelectAlbum (getKeybindTextColor model.theme) (getMutedTextColor model.theme) (getHighlightColor model.theme)) (ViewAsset.viewEditAsset model.immichApiPaths model.apiKey model.imageIndex (List.length model.currentAssets) viewTitle asset model.currentAssets model.knownAssets model.currentDateMillis model.timeViewMode inputMode)
+            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) moveFromInfo SelectAlbum (getKeybindTextColor model.theme) (getMutedTextColor model.theme) (getHighlightColor model.theme)) (ViewAsset.viewEditAsset model.immichApiPaths model.apiKey model.imageIndex (List.length model.currentAssets) viewTitle asset model.currentAssets model.knownAssets model.currentDateMillis model.timeViewMode inputMode)
 
         CreateAlbumConfirmation _ asset search albumName ->
-            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums Nothing SelectAlbum (getKeybindTextColor model.theme) (getMutedTextColor model.theme) (getHighlightColor model.theme)) (ViewAsset.viewCreateAlbumConfirmation albumName)
+            let
+                moveFromInfo =
+                    getMoveFromInfo model.currentAssetsSource
+            in
+            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums Nothing moveFromInfo SelectAlbum (getKeybindTextColor model.theme) (getMutedTextColor model.theme) (getHighlightColor model.theme)) (ViewAsset.viewCreateAlbumConfirmation albumName)
 
         ShowEditAssetHelp inputMode asset search ->
-            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) SelectAlbum (getKeybindTextColor model.theme) (getMutedTextColor model.theme) (getHighlightColor model.theme)) (ViewAsset.viewEditAssetHelp inputMode)
+            let
+                moveFromInfo =
+                    getMoveFromInfo model.currentAssetsSource
+            in
+            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) moveFromInfo SelectAlbum (getKeybindTextColor model.theme) (getMutedTextColor model.theme) (getHighlightColor model.theme)) (ViewAsset.viewEditAssetHelp inputMode)
 
         GridView gridState ->
             ViewAsset.viewGridAssets model.immichApiPaths model.apiKey gridState model.currentAssets model.knownAssets model.paginationState.hasMorePages model.paginationState.isLoadingMore (AssetMsg << AssetGridMsg)
@@ -1211,8 +1232,45 @@ handleAssetResult assetResult model =
 
                                 newSearch =
                                     { search | partialKeybinding = "", pagination = ViewAlbums.resetPagination search.pagination, invalidInputWarning = Nothing }
+
+                                -- Check if we should also remove from source album (move-from mode)
+                                ( finalAsset, moveFromCmd ) =
+                                    case model.currentAssetsSource of
+                                        FilteredAlbum sourceAlbum config ->
+                                            -- Only trigger move-from if:
+                                            -- 1. moveFromMode is enabled
+                                            -- 2. We're adding to a different album (not the source)
+                                            -- 3. This is actually an addition (not a removal)
+                                            if config.moveFromMode && isAddition && album.id /= sourceAlbum.id then
+                                                let
+                                                    -- Also mark the source album as removed in the asset's state
+                                                    assetWithSourceRemoved =
+                                                        { toggledAsset
+                                                            | albumMembership =
+                                                                Dict.insert sourceAlbum.id ChangeToFalse toggledAsset.albumMembership
+                                                        }
+
+                                                    -- Command to remove from source album
+                                                    removeFromSourceCmd =
+                                                        Immich.albumChangeAssetMembership model.immichApiPaths sourceAlbum.id [ asset.asset.id ] False
+                                                            |> Cmd.map ImmichMsg
+                                                in
+                                                ( assetWithSourceRemoved, removeFromSourceCmd )
+
+                                            else
+                                                ( toggledAsset, Cmd.none )
+
+                                        _ ->
+                                            ( toggledAsset, Cmd.none )
+
+                                -- Primary command to add/remove from target album
+                                primaryCmd =
+                                    Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum
+                                        |> Cmd.map ImmichMsg
                             in
-                            ( { model | userMode = ViewAssets (EditAsset NormalMode toggledAsset newSearch), pendingAlbumChange = Just ( album.id, isAddition ) }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
+                            ( { model | userMode = ViewAssets (EditAsset NormalMode finalAsset newSearch), pendingAlbumChange = Just ( album.id, isAddition ) }
+                            , Cmd.batch [ primaryCmd, moveFromCmd ]
+                            )
 
                         _ ->
                             ( model, Cmd.none )
@@ -1250,6 +1308,20 @@ handleAssetResult assetResult model =
                             ( model, Cmd.none )
 
                 _ ->
+                    ( model, Cmd.none )
+
+        AssetToggleMoveFromMode ->
+            -- Toggle move-from mode when viewing a filtered album
+            case model.currentAssetsSource of
+                FilteredAlbum album config ->
+                    let
+                        newConfig =
+                            { config | moveFromMode = not config.moveFromMode }
+                    in
+                    ( { model | currentAssetsSource = FilteredAlbum album newConfig }, Cmd.none )
+
+                _ ->
+                    -- Move mode only applicable when viewing a filtered album
                     ( model, Cmd.none )
 
         AssetCreateAlbum albumName ->

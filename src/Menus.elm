@@ -55,6 +55,7 @@ type alias AlbumConfig =
     { mediaType : MediaTypeFilter
     , order : ImageOrder
     , status : StatusFilter
+    , moveFromMode : Bool
     }
 
 
@@ -304,6 +305,19 @@ viewAlbumFilters config =
         , viewFilterValue "Media Type" (mediaTypeToString config.mediaType)
         , viewFilterValue "Order" (orderToString config.order)
         , viewFilterValue "Status" (statusToString config.status)
+        , viewMoveFromModeValue config.moveFromMode
+        ]
+
+
+viewMoveFromModeValue : Bool -> Element msg
+viewMoveFromModeValue isEnabled =
+    row [ Element.spacingXY 10 0 ]
+        [ el [ Font.size 14, Font.bold, width (px 100) ] (text "Move Mode:")
+        , if isEnabled then
+            el [ Font.size 14, Font.color (Element.rgb 0.2 0.7 0.2), Font.bold ] (text "ON (assets will be removed from this album)")
+
+          else
+            el [ Font.size 14, Font.color (Element.rgb 0.6 0.6 0.6) ] (text "OFF (additive)")
         ]
 
 
@@ -386,6 +400,7 @@ defaultAlbumConfig =
     { mediaType = AllMedia
     , order = CreatedDesc
     , status = AllStatuses
+    , moveFromMode = False
     }
 
 
