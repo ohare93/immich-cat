@@ -171,6 +171,7 @@ viewAlbumBrowseHelp albumState =
                     , viewKeybinding "m" "Toggle media type (All/Images/Videos)"
                     , viewKeybinding "o" "Cycle order (Newest/Oldest/Random)"
                     , viewKeybinding "s" "Toggle status (All/Favorites/Archived)"
+                    , viewKeybinding "x" "Toggle move mode (move assets out of this album)"
                     ]
                 , column [ Element.spacingXY 0 8 ]
                     [ el [ Font.size 16, Font.bold ] (text "Actions")
@@ -232,6 +233,7 @@ viewAssetViewHelp inputMode =
             , viewKeybinding "T" "Toggle time view (Absolute/Relative)"
             , viewKeybinding "G" "Switch to grid view"
             , viewKeybinding "S" "Toggle scroll view (for large images)"
+            , viewKeybinding "X" "Toggle move mode (move assets out of source album)"
             , viewKeybinding "?" "Show/hide this help"
             ]
         , if inputMode == InsertMode then

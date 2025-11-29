@@ -64,6 +64,7 @@ type AssetResult msg
     | AssetRequestLoadMore
     | AssetReloadAlbums
     | AssetYankToClipboard
+    | AssetToggleMoveFromMode
 
 
 
@@ -98,6 +99,7 @@ type AssetAction
     | ScrollImage Int Int
     | ReloadAlbums
     | YankToClipboard
+    | ToggleMoveFromMode
     | NoAssetAction
 
 
@@ -147,6 +149,9 @@ handleEditAssetInput key inputMode asset search albumKeybindings knownAlbums scr
 
                     "?" ->
                         ShowAssetHelp
+
+                    "X" ->
+                        ToggleMoveFromMode
 
                     _ ->
                         if isKeybindingLetter key then
@@ -858,6 +863,9 @@ convertAssetActionToResult action inputMode asset search currentAssets =
 
         YankToClipboard ->
             AssetYankToClipboard
+
+        ToggleMoveFromMode ->
+            AssetToggleMoveFromMode
 
         ShowAssetHelp ->
             StayInAssets (ShowEditAssetHelp inputMode asset search)
