@@ -1,7 +1,6 @@
 module Menus exposing
     ( AlbumConfig
     , SearchConfig
-    , SearchContext(..)
     , TimelineConfig
     , addToRecentSearches
     , defaultAlbumConfig
@@ -25,17 +24,11 @@ import Element.Font as Font
 import Element.Input as Input exposing (button)
 import HelpText exposing (AlbumBrowseState(..), ViewContext(..), viewContextHelp)
 import Helpers exposing (categorisationToString, mediaTypeToString, orderToString, statusToString)
-import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImmichAlbum, ImmichAsset, ImmichAssetId, ImmichLoadState, MediaTypeFilter(..), StatusFilter(..))
+import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImmichAlbum, ImmichAsset, ImmichAssetId, ImmichLoadState, MediaTypeFilter(..), SearchContext(..), StatusFilter(..))
 
 
 
 -- Types that need to be imported from Main
-
-
-type SearchContext
-    = ContentSearch
-    | FilenameSearch
-    | DescriptionSearch
 
 
 type alias TimelineConfig =
@@ -338,6 +331,9 @@ searchContextToString context =
         DescriptionSearch ->
             "Description"
 
+        OcrSearch ->
+            "Text in Image (OCR)"
+
 
 
 -- Toggle functions
@@ -353,6 +349,9 @@ toggleSearchContext current =
             DescriptionSearch
 
         DescriptionSearch ->
+            OcrSearch
+
+        OcrSearch ->
             ContentSearch
 
 

@@ -129,7 +129,7 @@ viewSearchHelp inputFocused =
                 [ el [ Font.size 16, Font.bold ] (text "Search Filters")
                 , viewKeybinding "i" "Enter input mode to type search"
                 , viewKeybinding "m" "Toggle media type (All/Images/Videos)"
-                , viewKeybinding "c" "Toggle search context (Content/Filename/Description)"
+                , viewKeybinding "c" "Toggle search context (Content/Filename/Description/OCR)"
                 , viewKeybinding "s" "Toggle status (All/Favorites/Archived)"
                 ]
         , column [ Element.spacingXY 0 8 ]

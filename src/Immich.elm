@@ -43,6 +43,13 @@ type StatusFilter
     | ArchivedOnly
 
 
+type SearchContext
+    = ContentSearch
+    | FilenameSearch
+    | DescriptionSearch
+    | OcrSearch
+
+
 type ImmichLoadState
     = ImmichLoading
     | ImmichLoadSuccess
@@ -409,8 +416,8 @@ fetchImagesPaginated apiPaths config size page =
                 messageConstructor
 
 
-searchAssetsPaginated : ImmichApiPaths -> String -> MediaTypeFilter -> StatusFilter -> Int -> Int -> Cmd Msg
-searchAssetsPaginated apiPaths searchText mediaType status size page =
+searchAssetsPaginated : ImmichApiPaths -> SearchContext -> String -> MediaTypeFilter -> StatusFilter -> Int -> Int -> Cmd Msg
+searchAssetsPaginated apiPaths searchContext searchText mediaType status size page =
     let
         -- Use PaginatedImagesFetched for page 1, MoreImagesFetched for page 2+
         messageConstructor =
@@ -420,8 +427,24 @@ searchAssetsPaginated apiPaths searchText mediaType status size page =
             else
                 MoreImagesFetched page
 
-        queryField =
-            [ ( "query", Encode.string searchText ) ]
+        -- Determine endpoint and search field based on SearchContext
+        ( endpoint, searchField ) =
+            case searchContext of
+                ContentSearch ->
+                    -- CLIP-based smart search
+                    ( apiPaths.searchSmart, [ ( "query", Encode.string searchText ) ] )
+
+                FilenameSearch ->
+                    -- Metadata search by filename
+                    ( apiPaths.searchAssets, [ ( "originalFileName", Encode.string searchText ) ] )
+
+                DescriptionSearch ->
+                    -- Metadata search by description
+                    ( apiPaths.searchAssets, [ ( "description", Encode.string searchText ) ] )
+
+                OcrSearch ->
+                    -- OCR text search (Immich v2.2.0+) - uses metadata endpoint
+                    ( apiPaths.searchAssets, [ ( "ocr", Encode.string searchText ) ] )
 
         mediaTypeField =
             case mediaType of
@@ -452,8 +475,8 @@ searchAssetsPaginated apiPaths searchText mediaType status size page =
     in
     makePostRequest
         apiPaths.apiKey
-        apiPaths.searchSmart
-        (makeSimpleJsonBody (queryField ++ mediaTypeField ++ statusField ++ paginationFields))
+        endpoint
+        (makeSimpleJsonBody (searchField ++ mediaTypeField ++ statusField ++ paginationFields))
         paginatedAssetsDecoder
         messageConstructor
 

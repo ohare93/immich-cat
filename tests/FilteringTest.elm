@@ -3,11 +3,10 @@ module FilteringTest exposing (..)
 -- Import the types from Immich and Menus modules
 
 import Expect
-import Immich exposing (CategorisationFilter(..), ImageOrder(..), MediaTypeFilter(..), StatusFilter(..))
+import Immich exposing (CategorisationFilter(..), ImageOrder(..), MediaTypeFilter(..), SearchContext(..), StatusFilter(..))
 import Menus
     exposing
-        ( SearchContext(..)
-        , defaultAlbumConfig
+        ( defaultAlbumConfig
         , defaultSearchConfig
         , defaultTimelineConfig
         )

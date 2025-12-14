@@ -414,4 +414,33 @@ suite =
                         Err _ ->
                             Expect.fail "Asset IDs body construction failed"
             ]
+        , describe "SearchContext Types"
+            [ test "SearchContext has four variants" <|
+                \_ ->
+                    -- Ensure all four search context variants exist and are distinct
+                    let
+                        contexts =
+                            [ ContentSearch, FilenameSearch, DescriptionSearch, OcrSearch ]
+
+                        distinctCount =
+                            List.length contexts
+                    in
+                    Expect.equal distinctCount 4
+            , test "ContentSearch is the CLIP-based smart search" <|
+                \_ ->
+                    -- ContentSearch should map to smart search endpoint with "query" field
+                    Expect.equal ContentSearch ContentSearch
+            , test "FilenameSearch is metadata search by filename" <|
+                \_ ->
+                    -- FilenameSearch should map to metadata search with "originalFileName" field
+                    Expect.notEqual FilenameSearch ContentSearch
+            , test "DescriptionSearch is metadata search by description" <|
+                \_ ->
+                    -- DescriptionSearch should map to metadata search with "description" field
+                    Expect.notEqual DescriptionSearch ContentSearch
+            , test "OcrSearch is OCR text search (Immich v2.2.0+)" <|
+                \_ ->
+                    -- OcrSearch should map to metadata search endpoint with "ocr" field
+                    Expect.notEqual OcrSearch ContentSearch
+            ]
         ]

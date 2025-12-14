@@ -10,7 +10,7 @@ module UpdateMenus exposing
 
 import Dict exposing (Dict)
 import Helpers exposing (isSupportedSearchLetter, toggleCategorisation, toggleMediaType, toggleOrder, toggleOrderHandler, toggleStatus)
-import Immich exposing (ImageSearchConfig, ImmichAlbum, ImmichAlbumId, ImmichApiPaths)
+import Immich exposing (ImageSearchConfig, ImmichAlbum, ImmichAlbumId, ImmichApiPaths, SearchContext(..))
 import KeybindBranches exposing (generateAlbumKeybindings)
 import Menus exposing (AlbumConfig, SearchConfig, TimelineConfig, defaultAlbumConfig, defaultSearchConfig, defaultTimelineConfig, toggleSearchContext)
 import UpdateAlbums
@@ -76,7 +76,7 @@ type LegacyUserMode
 
 type AssetSource
     = ImageSearch ImageSearchConfig
-    | TextSearch String
+    | TextSearch String SearchContext
     | FilteredAlbum ImmichAlbum AlbumConfig
 
 
@@ -204,7 +204,7 @@ handleSearchViewInput key config =
                 NoMenuAction
 
             else
-                LoadAssets (TextSearch config.query)
+                LoadAssets (TextSearch config.query config.searchContext)
 
         " " ->
             -- Space key
@@ -212,7 +212,7 @@ handleSearchViewInput key config =
                 NoMenuAction
 
             else
-                LoadAssets (TextSearch config.query)
+                LoadAssets (TextSearch config.query config.searchContext)
 
         _ ->
             if config.inputFocused then
