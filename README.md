@@ -30,121 +30,23 @@ https://github.com/user-attachments/assets/99238b3a-b2aa-4b6e-ac43-89fb06f3976b
 
 ## Quick Start
 
-### 🚀 Docker (Fastest - Recommended)
-
-**Pull and run the latest published image:**
-
 ```bash
-# Create environment file
-cat > .env << EOF
-IMMICH_URL=https://your-immich-server.com
-IMMICH_API_KEY=your_immich_api_key_here
-EOF
-
-# Run the application
-docker run -p 8000:8000 --env-file .env ghcr.io/ohare93/immich-cat:latest
+docker run -p 8000:8000 \
+  -e IMMICH_URL=https://your-immich-server.com \
+  -e IMMICH_API_KEY=your_api_key \
+  ghcr.io/ohare93/immich-cat:latest
 ```
-
-**Or with docker-compose:**
-
-```yaml
-# docker-compose.yml
-version: "3.8"
-services:
-  immich-cat:
-    image: ghcr.io/ohare93/immich-cat:latest
-    ports:
-      - "8000:8000"
-    env_file:
-      - .env
-```
-
-Then run: `docker-compose up`
 
 Open `http://localhost:8000` in your browser.
 
-### 🧊 Nix/NixOS Installation
-
-**Install and run with Nix flakes:**
-
-```bash
-# Run directly (will prompt for configuration)
-nix run github:yourusername/image-categoriser
-
-# Run with environment file
-nix run github:yourusername/image-categoriser -- --env-file .env
-
-# Install to your profile
-nix profile install github:yourusername/image-categoriser
-```
-
-**NixOS system configuration:**
-
-```nix
-# In your flake.nix inputs
-image-categorizer.url = "github:yourusername/image-categoriser";
-
-# In your NixOS configuration
-services.image-categorizer = {
-  enable = true;
-  port = 8000;
-  immichUrl = "https://immich.example.com";
-  environmentFile = "/run/secrets/image-categorizer.env";
-  openFirewall = true;
-};
-```
-
-See [examples/](examples/) for detailed NixOS and home-manager configurations.
-
-### 🛠️ Development Setup
-
-**For local development or building from source:**
-
-```bash
-# Clone the repository
-git clone https://github.com/ohare93/immich-cat.git
-cd immich-cat
-
-# Set up environment
-cp .env.example .env
-# Edit .env with your Immich server details
-
-# Option 1: Using Nix (recommended)
-nix develop  # Enter development shell
-npm run dev
-
-# Option 2: Using devbox
-devbox shell
-npm run dev
-
-# Option 3: Using Docker Compose (build locally)
-docker-compose up --build
-```
-
-## Configuration
-
-Set up your Immich connection in `.env`:
-
-```env
-IMMICH_URL=https://your-immich-server.com
-IMMICH_API_KEY=your_immich_api_key_here
-```
-
 Get your API key from Immich web interface → Account Settings → API Keys.
 
-### CORS Configuration
-
-To allow this webapp to access your Immich server's API, you need to configure CORS (Cross-Origin Resource Sharing) settings. If you're running Immich behind Traefik, add these middleware labels to your Immich service:
-
-```yaml
-- traefik.http.routers.immich.middlewares=immich-cors
-- traefik.http.middlewares.immich-cors.headers.accessControlAllowOriginList=http://localhost:8000
-- traefik.http.middlewares.immich-cors.headers.accessControlAllowMethods=GET, PUT, POST, DELETE, OPTIONS
-- traefik.http.middlewares.immich-cors.headers.accessControlAllowHeaders=X-Api-Key, User-Agent, Content-Type
-- traefik.http.middlewares.immich-cors.headers.accessControlMaxAge=1728000
-```
-
-> **Note**: Adjust `http://localhost:8000` to match where you're hosting this webapp. For other reverse proxy setups, configure equivalent CORS headers to allow requests from your webapp's domain.
+**See [DEPLOYMENT.md](DEPLOYMENT.md) for:**
+- Docker Compose setup
+- Nix/NixOS installation
+- Development setup
+- CORS configuration for Traefik (required for reverse proxy setups)
+- Troubleshooting guide
 
 ## How it Works
 
