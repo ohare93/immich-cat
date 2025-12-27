@@ -156,12 +156,21 @@ type alias PaginationState =
     { currentConfig : Maybe ImageSearchConfig
     , currentQuery : Maybe String
     , currentSearchContext : Maybe SearchContext
+    , currentAlbumContext : Maybe AlbumPaginationContext
     , totalAssets : Int
     , currentPage : Int
     , hasMorePages : Bool
     , isLoadingMore : Bool
     , loadedAssets : Int
     , maxAssetsToFetch : Int -- Configurable limit
+    }
+
+
+type alias AlbumPaginationContext =
+    { albumId : ImmichAlbumId
+    , order : ImageOrder
+    , mediaType : MediaTypeFilter
+    , status : StatusFilter
     }
 
 
@@ -367,6 +376,7 @@ init flags =
             { currentConfig = Nothing
             , currentQuery = Nothing
             , currentSearchContext = Nothing
+            , currentAlbumContext = Nothing
             , totalAssets = 0
             , currentPage = 1
             , hasMorePages = False
@@ -1017,19 +1027,26 @@ handleMenuResult menuResult model =
                         UpdateMenus.ImageSearch searchConfig ->
                             let
                                 paginatedModel =
-                                    { loadModel | paginationState = { currentConfig = Just searchConfig, currentQuery = Nothing, currentSearchContext = Nothing, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = loadModel.paginationState.maxAssetsToFetch } }
+                                    { loadModel | paginationState = { currentConfig = Just searchConfig, currentQuery = Nothing, currentSearchContext = Nothing, currentAlbumContext = Nothing, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = loadModel.paginationState.maxAssetsToFetch } }
                             in
                             ( paginatedModel, Immich.fetchImagesPaginated paginatedModel.immichApiPaths searchConfig 1000 1 |> Cmd.map ImmichMsg )
 
                         UpdateMenus.TextSearch query searchContext ->
                             let
                                 paginatedModel =
-                                    { loadModel | paginationState = { currentConfig = Nothing, currentQuery = Just query, currentSearchContext = Just searchContext, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = loadModel.paginationState.maxAssetsToFetch } }
+                                    { loadModel | paginationState = { currentConfig = Nothing, currentQuery = Just query, currentSearchContext = Just searchContext, currentAlbumContext = Nothing, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = loadModel.paginationState.maxAssetsToFetch } }
                             in
                             ( paginatedModel, Immich.searchAssetsPaginated paginatedModel.immichApiPaths searchContext query AllMedia AllStatuses 1000 1 |> Cmd.map ImmichMsg )
 
                         UpdateMenus.FilteredAlbum album config ->
-                            ( loadModel, Immich.fetchAlbumAssetsWithFilters loadModel.immichApiPaths album.id config.order config.mediaType config.status |> Cmd.map ImmichMsg )
+                            let
+                                albumContext =
+                                    { albumId = album.id, order = config.order, mediaType = config.mediaType, status = config.status }
+
+                                paginatedModel =
+                                    { loadModel | paginationState = { currentConfig = Nothing, currentQuery = Nothing, currentSearchContext = Nothing, currentAlbumContext = Just albumContext, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = loadModel.paginationState.maxAssetsToFetch } }
+                            in
+                            ( paginatedModel, Immich.fetchAlbumAssetsWithFilters paginatedModel.immichApiPaths album.id config.order config.mediaType config.status |> Cmd.map ImmichMsg )
             in
             ( modelWithPagination, loadCmd )
 
@@ -2110,7 +2127,7 @@ update msg model =
                                     createLoadStateForCurrentAssetSource (ImageSearch searchConfig) model
 
                                 modelWithPagination =
-                                    { updatedModel | paginationState = { currentConfig = Just searchConfig, currentQuery = Nothing, currentSearchContext = Nothing, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = updatedModel.paginationState.maxAssetsToFetch } }
+                                    { updatedModel | paginationState = { currentConfig = Just searchConfig, currentQuery = Nothing, currentSearchContext = Nothing, currentAlbumContext = Nothing, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = updatedModel.paginationState.maxAssetsToFetch } }
                             in
                             ( modelWithPagination, Immich.fetchImagesPaginated modelWithPagination.immichApiPaths searchConfig 1000 1 |> Cmd.map ImmichMsg )
 
@@ -2140,7 +2157,7 @@ update msg model =
                                         createLoadStateForCurrentAssetSource (TextSearch config.query config.searchContext) { model | userMode = MainMenu (SearchView updatedConfig) }
 
                                     modelWithPagination =
-                                        { updatedModel | paginationState = { currentConfig = Nothing, currentQuery = Just config.query, currentSearchContext = Just config.searchContext, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = updatedModel.paginationState.maxAssetsToFetch } }
+                                        { updatedModel | paginationState = { currentConfig = Nothing, currentQuery = Just config.query, currentSearchContext = Just config.searchContext, currentAlbumContext = Nothing, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = updatedModel.paginationState.maxAssetsToFetch } }
                                 in
                                 ( modelWithPagination, Immich.searchAssetsPaginated modelWithPagination.immichApiPaths config.searchContext config.query config.mediaType config.status 1000 1 |> Cmd.map ImmichMsg )
 
@@ -2271,53 +2288,10 @@ update msg model =
                             -- Asset membership fetch failed - log error and continue
                             { model | reloadFeedback = Just ("Album membership fetch failed: " ++ Immich.errorToString httpError) }
 
-                        Immich.AlbumFetchedWithClientSideFiltering order mediaType status (Ok album) ->
-                            let
-                                -- Filter and sort album assets client-side since API doesn't respect orderBy with albumIds
-                                filteredAssets =
-                                    album.assets
-                                        |> filterByMediaType mediaType
-                                        |> filterByStatus status
-                                        |> (case order of
-                                                CreatedAsc ->
-                                                    List.sortBy (.fileCreatedAt >> Date.toRataDie)
-
-                                                CreatedDesc ->
-                                                    List.sortBy (.fileCreatedAt >> Date.toRataDie) >> List.reverse
-
-                                                ModifiedAsc ->
-                                                    List.sortBy (.fileModifiedAt >> Date.toRataDie)
-
-                                                ModifiedDesc ->
-                                                    List.sortBy (.fileModifiedAt >> Date.toRataDie) >> List.reverse
-
-                                                Random ->
-                                                    identity
-
-                                                DurationAsc ->
-                                                    -- Use created date as fallback for duration sorting in overview
-                                                    List.sortBy (.fileCreatedAt >> Date.toRataDie)
-
-                                                DurationDesc ->
-                                                    -- Use created date as fallback for duration sorting in overview
-                                                    List.sortBy (.fileCreatedAt >> Date.toRataDie) >> List.reverse
-                                           )
-
-                                updatedModel =
-                                    if List.isEmpty filteredAssets then
-                                        -- Handle empty results - show a message instead of going to EditAssets
-                                        { model
-                                            | userMode = MainMenu (AlbumView album defaultAlbumConfig)
-                                            , imagesLoadState = ImmichLoadSuccess
-                                        }
-
-                                    else
-                                        model
-                                            |> handleFetchAlbums False [ album ]
-                                            |> handleFetchAssets filteredAssets
-                                            |> handleUpdateLoadingState FetchedAssetList
-                            in
-                            updatedModel
+                        Immich.AlbumFetchedWithClientSideFiltering _ _ _ (Ok album) ->
+                            -- Album fetched without assets - store album info and trigger paginated asset fetch
+                            model
+                                |> handleFetchAlbums False [ album ]
 
                         Immich.AlbumFetchedWithClientSideFiltering _ _ _ (Err error) ->
                             { model | imagesLoadState = ImmichLoadError error }
@@ -2471,18 +2445,27 @@ update msg model =
 
                         nextPageCmd =
                             if shouldFetchMore then
-                                case ( modelWithClearedLoading.paginationState.currentConfig, modelWithClearedLoading.paginationState.currentQuery, modelWithClearedLoading.paginationState.currentSearchContext ) of
-                                    ( Just config, Nothing, _ ) ->
+                                case modelWithClearedLoading.paginationState.currentConfig of
+                                    Just config ->
                                         Immich.fetchImagesPaginated modelWithClearedLoading.immichApiPaths config 1000 2 |> Cmd.map ImmichMsg
 
-                                    ( Nothing, Just query, Just searchContext ) ->
-                                        Immich.searchAssetsPaginated modelWithClearedLoading.immichApiPaths searchContext query AllMedia AllStatuses 1000 2 |> Cmd.map ImmichMsg
+                                    Nothing ->
+                                        case modelWithClearedLoading.paginationState.currentQuery of
+                                            Just query ->
+                                                case modelWithClearedLoading.paginationState.currentSearchContext of
+                                                    Just searchContext ->
+                                                        Immich.searchAssetsPaginated modelWithClearedLoading.immichApiPaths searchContext query AllMedia AllStatuses 1000 2 |> Cmd.map ImmichMsg
 
-                                    ( Nothing, Just query, Nothing ) ->
-                                        Immich.searchAssetsPaginated modelWithClearedLoading.immichApiPaths ContentSearch query AllMedia AllStatuses 1000 2 |> Cmd.map ImmichMsg
+                                                    Nothing ->
+                                                        Immich.searchAssetsPaginated modelWithClearedLoading.immichApiPaths ContentSearch query AllMedia AllStatuses 1000 2 |> Cmd.map ImmichMsg
 
-                                    _ ->
-                                        Cmd.none
+                                            Nothing ->
+                                                case modelWithClearedLoading.paginationState.currentAlbumContext of
+                                                    Just albumCtx ->
+                                                        Immich.fetchAlbumAssetsPaginated modelWithClearedLoading.immichApiPaths albumCtx.albumId albumCtx.order albumCtx.mediaType albumCtx.status 1000 2 |> Cmd.map ImmichMsg
+
+                                                    Nothing ->
+                                                        Cmd.none
 
                             else
                                 Cmd.none
@@ -2530,18 +2513,27 @@ update msg model =
 
                         nextPageCmd =
                             if shouldFetchMore then
-                                case ( modelWithClearedLoading.paginationState.currentConfig, modelWithClearedLoading.paginationState.currentQuery, modelWithClearedLoading.paginationState.currentSearchContext ) of
-                                    ( Just config, Nothing, _ ) ->
+                                case modelWithClearedLoading.paginationState.currentConfig of
+                                    Just config ->
                                         Immich.fetchImagesPaginated modelWithClearedLoading.immichApiPaths config 1000 (page + 1) |> Cmd.map ImmichMsg
 
-                                    ( Nothing, Just query, Just searchContext ) ->
-                                        Immich.searchAssetsPaginated modelWithClearedLoading.immichApiPaths searchContext query AllMedia AllStatuses 1000 (page + 1) |> Cmd.map ImmichMsg
+                                    Nothing ->
+                                        case modelWithClearedLoading.paginationState.currentQuery of
+                                            Just query ->
+                                                case modelWithClearedLoading.paginationState.currentSearchContext of
+                                                    Just searchContext ->
+                                                        Immich.searchAssetsPaginated modelWithClearedLoading.immichApiPaths searchContext query AllMedia AllStatuses 1000 (page + 1) |> Cmd.map ImmichMsg
 
-                                    ( Nothing, Just query, Nothing ) ->
-                                        Immich.searchAssetsPaginated modelWithClearedLoading.immichApiPaths ContentSearch query AllMedia AllStatuses 1000 (page + 1) |> Cmd.map ImmichMsg
+                                                    Nothing ->
+                                                        Immich.searchAssetsPaginated modelWithClearedLoading.immichApiPaths ContentSearch query AllMedia AllStatuses 1000 (page + 1) |> Cmd.map ImmichMsg
 
-                                    _ ->
-                                        Cmd.none
+                                            Nothing ->
+                                                case modelWithClearedLoading.paginationState.currentAlbumContext of
+                                                    Just albumCtx ->
+                                                        Immich.fetchAlbumAssetsPaginated modelWithClearedLoading.immichApiPaths albumCtx.albumId albumCtx.order albumCtx.mediaType albumCtx.status 1000 (page + 1) |> Cmd.map ImmichMsg
+
+                                                    Nothing ->
+                                                        Cmd.none
 
                             else
                                 Cmd.none
@@ -2558,6 +2550,15 @@ update msg model =
 
                 Immich.MoreImagesFetched _ (Err _) ->
                     checkIfLoadingComplete newModel
+
+                Immich.AlbumFetchedWithClientSideFiltering order mediaType status (Ok album) ->
+                    -- Trigger paginated fetch for album assets
+                    let
+                        fetchCmd =
+                            Immich.fetchAlbumAssetsWithFilters newModel.immichApiPaths album.id order mediaType status
+                                |> Cmd.map ImmichMsg
+                    in
+                    ( newModel, fetchCmd )
 
                 _ ->
                     checkIfLoadingComplete newModel
@@ -3049,6 +3050,7 @@ updatePaginationState paginatedResponse page model =
             { currentConfig = model.paginationState.currentConfig
             , currentQuery = model.paginationState.currentQuery
             , currentSearchContext = model.paginationState.currentSearchContext
+            , currentAlbumContext = model.paginationState.currentAlbumContext
             , totalAssets = paginatedResponse.total
             , currentPage = page
             , hasMorePages = hasMoreToLoad

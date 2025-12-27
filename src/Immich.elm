@@ -96,7 +96,7 @@ getImmichApiPaths baseUrl immichApiKey =
     , searchRandom = joinUrl baseUrl [ "api", "search", "random" ]
     , searchAssets = joinUrl baseUrl [ "api", "search", "metadata" ]
     , searchSmart = joinUrl baseUrl [ "api", "search", "smart" ]
-    , getAlbum = \id -> joinUrl baseUrl [ "api", "albums", id ]
+    , getAlbum = \id -> buildUrlWithQuery baseUrl [ "api", "albums", id ] [ ( "withoutAssets", "true" ) ]
     , putAlbumAssets = \id -> joinUrl baseUrl [ "api", "albums", id, "assets" ]
     , createAlbum = joinUrl baseUrl [ "api", "albums" ]
     , updateAsset = \id -> joinUrl baseUrl [ "api", "assets", id ]
@@ -483,13 +483,84 @@ searchAssetsPaginated apiPaths searchContext searchText mediaType status size pa
 
 fetchAlbumAssetsWithFilters : ImmichApiPaths -> ImmichAlbumId -> ImageOrder -> MediaTypeFilter -> StatusFilter -> Cmd Msg
 fetchAlbumAssetsWithFilters apiPaths albumId order mediaType status =
-    -- WORKAROUND: Immich API doesn't properly respect orderBy with albumIds
-    -- Fall back to getting album data and doing client-side sorting
-    makeGetRequest
+    -- Fetch album assets with pagination using the search metadata endpoint
+    fetchAlbumAssetsPaginated apiPaths albumId order mediaType status 1000 1
+
+
+fetchAlbumAssetsPaginated : ImmichApiPaths -> ImmichAlbumId -> ImageOrder -> MediaTypeFilter -> StatusFilter -> Int -> Int -> Cmd Msg
+fetchAlbumAssetsPaginated apiPaths albumId order mediaType status size page =
+    let
+        -- Use PaginatedImagesFetched for page 1, MoreImagesFetched for page 2+
+        messageConstructor =
+            if page == 1 then
+                PaginatedImagesFetched
+
+            else
+                MoreImagesFetched page
+
+        -- Album IDs filter - required for album asset fetching (API expects array)
+        albumIdField =
+            [ ( "albumIds", Encode.list Encode.string [ albumId ] ) ]
+
+        mediaTypeField =
+            case mediaType of
+                AllMedia ->
+                    []
+
+                ImagesOnly ->
+                    [ ( "type", Encode.string "IMAGE" ) ]
+
+                VideosOnly ->
+                    [ ( "type", Encode.string "VIDEO" ) ]
+
+        statusField =
+            case status of
+                AllStatuses ->
+                    []
+
+                FavoritesOnly ->
+                    [ ( "isFavorite", Encode.bool True ) ]
+
+                ArchivedOnly ->
+                    [ ( "isArchived", Encode.bool True ) ]
+
+        -- Order field - Immich API supports order for metadata search
+        -- Note: API sorting is limited, so we may still need client-side sorting for some orders
+        orderField =
+            case order of
+                CreatedAsc ->
+                    [ ( "order", Encode.string "asc" ) ]
+
+                CreatedDesc ->
+                    [ ( "order", Encode.string "desc" ) ]
+
+                ModifiedAsc ->
+                    [ ( "order", Encode.string "asc" ) ]
+
+                ModifiedDesc ->
+                    [ ( "order", Encode.string "desc" ) ]
+
+                Random ->
+                    []
+
+                -- Random doesn't use orderBy
+                DurationAsc ->
+                    [ ( "order", Encode.string "asc" ) ]
+
+                DurationDesc ->
+                    [ ( "order", Encode.string "desc" ) ]
+
+        paginationFields =
+            [ ( "size", Encode.int size )
+            , ( "page", Encode.int page )
+            ]
+    in
+    makePostRequest
         apiPaths.apiKey
-        (apiPaths.getAlbum albumId)
-        albumDecoder
-        (AlbumFetchedWithClientSideFiltering order mediaType status)
+        apiPaths.searchAssets
+        (makeSimpleJsonBody (albumIdField ++ mediaTypeField ++ statusField ++ orderField ++ paginationFields))
+        paginatedAssetsDecoder
+        messageConstructor
 
 
 fetchMembershipForAsset : ImmichApiPaths -> ImmichAssetId -> Cmd Msg
@@ -588,8 +659,12 @@ albumDecoder =
         (Decode.field "id" Decode.string)
         (Decode.field "albumName" Decode.string)
         (Decode.field "assetCount" Decode.int)
-        (Decode.field "assets" (Decode.list imageDecoder))
-        -- (Decode.field "albumThumbnailAssetId" Decode.string)
+        -- Assets field is optional - use empty list when withoutAssets=true
+        (Decode.oneOf
+            [ Decode.field "assets" (Decode.list imageDecoder)
+            , Decode.succeed []
+            ]
+        )
         (Decode.field "createdAt" dateDecoder)
 
 

@@ -912,7 +912,7 @@ shittyFuzzyAlgorithmTest : String -> String -> Int
 shittyFuzzyAlgorithmTest searchString textToBeSearched =
     let
         patternFzfFuzzy =
-            List.foldr (++) ".*" <| List.map (\a -> String.fromChar a ++ ".*") <| String.toList searchString
+            String.concat (List.map (\a -> String.fromChar a ++ ".*") (String.toList searchString)) ++ ".*"
 
         regexes =
             [ { score = 10, regex = regexFromString ("$" ++ searchString ++ ".*") }

@@ -128,7 +128,7 @@ suite =
                         , \() -> Expect.equal apiPaths.searchRandom "https://my-immich.example.com/api/search/random"
                         , \() -> Expect.equal apiPaths.searchAssets "https://my-immich.example.com/api/search/metadata"
                         , \() -> Expect.equal apiPaths.searchSmart "https://my-immich.example.com/api/search/smart"
-                        , \() -> Expect.equal (apiPaths.getAlbum "test-album") "https://my-immich.example.com/api/albums/test-album"
+                        , \() -> Expect.equal (apiPaths.getAlbum "test-album") "https://my-immich.example.com/api/albums/test-album?withoutAssets=true"
                         , \() -> Expect.equal (apiPaths.putAlbumAssets "test-album") "https://my-immich.example.com/api/albums/test-album/assets"
                         , \() -> Expect.equal apiPaths.createAlbum "https://my-immich.example.com/api/albums"
                         , \() -> Expect.equal (apiPaths.updateAsset "test-asset") "https://my-immich.example.com/api/assets/test-asset"
