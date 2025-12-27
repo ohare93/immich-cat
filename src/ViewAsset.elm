@@ -495,14 +495,17 @@ viewEditAsset apiPaths apiKey imageIndex totalAssets viewTitle currentAsset curr
 -- Loading assets view
 
 
-viewLoadingAssets : ImmichLoadState -> Element msg
-viewLoadingAssets imagesLoadState =
+viewLoadingAssets : ImmichLoadState -> String -> Element msg
+viewLoadingAssets imagesLoadState sourceTitle =
     case imagesLoadState of
         ImmichLoading ->
             text "Loading images"
 
         ImmichLoadSuccess ->
-            text "Loading complete..."
+            column [ centerX, centerY, Element.spacingXY 0 20 ]
+                [ el [ Font.size 18, Font.bold, centerX ] (text sourceTitle)
+                , el [ Font.size 16, Font.color (Element.rgb 0.5 0.5 0.5), centerX ] (text "No assets found")
+                ]
 
         ImmichLoadError error ->
             let

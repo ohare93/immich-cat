@@ -734,7 +734,7 @@ viewMainWindow model =
                     viewAssetState model assetState
 
                 LoadingAssets _ ->
-                    ViewAsset.viewLoadingAssets model.imagesLoadState
+                    ViewAsset.viewLoadingAssets model.imagesLoadState (createDetailedViewTitle model.currentAssetsSource)
     in
     Element.el [ width fill, height fill, Element.inFront (viewPaginationStatus model.paginationState) ] mainContent
 
