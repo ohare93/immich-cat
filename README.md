@@ -41,6 +41,21 @@ Open `http://localhost:8000` in your browser.
 
 Get your API key from Immich web interface → Account Settings → API Keys.
 
+### API Key Permissions
+
+Immich Cat requires these minimum permissions (Immich **v1.138.0+**):
+
+| Permission | Enables |
+|------------|---------|
+| `album.read` | View albums, check asset membership |
+| `album.create` | Create new albums |
+| `albumAsset.create` | Add assets to albums |
+| `albumAsset.delete` | Remove assets from albums |
+| `asset.read` | Browse and search assets |
+| `asset.update` | Favorite and archive assets |
+
+> **Note:** Older Immich versions may require the `all` permission instead.
+
 **See [DEPLOYMENT.md](DEPLOYMENT.md) for:**
 - Docker Compose setup
 - Nix/NixOS installation
