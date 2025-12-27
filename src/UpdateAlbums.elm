@@ -63,7 +63,12 @@ handleAlbumBrowseInput : String -> AlbumSearch -> Dict ImmichAlbumId String -> D
 handleAlbumBrowseInput key search albumKeybindings knownAlbums =
     case key of
         "Escape" ->
-            ChangeToMainMenu
+            if search.inputFocused then
+                -- Exit text search mode, clear search
+                UpdateAlbumSearch { search | inputFocused = False, searchString = "", partialKeybinding = "" }
+
+            else
+                ChangeToMainMenu
 
         "Enter" ->
             let
@@ -126,9 +131,44 @@ handleAlbumBrowseInput key search albumKeybindings knownAlbums =
             in
             UpdateAlbumSearch newSearch
 
+        "I" ->
+            if not search.inputFocused then
+                -- Enter text search mode without adding 'I' to search
+                UpdateAlbumSearch { search | inputFocused = True }
+
+            else
+                -- Already in text search mode, add 'I' to search
+                let
+                    newSearch =
+                        updateAlbumSearchString (search.searchString ++ key) search knownAlbums
+                in
+                UpdateAlbumSearch newSearch
+
         _ ->
-            if not (String.isEmpty search.searchString) && isSupportedSearchLetter key then
-                -- We're already in text search mode, continue with text search
+            if search.inputFocused then
+                -- In text search mode: all letters go to search, no keybinding processing
+                if isSupportedSearchLetter key then
+                    let
+                        newSearch =
+                            updateAlbumSearchString (search.searchString ++ key) search knownAlbums
+                    in
+                    UpdateAlbumSearch newSearch
+
+                else if key == "Backspace" then
+                    let
+                        newSearchString =
+                            String.slice 0 (String.length search.searchString - 1) search.searchString
+
+                        newSearch =
+                            updateAlbumSearchString newSearchString search knownAlbums
+                    in
+                    UpdateAlbumSearch newSearch
+
+                else
+                    NoAlbumAction
+
+            else if not (String.isEmpty search.searchString) && isSupportedSearchLetter key then
+                -- We're already in text search mode (legacy path), continue with text search
                 let
                     newSearch =
                         updateAlbumSearchString (search.searchString ++ key) search knownAlbums
@@ -136,7 +176,7 @@ handleAlbumBrowseInput key search albumKeybindings knownAlbums =
                 UpdateAlbumSearch newSearch
 
             else if isKeybindingLetter key then
-                -- Always try keybinding mode for keybinding letters
+                -- Normal mode: try keybinding mode for keybinding letters
                 let
                     -- Clear any existing warning when typing ANY keybinding letter
                     searchWithoutWarning =

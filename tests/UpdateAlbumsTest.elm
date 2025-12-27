@@ -32,6 +32,7 @@ createTestAlbumSearch searchString partialKeybinding =
     , albumScores = Dict.empty
     , pagination = { currentPage = 1, itemsPerPage = 20, totalItems = 100 }
     , invalidInputWarning = Nothing
+    , inputFocused = False
     }
 
 
@@ -43,6 +44,7 @@ createTestAlbumSearchWithWarning searchString partialKeybinding warning =
     , albumScores = Dict.empty
     , pagination = { currentPage = 1, itemsPerPage = 20, totalItems = 100 }
     , invalidInputWarning = Just warning
+    , inputFocused = False
     }
 
 
@@ -239,7 +241,7 @@ navigationTests =
                 let
                     -- Set up search with a match - need to set up albumScores for this to work
                     search =
-                        { searchString = "gen", partialKeybinding = "", selectedIndex = 0, albumScores = Dict.fromList [ ( "album1", 100 ) ], pagination = { currentPage = 1, itemsPerPage = 20, totalItems = 1 }, invalidInputWarning = Nothing }
+                        { searchString = "gen", partialKeybinding = "", selectedIndex = 0, albumScores = Dict.fromList [ ( "album1", 100 ) ], pagination = { currentPage = 1, itemsPerPage = 20, totalItems = 1 }, invalidInputWarning = Nothing, inputFocused = False }
 
                     result =
                         handleAlbumBrowseInput "Enter" search testAlbumKeybindings testAlbums
@@ -259,7 +261,7 @@ navigationTests =
                 let
                     -- Start on page 2 so PageUp can actually go to page 1
                     search =
-                        { searchString = "", partialKeybinding = "", selectedIndex = 0, albumScores = Dict.empty, pagination = { currentPage = 2, itemsPerPage = 20, totalItems = 100 }, invalidInputWarning = Nothing }
+                        { searchString = "", partialKeybinding = "", selectedIndex = 0, albumScores = Dict.empty, pagination = { currentPage = 2, itemsPerPage = 20, totalItems = 100 }, invalidInputWarning = Nothing, inputFocused = False }
 
                     result =
                         handleAlbumBrowseInput "PageUp" search testAlbumKeybindings testAlbums

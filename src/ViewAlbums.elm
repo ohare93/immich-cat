@@ -71,6 +71,7 @@ type alias AlbumSearch =
     , partialKeybinding : String
     , pagination : AlbumPagination
     , invalidInputWarning : Maybe String
+    , inputFocused : Bool
     }
 
 
@@ -678,6 +679,7 @@ getAlbumSearch searchString albums =
         , totalItems = totalItems
         }
     , invalidInputWarning = Nothing
+    , inputFocused = False
     }
 
 
@@ -701,6 +703,7 @@ getAlbumSearchWithHeight searchString albums screenHeight =
         , totalItems = totalItems
         }
     , invalidInputWarning = Nothing
+    , inputFocused = False
     }
 
 
@@ -726,6 +729,7 @@ getAlbumSearchWithIndex searchString selectedIndex albums =
         , totalItems = totalItems
         }
     , invalidInputWarning = Nothing
+    , inputFocused = False
     }
 
 
