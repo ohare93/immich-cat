@@ -172,11 +172,11 @@ handleSearchViewInput key config =
                 ChangeMode LegacyMainMenu
 
         "i" ->
-            if not config.inputFocused then
-                UpdateSearchInput True
+            if config.inputFocused then
+                ChangeMode (LegacySearchView { config | query = config.query ++ key })
 
             else
-                NoMenuAction
+                UpdateSearchInput True
 
         "m" ->
             if config.inputFocused then
