@@ -11,16 +11,6 @@ require('dotenv').config();
 const DEV_SERVER_PORT = 8000;
 const ELM_LIVE_PORT = 8001;
 
-// Generate or use provided encryption key
-let ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
-if (!ENCRYPTION_KEY) {
-  // Auto-generate a random key if none provided
-  ENCRYPTION_KEY = require('crypto').randomBytes(32).toString('hex');
-  console.log('⚠️  No ENCRYPTION_KEY environment variable provided.');
-  console.log('📋 Generated key:', ENCRYPTION_KEY);
-  console.log('💡 Set ENCRYPTION_KEY=' + ENCRYPTION_KEY + ' to persist across restarts');
-}
-
 function startElmLive() {
   const elmLive = spawn('npx', [
     'elm-live',
@@ -57,117 +47,31 @@ function getHtmlWithEnvVars() {
     <script type="text/javascript">
       window.ENV = {
         IMMICH_API_KEY: '${process.env.IMMICH_API_KEY || ''}',
-        IMMICH_URL: '${process.env.IMMICH_URL || 'https://localhost/api'}',
-        ENCRYPTION_KEY: '${ENCRYPTION_KEY}'
+        IMMICH_URL: '${process.env.IMMICH_URL || 'https://localhost/api'}'
       };
 
-      let encryptionKey = null;
-
-      async function getEncryptionKey() {
-        if (encryptionKey) return encryptionKey;
-        
-        // Pad or truncate the key to exactly 32 bytes for AES-256
-        const keyMaterial = (window.ENV.ENCRYPTION_KEY + '0'.repeat(64)).slice(0, 64);
-        const keyBytes = new Uint8Array(32);
-        for (let i = 0; i < 32; i++) {
-          keyBytes[i] = parseInt(keyMaterial.slice(i * 2, i * 2 + 2), 16) || 0;
-        }
-        
-        encryptionKey = await window.crypto.subtle.importKey(
-          'raw',
-          keyBytes,
-          'AES-GCM',
-          false,
-          ['encrypt', 'decrypt']
-        );
-        
-        return encryptionKey;
-      }
-
-      async function encryptText(text) {
-        if (!text) return text;
-        
-        const key = await getEncryptionKey();
-        const iv = window.crypto.getRandomValues(new Uint8Array(12));
-        const encoder = new TextEncoder();
-        
-        const encrypted = await window.crypto.subtle.encrypt(
-          { name: 'AES-GCM', iv: iv },
-          key,
-          encoder.encode(text)
-        );
-        
-        const combined = new Uint8Array(iv.length + encrypted.byteLength);
-        combined.set(iv);
-        combined.set(new Uint8Array(encrypted), iv.length);
-        
-        return btoa(String.fromCharCode(...combined));
-      }
-
-      async function decryptText(encryptedText) {
-        if (!encryptedText) return encryptedText;
-        
-        try {
-          const key = await getEncryptionKey();
-          const combined = new Uint8Array(atob(encryptedText).split('').map(c => c.charCodeAt(0)));
-          
-          const iv = combined.slice(0, 12);
-          const encrypted = combined.slice(12);
-          
-          const decrypted = await window.crypto.subtle.decrypt(
-            { name: 'AES-GCM', iv: iv },
-            key,
-            encrypted
-          );
-          
-          const decoder = new TextDecoder();
-          return decoder.decode(decrypted);
-        } catch (error) {
-          return encryptedText;
-        }
-      }
-
-      try {
-        window.storageAPI = {
-        save: async function(key, value) {
+      window.storageAPI = {
+        save: function(key, value) {
           try {
-            let finalValue = value;
-            
-            if (key === 'immichApiKey' && value) {
-              finalValue = await encryptText(value);
-            }
-            
-            localStorage.setItem(key, finalValue);
+            localStorage.setItem(key, value);
           } catch (error) {
           }
         },
-
-        load: async function(key) {
+        load: function(key) {
           try {
-            const value = localStorage.getItem(key);
-            if (!value) return null;
-            
-            if (key === 'immichApiKey') {
-              return await decryptText(value);
-            }
-            
-            return value;
+            return localStorage.getItem(key);
           } catch (error) {
             return null;
           }
         },
-
         clear: function() {
           try {
             localStorage.removeItem('immichApiUrl');
             localStorage.removeItem('immichApiKey');
-            encryptionKey = null;
           } catch (error) {
           }
         }
       };
-      } catch (error) {
-      }
     </script>`;
 
     htmlTemplate = htmlTemplate.replace('<head>', `<head>${envScript}`);

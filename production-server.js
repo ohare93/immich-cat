@@ -57,127 +57,26 @@ function injectEnvironmentVariables(html) {
         IMMICH_URL: '${immichUrl.replace(/'/g, "\\'")}'
       };
 
-      // Storage API with encryption support
-      let encryptionKey = null;
-
-      async function getEncryptionKey() {
-        if (encryptionKey) return encryptionKey;
-        
-        const stored = sessionStorage.getItem('encKey');
-        if (stored) {
-          try {
-            encryptionKey = await window.crypto.subtle.importKey(
-              'raw',
-              new Uint8Array(JSON.parse(stored)),
-              { name: 'AES-GCM' },
-              false,
-              ['encrypt', 'decrypt']
-            );
-            return encryptionKey;
-          } catch (error) {
-            console.warn('Failed to import stored encryption key:', error);
-            sessionStorage.removeItem('encKey');
-          }
-        }
-
-        encryptionKey = await window.crypto.subtle.generateKey(
-          { name: 'AES-GCM', length: 256 },
-          true,
-          ['encrypt', 'decrypt']
-        );
-
-        const exported = await window.crypto.subtle.exportKey('raw', encryptionKey);
-        sessionStorage.setItem('encKey', JSON.stringify(Array.from(new Uint8Array(exported))));
-        
-        return encryptionKey;
-      }
-
-      async function encryptText(text) {
-        if (!text) return text;
-        
-        try {
-          const key = await getEncryptionKey();
-          const iv = window.crypto.getRandomValues(new Uint8Array(12));
-          const encoder = new TextEncoder();
-          
-          const encrypted = await window.crypto.subtle.encrypt(
-            { name: 'AES-GCM', iv: iv },
-            key,
-            encoder.encode(text)
-          );
-          
-          const combined = new Uint8Array(iv.length + encrypted.byteLength);
-          combined.set(iv);
-          combined.set(new Uint8Array(encrypted), iv.length);
-          
-          return btoa(String.fromCharCode(...combined));
-        } catch (error) {
-          console.warn('Encryption failed:', error);
-          return text;
-        }
-      }
-
-      async function decryptText(encryptedText) {
-        if (!encryptedText) return encryptedText;
-        
-        try {
-          const key = await getEncryptionKey();
-          const combined = new Uint8Array(atob(encryptedText).split('').map(c => c.charCodeAt(0)));
-          
-          const iv = combined.slice(0, 12);
-          const encrypted = combined.slice(12);
-          
-          const decrypted = await window.crypto.subtle.decrypt(
-            { name: 'AES-GCM', iv: iv },
-            key,
-            encrypted
-          );
-          
-          const decoder = new TextDecoder();
-          return decoder.decode(decrypted);
-        } catch (error) {
-          console.warn('Decryption failed, returning original text:', error);
-          return encryptedText;
-        }
-      }
-
       window.storageAPI = {
-        save: async function(key, value) {
+        save: function(key, value) {
           try {
-            let finalValue = value;
-            
-            if (key === 'immichApiKey' && value) {
-              finalValue = await encryptText(value);
-            }
-            
-            localStorage.setItem(key, finalValue);
+            localStorage.setItem(key, value);
           } catch (error) {
             console.warn('Storage save failed:', error);
           }
         },
-
-        load: async function(key) {
+        load: function(key) {
           try {
-            const value = localStorage.getItem(key);
-            if (!value) return null;
-            
-            if (key === 'immichApiKey') {
-              return await decryptText(value);
-            }
-            
-            return value;
+            return localStorage.getItem(key);
           } catch (error) {
             console.warn('Storage load failed:', error);
             return null;
           }
         },
-
         clear: function() {
           try {
             localStorage.removeItem('immichApiUrl');
             localStorage.removeItem('immichApiKey');
-            sessionStorage.removeItem('encKey');
-            encryptionKey = null;
           } catch (error) {
             console.warn('Storage clear failed:', error);
           }
