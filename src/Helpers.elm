@@ -1,5 +1,6 @@
 module Helpers exposing
-    ( categorisationToString
+    ( applySortingToAssets
+    , categorisationToString
     , filterByMediaType
     , filterByStatus
     , isKeybindingLetter
@@ -15,6 +16,7 @@ module Helpers exposing
     , toggleOrder
     , toggleOrderHandler
     , toggleStatus
+    , validateConfig
     )
 
 import Dict exposing (Dict)
@@ -237,3 +239,151 @@ filterByStatus statusFilter assets =
 
         ArchivedOnly ->
             List.filter (\asset -> asset.isArchived) assets
+
+
+{-| Sort assets by the specified order.
+Uses secondary sort by ID for deterministic ordering when primary sort values are equal.
+-}
+applySortingToAssets : ImageOrder -> List ImmichAsset -> List ImmichAsset
+applySortingToAssets order assets =
+    let
+        sortedAssets =
+            case order of
+                CreatedAsc ->
+                    List.sortWith
+                        (\a b ->
+                            case compare a.fileCreatedAtString b.fileCreatedAtString of
+                                EQ ->
+                                    compare a.id b.id
+
+                                other ->
+                                    other
+                        )
+                        assets
+
+                CreatedDesc ->
+                    List.sortWith
+                        (\a b ->
+                            case compare b.fileCreatedAtString a.fileCreatedAtString of
+                                EQ ->
+                                    compare a.id b.id
+
+                                other ->
+                                    other
+                        )
+                        assets
+
+                ModifiedAsc ->
+                    List.sortWith
+                        (\a b ->
+                            case compare a.fileModifiedAtString b.fileModifiedAtString of
+                                EQ ->
+                                    compare a.id b.id
+
+                                other ->
+                                    other
+                        )
+                        assets
+
+                ModifiedDesc ->
+                    List.sortWith
+                        (\a b ->
+                            let
+                                stringComparison =
+                                    compare b.fileModifiedAtString a.fileModifiedAtString
+                            in
+                            case stringComparison of
+                                EQ ->
+                                    compare a.id b.id
+
+                                other ->
+                                    other
+                        )
+                        assets
+
+                DurationAsc ->
+                    List.sortWith
+                        (\a b ->
+                            let
+                                aDuration =
+                                    a.duration
+                                        |> Maybe.andThen Immich.parseDurationToSeconds
+                                        |> Maybe.withDefault 999999
+
+                                bDuration =
+                                    b.duration
+                                        |> Maybe.andThen Immich.parseDurationToSeconds
+                                        |> Maybe.withDefault 999999
+                            in
+                            case compare aDuration bDuration of
+                                EQ ->
+                                    compare a.id b.id
+
+                                other ->
+                                    other
+                        )
+                        assets
+
+                DurationDesc ->
+                    List.sortWith
+                        (\a b ->
+                            let
+                                aDuration =
+                                    a.duration
+                                        |> Maybe.andThen Immich.parseDurationToSeconds
+                                        |> Maybe.withDefault -1
+
+                                bDuration =
+                                    b.duration
+                                        |> Maybe.andThen Immich.parseDurationToSeconds
+                                        |> Maybe.withDefault -1
+                            in
+                            case compare bDuration aDuration of
+                                EQ ->
+                                    compare a.id b.id
+
+                                other ->
+                                    other
+                        )
+                        assets
+
+                Random ->
+                    assets
+    in
+    sortedAssets
+
+
+{-| Validate Immich configuration settings.
+Returns Nothing if valid, Just error message if invalid.
+-}
+validateConfig : String -> String -> String -> String -> Maybe String
+validateConfig url apiKey envUrl envApiKey =
+    let
+        finalUrl =
+            if String.isEmpty (String.trim url) then
+                envUrl
+
+            else
+                url
+
+        finalApiKey =
+            if String.isEmpty (String.trim apiKey) then
+                envApiKey
+
+            else
+                apiKey
+    in
+    if String.isEmpty (String.trim finalUrl) then
+        Just "URL cannot be empty (no environment default available)"
+
+    else if String.isEmpty (String.trim finalApiKey) then
+        Just "API key cannot be empty (no environment default available)"
+
+    else if not (String.startsWith "http" finalUrl) then
+        Just "URL must start with http:// or https://"
+
+    else if String.length finalApiKey < 10 then
+        Just "API key appears to be too short"
+
+    else
+        Nothing

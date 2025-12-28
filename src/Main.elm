@@ -8,7 +8,7 @@ import Element exposing (Element, alignRight, alignTop, clipY, column, el, fill,
 import Element.Background as Background
 import Element.Font as Font
 import HelpText exposing (AlbumBrowseState(..), ViewContext(..), viewContextHelp)
-import Helpers exposing (filterByMediaType, filterByStatus)
+import Helpers exposing (applySortingToAssets, filterByMediaType, filterByStatus, validateConfig)
 import Html exposing (Html)
 import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImageSearchConfig, ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..), MediaTypeFilter(..), SearchContext(..), StatusFilter(..), getAllAlbums, getImmichApiPaths)
 import Json.Decode as Decode
@@ -16,6 +16,9 @@ import KeybindBranches exposing (generateAlbumKeybindings)
 import Menus exposing (AlbumConfig, defaultAlbumConfig, defaultSearchConfig)
 import Process
 import Task
+import Theme exposing (DeviceClass(..), Theme(..))
+import TitleHelpers exposing (createDetailedViewTitle, getMoveFromInfo)
+import Types exposing (AlbumPaginationContext, AssetSource(..), AssetSourceUpdate(..), ImageIndex, NavigationHistoryEntry, PaginationState, SourceLoadState, UserMode(..))
 import UpdateAlbums exposing (AlbumMsg)
 import UpdateAsset exposing (AssetMsg(..), AssetResult(..), AssetState(..), updateAsset)
 import UpdateMenus exposing (MenuMsg(..), MenuResult(..), MenuState(..), updateMenus)
@@ -95,18 +98,6 @@ type alias Flags =
     }
 
 
-type DeviceClass
-    = Mobile
-    | Tablet
-    | Desktop
-
-
-type Theme
-    = Light
-    | Dark
-    | System
-
-
 type alias Model =
     { key : String
     , currentAssetsSource : AssetSource
@@ -152,184 +143,6 @@ type alias Model =
     }
 
 
-type alias PaginationState =
-    { currentConfig : Maybe ImageSearchConfig
-    , currentQuery : Maybe String
-    , currentSearchContext : Maybe SearchContext
-    , currentAlbumContext : Maybe AlbumPaginationContext
-    , totalAssets : Int
-    , currentPage : Int
-    , hasMorePages : Bool
-    , isLoadingMore : Bool
-    , loadedAssets : Int
-    , maxAssetsToFetch : Int -- Configurable limit
-    }
-
-
-type alias AlbumPaginationContext =
-    { albumId : ImmichAlbumId
-    , order : ImageOrder
-    , mediaType : MediaTypeFilter
-    , status : StatusFilter
-    }
-
-
-type AssetSource
-    = NoAssets
-    | ImageSearch ImageSearchConfig
-    | TextSearch String SearchContext
-    | Album ImmichAlbum
-    | FilteredAlbum ImmichAlbum AlbumConfig
-
-
-type alias SourceLoadState =
-    { fetchedAssetList : Maybe Bool
-    , fetchedAssetMembership : Maybe Bool
-    }
-
-
-type AssetSourceUpdate
-    = FetchedAssetList
-
-
-
--- | FetchedAlbums
-
-
-type UserMode
-    = MainMenu MenuState
-    | ViewAssets AssetState
-    | LoadingAssets SourceLoadState
-
-
-type alias NavigationHistoryEntry =
-    { userMode : UserMode
-    , currentAssetsSource : AssetSource
-    , currentAssets : List ImmichAssetId
-    , imageIndex : ImageIndex
-    , paginationState : PaginationState
-    }
-
-
-type alias ImageIndex =
-    Int
-
-
-classifyDevice : Int -> Int -> DeviceClass
-classifyDevice width height =
-    if width < 768 then
-        Mobile
-
-    else if width < 1024 then
-        Tablet
-
-    else
-        Desktop
-
-
-nextTheme : Theme -> Theme
-nextTheme currentTheme =
-    case currentTheme of
-        Light ->
-            Dark
-
-        Dark ->
-            System
-
-        System ->
-            Light
-
-
-getBackgroundColor : Theme -> Element.Color
-getBackgroundColor theme =
-    case theme of
-        Light ->
-            Element.rgb 0.98 0.98 0.98
-
-        Dark ->
-            Element.rgb 0.05 0.05 0.05
-
-        System ->
-            ViewAlbums.usefulColours "darkgrey"
-
-
-
--- Default
-
-
-getTextColor : Theme -> Element.Color
-getTextColor theme =
-    case theme of
-        Light ->
-            Element.rgb 0.1 0.1 0.1
-
-        Dark ->
-            Element.rgb 0.9 0.9 0.9
-
-        System ->
-            Element.rgb 0.1 0.1 0.1
-
-
-
--- Default
-
-
-getSecondaryColor : Theme -> Element.Color
-getSecondaryColor theme =
-    case theme of
-        Light ->
-            Element.rgb 0.6 0.6 0.6
-
-        Dark ->
-            Element.rgb 0.7 0.7 0.7
-
-        System ->
-            Element.rgb 0.6 0.6 0.6
-
-
-getMutedTextColor : Theme -> Element.Color
-getMutedTextColor theme =
-    case theme of
-        Light ->
-            Element.rgb 0.5 0.5 0.5
-
-        Dark ->
-            Element.rgb 0.6 0.6 0.6
-
-        System ->
-            Element.rgb 0.5 0.5 0.5
-
-
-getKeybindTextColor : Theme -> Element.Color
-getKeybindTextColor theme =
-    case theme of
-        Light ->
-            Element.rgb 0.1 0.1 0.1
-
-        Dark ->
-            Element.rgb 0.9 0.9 0.9
-
-        System ->
-            Element.rgb 0.1 0.1 0.1
-
-
-getHighlightColor : Theme -> Element.Color
-getHighlightColor theme =
-    case theme of
-        Light ->
-            Element.fromRgb { red = 0.8, green = 0.2, blue = 0.2, alpha = 1 }
-
-        Dark ->
-            Element.fromRgb { red = 1.0, green = 0.4, blue = 0.4, alpha = 1 }
-
-        System ->
-            Element.fromRgb { red = 0.8, green = 0.2, blue = 0.2, alpha = 1 }
-
-
-
--- Default
-
-
 init : Flags -> ( Model, Cmd Msg )
 init flags =
     ( { key = ""
@@ -369,7 +182,7 @@ init flags =
       , immichApiPaths = getImmichApiPaths flags.immichApiUrl flags.immichApiKey
       , screenHeight = 800 -- Default, will be updated by window resize
       , screenWidth = 1200 -- Default, will be updated by window resize
-      , deviceClass = classifyDevice 1200 800 -- Will be updated by WindowResize
+      , deviceClass = Theme.classifyDevice 1200 800 -- Will be updated by WindowResize
       , theme = Dark -- Default to dark theme
       , pendingAlbumChanges = []
       , paginationState =
@@ -393,142 +206,6 @@ init flags =
         -- to avoid duplicate API calls with different credentials
         ]
     )
-
-
-createDetailedViewTitle : AssetSource -> String
-createDetailedViewTitle assetSource =
-    case assetSource of
-        ImageSearch config ->
-            let
-                orderText =
-                    case config.order of
-                        CreatedDesc ->
-                            "[created desc]"
-
-                        CreatedAsc ->
-                            "[created asc]"
-
-                        ModifiedDesc ->
-                            "[modified desc]"
-
-                        ModifiedAsc ->
-                            "[modified asc]"
-
-                        Random ->
-                            "[random]"
-
-                        DurationAsc ->
-                            "[duration asc]"
-
-                        DurationDesc ->
-                            "[duration desc]"
-
-                mediaText =
-                    case config.mediaType of
-                        AllMedia ->
-                            ""
-
-                        ImagesOnly ->
-                            " [images]"
-
-                        VideosOnly ->
-                            " [videos]"
-
-                statusText =
-                    case config.status of
-                        AllStatuses ->
-                            ""
-
-                        FavoritesOnly ->
-                            " [favourites]"
-
-                        ArchivedOnly ->
-                            " [archived]"
-
-                categText =
-                    case config.categorisation of
-                        All ->
-                            "Timeline"
-
-                        Uncategorised ->
-                            "Timeline [uncategorised]"
-            in
-            categText ++ statusText ++ mediaText ++ " " ++ orderText
-
-        TextSearch searchText _ ->
-            "Search \"" ++ searchText ++ "\""
-
-        Album album ->
-            "Album \"" ++ album.albumName ++ "\""
-
-        FilteredAlbum album config ->
-            let
-                orderText =
-                    case config.order of
-                        CreatedDesc ->
-                            "[created desc]"
-
-                        CreatedAsc ->
-                            "[created asc]"
-
-                        ModifiedDesc ->
-                            "[modified desc]"
-
-                        ModifiedAsc ->
-                            "[modified asc]"
-
-                        Random ->
-                            "[random]"
-
-                        DurationAsc ->
-                            "[duration asc]"
-
-                        DurationDesc ->
-                            "[duration desc]"
-
-                mediaText =
-                    case config.mediaType of
-                        AllMedia ->
-                            ""
-
-                        ImagesOnly ->
-                            " [images]"
-
-                        VideosOnly ->
-                            " [videos]"
-
-                statusText =
-                    case config.status of
-                        AllStatuses ->
-                            ""
-
-                        FavoritesOnly ->
-                            " [favourites]"
-
-                        ArchivedOnly ->
-                            " [archived]"
-
-                hasFilters =
-                    config.mediaType /= AllMedia || config.status /= AllStatuses || config.order /= CreatedDesc
-            in
-            if hasFilters then
-                "Album \"" ++ album.albumName ++ "\"" ++ statusText ++ mediaText ++ " " ++ orderText
-
-            else
-                "Album \"" ++ album.albumName ++ "\""
-
-        NoAssets ->
-            ""
-
-
-getMoveFromInfo : AssetSource -> Maybe ( String, Bool )
-getMoveFromInfo assetSource =
-    case assetSource of
-        FilteredAlbum album config ->
-            Just ( album.albumName, config.moveFromMode )
-
-        _ ->
-            Nothing
 
 
 
@@ -693,8 +370,8 @@ view model =
     Element.layout
         [ width fill
         , height (fill |> minimum 1)
-        , Background.color (getBackgroundColor model.theme)
-        , Font.color (getTextColor model.theme)
+        , Background.color (Theme.getBackgroundColor model.theme)
+        , Font.color (Theme.getTextColor model.theme)
         ]
     <|
         viewWithInputBottomBar model.deviceClass model.userMode model.theme <|
@@ -779,7 +456,7 @@ viewMenuState model menuState =
                                 el [ Font.color <| Element.fromRgb { red = 1, green = 0.2, blue = 0.2, alpha = 1 }, Font.size 12 ] <| text "No matches"
 
                               else
-                                el [ Font.color <| getMutedTextColor model.theme, Font.size 12 ] <| text ("Next: " ++ nextCharString)
+                                el [ Font.color <| Theme.getMutedTextColor model.theme, Font.size 12 ] <| text ("Next: " ++ nextCharString)
                             ]
 
                       else
@@ -790,11 +467,11 @@ viewMenuState model menuState =
 
                         Nothing ->
                             text ""
-                    , ViewAlbums.viewSidebarAlbums search model.albumKeybindings model.knownAlbums SelectAlbum (getKeybindTextColor model.theme) (getMutedTextColor model.theme) (getHighlightColor model.theme)
+                    , ViewAlbums.viewSidebarAlbums search model.albumKeybindings model.knownAlbums SelectAlbum (Theme.getKeybindTextColor model.theme) (Theme.getMutedTextColor model.theme) (Theme.getHighlightColor model.theme)
                     ]
                 , Element.column [ width (fillPortion 5), height fill, paddingXY 20 20 ]
                     [ el [ Font.size 16 ] (text "Select an album from the left to configure and view its contents.")
-                    , el [ Font.size 14, Font.color <| getMutedTextColor model.theme ] (text "Type album name or keybinding to filter the list.")
+                    , el [ Font.size 14, Font.color <| Theme.getMutedTextColor model.theme ] (text "Type album name or keybinding to filter the list.")
                     ]
                 , Element.column [ width (fillPortion 4 |> minimum 300), height fill, paddingXY 15 15 ]
                     [ viewContextHelp (AlbumBrowseContext SelectingAlbum)
@@ -851,7 +528,7 @@ viewAssetState model assetState =
 
         SelectAlbumInput search ->
             ViewAlbums.viewWithSidebar
-                (ViewAlbums.viewSidebarAlbums search model.albumKeybindings model.knownAlbums SelectAlbum (getKeybindTextColor model.theme) (getMutedTextColor model.theme) (getHighlightColor model.theme))
+                (ViewAlbums.viewSidebarAlbums search model.albumKeybindings model.knownAlbums SelectAlbum (Theme.getKeybindTextColor model.theme) (Theme.getMutedTextColor model.theme) (Theme.getHighlightColor model.theme))
                 (column []
                     [ text "Select Album"
                     , text search.searchString
@@ -866,21 +543,21 @@ viewAssetState model assetState =
                 moveFromInfo =
                     getMoveFromInfo model.currentAssetsSource
             in
-            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) moveFromInfo SelectAlbum (getKeybindTextColor model.theme) (getMutedTextColor model.theme) (getHighlightColor model.theme)) (ViewAsset.viewEditAsset model.immichApiPaths model.apiKey model.imageIndex (List.length model.currentAssets) viewTitle asset model.currentAssets model.knownAssets model.currentDateMillis model.timeViewMode inputMode)
+            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) moveFromInfo SelectAlbum (Theme.getKeybindTextColor model.theme) (Theme.getMutedTextColor model.theme) (Theme.getHighlightColor model.theme)) (ViewAsset.viewEditAsset model.immichApiPaths model.apiKey model.imageIndex (List.length model.currentAssets) viewTitle asset model.currentAssets model.knownAssets model.currentDateMillis model.timeViewMode inputMode)
 
         CreateAlbumConfirmation _ asset search albumName ->
             let
                 moveFromInfo =
                     getMoveFromInfo model.currentAssetsSource
             in
-            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums Nothing moveFromInfo SelectAlbum (getKeybindTextColor model.theme) (getMutedTextColor model.theme) (getHighlightColor model.theme)) (ViewAsset.viewCreateAlbumConfirmation albumName)
+            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums Nothing moveFromInfo SelectAlbum (Theme.getKeybindTextColor model.theme) (Theme.getMutedTextColor model.theme) (Theme.getHighlightColor model.theme)) (ViewAsset.viewCreateAlbumConfirmation albumName)
 
         ShowEditAssetHelp inputMode asset search ->
             let
                 moveFromInfo =
                     getMoveFromInfo model.currentAssetsSource
             in
-            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) moveFromInfo SelectAlbum (getKeybindTextColor model.theme) (getMutedTextColor model.theme) (getHighlightColor model.theme)) (ViewAsset.viewEditAssetHelp inputMode)
+            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) moveFromInfo SelectAlbum (Theme.getKeybindTextColor model.theme) (Theme.getMutedTextColor model.theme) (Theme.getHighlightColor model.theme)) (ViewAsset.viewEditAssetHelp inputMode)
 
         GridView gridState ->
             ViewAsset.viewGridAssets model.immichApiPaths model.apiKey gridState model.currentAssets model.knownAssets model.paginationState.hasMorePages model.paginationState.isLoadingMore (AssetMsg << AssetGridMsg)
@@ -997,7 +674,7 @@ viewInputMode userMode theme =
 
             ScrollViewMode _ ->
                 el [ width (fillPortion 1), Background.color <| Element.fromRgb { red = 0.5, green = 0, blue = 1, alpha = 1 } ] <| text "Scroll"
-        , el [ width (px 40), Background.color <| getSecondaryColor theme, Font.color <| getTextColor theme, Element.centerX ] <| text themeText
+        , el [ width (px 40), Background.color <| Theme.getSecondaryColor theme, Font.color <| Theme.getTextColor theme, Element.centerX ] <| text themeText
         ]
 
 
@@ -1811,7 +1488,7 @@ update msg model =
                         case model.userMode of
                             MainMenu menuState ->
                                 if effectiveKey == "T" && not (isInInputMode model.userMode) then
-                                    ( { model | theme = nextTheme model.theme }, Cmd.none )
+                                    ( { model | theme = Theme.nextTheme model.theme }, Cmd.none )
 
                                 else
                                     handleMenuResult (updateMenus (MenuKeyPress effectiveKey) menuState model.knownAlbums model.immichApiPaths model.screenHeight) model
@@ -1863,7 +1540,7 @@ update msg model =
                                         ( { model | userMode = MainMenu Settings }, Cmd.none )
 
                                     "T" ->
-                                        ( { model | theme = nextTheme model.theme }, Cmd.none )
+                                        ( { model | theme = Theme.nextTheme model.theme }, Cmd.none )
 
                                     _ ->
                                         ( model, Cmd.none )
@@ -1891,7 +1568,7 @@ update msg model =
                     { model
                         | screenHeight = height
                         , screenWidth = width
-                        , deviceClass = classifyDevice width height
+                        , deviceClass = Theme.classifyDevice width height
                     }
 
                 updatedModel =
@@ -2242,7 +1919,7 @@ update msg model =
                     ( model, Cmd.none )
 
         ToggleTheme ->
-            ( { model | theme = nextTheme model.theme }, Cmd.none )
+            ( { model | theme = Theme.nextTheme model.theme }, Cmd.none )
 
         ImmichMsg imsg ->
             let
@@ -2694,133 +2371,7 @@ handleFetchAssets assets model =
             }
 
 
-applySortingToAssets : ImageOrder -> List ImmichAsset -> List ImmichAsset
-applySortingToAssets order assets =
-    let
-        sortedAssets =
-            case order of
-                CreatedAsc ->
-                    List.sortWith
-                        (\a b ->
-                            case compare a.fileCreatedAtString b.fileCreatedAtString of
-                                EQ ->
-                                    compare a.id b.id
 
-                                -- Secondary sort by ID for predictable ordering
-                                other ->
-                                    other
-                        )
-                        assets
-
-                CreatedDesc ->
-                    List.sortWith
-                        (\a b ->
-                            case compare b.fileCreatedAtString a.fileCreatedAtString of
-                                -- b first for descending
-                                EQ ->
-                                    compare a.id b.id
-
-                                -- Secondary sort by ID for predictable ordering
-                                other ->
-                                    other
-                        )
-                        assets
-
-                ModifiedAsc ->
-                    List.sortWith
-                        (\a b ->
-                            case compare a.fileModifiedAtString b.fileModifiedAtString of
-                                EQ ->
-                                    compare a.id b.id
-
-                                -- Secondary sort by ID for predictable ordering
-                                other ->
-                                    other
-                        )
-                        assets
-
-                ModifiedDesc ->
-                    List.sortWith
-                        (\a b ->
-                            let
-                                stringComparison =
-                                    compare b.fileModifiedAtString a.fileModifiedAtString
-
-                                -- b first for descending
-                            in
-                            case stringComparison of
-                                EQ ->
-                                    compare a.id b.id
-
-                                -- Secondary sort by ID for predictable ordering
-                                other ->
-                                    other
-                        )
-                        assets
-
-                DurationAsc ->
-                    List.sortWith
-                        (\a b ->
-                            let
-                                aDuration =
-                                    a.duration
-                                        |> Maybe.andThen Immich.parseDurationToSeconds
-                                        |> Maybe.withDefault 999999
-
-                                -- Put non-videos at the end
-                                bDuration =
-                                    b.duration
-                                        |> Maybe.andThen Immich.parseDurationToSeconds
-                                        |> Maybe.withDefault 999999
-
-                                -- Put non-videos at the end
-                            in
-                            case compare aDuration bDuration of
-                                EQ ->
-                                    compare a.id b.id
-
-                                -- Secondary sort by ID for predictable ordering
-                                other ->
-                                    other
-                        )
-                        assets
-
-                DurationDesc ->
-                    List.sortWith
-                        (\a b ->
-                            let
-                                aDuration =
-                                    a.duration
-                                        |> Maybe.andThen Immich.parseDurationToSeconds
-                                        |> Maybe.withDefault -1
-
-                                -- Put non-videos at the end
-                                bDuration =
-                                    b.duration
-                                        |> Maybe.andThen Immich.parseDurationToSeconds
-                                        |> Maybe.withDefault -1
-
-                                -- Put non-videos at the end
-                            in
-                            case compare bDuration aDuration of
-                                -- b first for descending
-                                EQ ->
-                                    compare a.id b.id
-
-                                -- Secondary sort by ID for predictable ordering
-                                other ->
-                                    other
-                        )
-                        assets
-
-                Random ->
-                    assets
-    in
-    sortedAssets
-
-
-
--- Keep original order for random
 -- KEYBINDING GENERATION --
 -- All keybinding functions are now imported from KeybindingGenerator module
 
@@ -3143,43 +2694,6 @@ appendFetchedAssets newAssets model =
                 | knownAssets = updatedKnownAssets
                 , currentAssets = finalAssetIds
             }
-
-
-
--- VALIDATION --
-
-
-validateConfig : String -> String -> String -> String -> Maybe String
-validateConfig url apiKey envUrl envApiKey =
-    let
-        finalUrl =
-            if String.isEmpty (String.trim url) then
-                envUrl
-
-            else
-                url
-
-        finalApiKey =
-            if String.isEmpty (String.trim apiKey) then
-                envApiKey
-
-            else
-                apiKey
-    in
-    if String.isEmpty (String.trim finalUrl) then
-        Just "URL cannot be empty (no environment default available)"
-
-    else if String.isEmpty (String.trim finalApiKey) then
-        Just "API key cannot be empty (no environment default available)"
-
-    else if not (String.startsWith "http" finalUrl) then
-        Just "URL must start with http:// or https://"
-
-    else if String.length finalApiKey < 10 then
-        Just "API key appears to be too short"
-
-    else
-        Nothing
 
 
 
