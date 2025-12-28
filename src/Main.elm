@@ -147,7 +147,7 @@ type alias Model =
     , screenWidth : Int
     , deviceClass : DeviceClass
     , theme : Theme
-    , pendingAlbumChange : Maybe ( ImmichAlbumId, Bool ) -- (albumId, isAddition)
+    , pendingAlbumChanges : List ( ImmichAlbumId, Bool ) -- (albumId, isAddition)
     , paginationState : PaginationState
     }
 
@@ -371,7 +371,7 @@ init flags =
       , screenWidth = 1200 -- Default, will be updated by window resize
       , deviceClass = classifyDevice 1200 800 -- Will be updated by WindowResize
       , theme = Dark -- Default to dark theme
-      , pendingAlbumChange = Nothing
+      , pendingAlbumChanges = []
       , paginationState =
             { currentConfig = Nothing
             , currentQuery = Nothing
@@ -1251,14 +1251,23 @@ handleAssetResult assetResult model =
                                     { search | partialKeybinding = "", pagination = ViewAlbums.resetPagination search.pagination, invalidInputWarning = Nothing }
 
                                 -- Check if we should also remove from source album (move-from mode)
-                                ( finalAsset, moveFromCmd ) =
+                                ( finalAsset, moveFromCmd, maybeSourceAlbumId ) =
                                     case model.currentAssetsSource of
                                         FilteredAlbum sourceAlbum config ->
+                                            let
+                                                -- Check if asset is still in source album (RemainTrue means not yet removed)
+                                                sourceAlbumState =
+                                                    Maybe.withDefault RemainFalse (Dict.get sourceAlbum.id asset.albumMembership)
+
+                                                shouldRemoveFromSource =
+                                                    sourceAlbumState == RemainTrue
+                                            in
                                             -- Only trigger move-from if:
                                             -- 1. moveFromMode is enabled
                                             -- 2. We're adding to a different album (not the source)
                                             -- 3. This is actually an addition (not a removal)
-                                            if config.moveFromMode && isAddition && album.id /= sourceAlbum.id then
+                                            -- 4. Asset is still in source album (not already removed)
+                                            if config.moveFromMode && isAddition && album.id /= sourceAlbum.id && shouldRemoveFromSource then
                                                 let
                                                     -- Also mark the source album as removed in the asset's state
                                                     assetWithSourceRemoved =
@@ -1272,20 +1281,29 @@ handleAssetResult assetResult model =
                                                         Immich.albumChangeAssetMembership model.immichApiPaths sourceAlbum.id [ asset.asset.id ] False
                                                             |> Cmd.map ImmichMsg
                                                 in
-                                                ( assetWithSourceRemoved, removeFromSourceCmd )
+                                                ( assetWithSourceRemoved, removeFromSourceCmd, Just sourceAlbum.id )
 
                                             else
-                                                ( toggledAsset, Cmd.none )
+                                                ( toggledAsset, Cmd.none, Nothing )
 
                                         _ ->
-                                            ( toggledAsset, Cmd.none )
+                                            ( toggledAsset, Cmd.none, Nothing )
 
                                 -- Primary command to add/remove from target album
                                 primaryCmd =
                                     Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum
                                         |> Cmd.map ImmichMsg
+
+                                -- Track all pending album changes (target + source if Move Mode)
+                                pendingChanges =
+                                    case maybeSourceAlbumId of
+                                        Just sourceId ->
+                                            [ ( album.id, isAddition ), ( sourceId, False ) ]
+
+                                        Nothing ->
+                                            [ ( album.id, isAddition ) ]
                             in
-                            ( { model | userMode = ViewAssets (EditAsset NormalMode finalAsset newSearch), pendingAlbumChange = Just ( album.id, isAddition ) }
+                            ( { model | userMode = ViewAssets (EditAsset NormalMode finalAsset newSearch), pendingAlbumChanges = pendingChanges }
                             , Cmd.batch [ primaryCmd, moveFromCmd ]
                             )
 
@@ -1701,7 +1719,7 @@ update msg model =
                                 isAddition =
                                     ViewAlbums.isAddingToAlbum newPropertyChange
                             in
-                            ( { model | userMode = ViewAssets (EditAsset inputMode toggledAsset (ViewAlbums.getAlbumSearch "" model.knownAlbums)), pendingAlbumChange = Just ( album.id, isAddition ) }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
+                            ( { model | userMode = ViewAssets (EditAsset inputMode toggledAsset (ViewAlbums.getAlbumSearch "" model.knownAlbums)), pendingAlbumChanges = [ ( album.id, isAddition ) ] }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
 
                         _ ->
                             ( model, Cmd.none )
@@ -2339,9 +2357,10 @@ update msg model =
                 Immich.AlbumAssetsChanged (Ok _) ->
                     -- Album membership change succeeded, update album asset count and refresh membership data
                     let
-                        updatedModel =
-                            case newModel.pendingAlbumChange of
-                                Just ( albumId, isAddition ) ->
+                        -- Pop one pending change and update its album count
+                        ( updatedModel, remainingChanges ) =
+                            case newModel.pendingAlbumChanges of
+                                ( albumId, isAddition ) :: rest ->
                                     let
                                         countChange =
                                             if isAddition then
@@ -2351,32 +2370,36 @@ update msg model =
                                                 -1
 
                                         modelWithUpdatedCount =
-                                            updateAlbumAssetCount albumId countChange { newModel | pendingAlbumChange = Nothing }
+                                            updateAlbumAssetCount albumId countChange newModel
                                     in
-                                    modelWithUpdatedCount
+                                    ( { modelWithUpdatedCount | pendingAlbumChanges = rest }, rest )
 
-                                Nothing ->
-                                    { newModel | pendingAlbumChange = Nothing }
+                                [] ->
+                                    ( newModel, [] )
 
-                        -- Fetch fresh membership data to ensure all album memberships are current
+                        -- Only fetch membership when ALL pending changes are processed
                         membershipCmd =
-                            case updatedModel.userMode of
-                                ViewAssets assetState ->
-                                    case assetState of
-                                        EditAsset _ asset _ ->
-                                            Immich.fetchMembershipForAsset updatedModel.immichApiPaths asset.asset.id |> Cmd.map ImmichMsg
+                            if List.isEmpty remainingChanges then
+                                case updatedModel.userMode of
+                                    ViewAssets assetState ->
+                                        case assetState of
+                                            EditAsset _ asset _ ->
+                                                Immich.fetchMembershipForAsset updatedModel.immichApiPaths asset.asset.id |> Cmd.map ImmichMsg
 
-                                        _ ->
-                                            Cmd.none
+                                            _ ->
+                                                Cmd.none
 
-                                _ ->
-                                    Cmd.none
+                                    _ ->
+                                        Cmd.none
+
+                            else
+                                Cmd.none
                     in
                     ( updatedModel, membershipCmd )
 
                 Immich.AlbumAssetsChanged (Err _) ->
-                    -- Album membership change failed, clear pending change and re-fetch to get correct state
-                    switchToEditIfAssetFound { model | pendingAlbumChange = Nothing } model.imageIndex
+                    -- Album membership change failed, clear all pending changes and re-fetch to get correct state
+                    switchToEditIfAssetFound { model | pendingAlbumChanges = [] } model.imageIndex
 
                 Immich.AlbumsFetched (Ok albums) ->
                     let
@@ -2402,7 +2425,7 @@ update msg model =
                                             updatedModel =
                                                 { newModel | userMode = ViewAssets (EditAsset NormalMode updatedAsset (ViewAlbums.getAlbumSearch "" newModel.knownAlbums)) }
                                         in
-                                        ( { updatedModel | pendingAlbumChange = Just ( album.id, True ) }, Immich.albumChangeAssetMembership newModel.immichApiPaths album.id [ assetWithActions.asset.id ] True |> Cmd.map ImmichMsg )
+                                        ( { updatedModel | pendingAlbumChanges = [ ( album.id, True ) ] }, Immich.albumChangeAssetMembership newModel.immichApiPaths album.id [ assetWithActions.asset.id ] True |> Cmd.map ImmichMsg )
                                     )
                                 |> Maybe.withDefault ( newModel, Cmd.none )
 
