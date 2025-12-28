@@ -8,6 +8,7 @@ import Immich exposing (..)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Test exposing (..)
+import ApiTypes exposing (ApiKey(..), ApiUrl(..))
 
 
 
@@ -257,7 +258,7 @@ suite =
                 \_ ->
                     let
                         apiPaths =
-                            getImmichApiPaths "https://example.com" "test-key"
+                            getImmichApiPaths (ApiUrl "https://example.com") (ApiKey "test-key")
                     in
                     Expect.all
                         [ \() -> Expect.equal apiPaths.apiKey "test-key"

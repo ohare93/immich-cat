@@ -1,8 +1,7 @@
 module TitleHelpers exposing (createDetailedViewTitle, getMoveFromInfo)
 
-import AssetSourceTypes exposing (AssetSource(..))
+import AssetSourceTypes exposing (AlbumConfig, AssetSource(..))
 import Immich exposing (CategorisationFilter(..), ImageOrder(..), MediaTypeFilter(..), StatusFilter(..))
-import Menus exposing (AlbumConfig)
 
 
 {-| Create a detailed title string for the current view based on asset source.

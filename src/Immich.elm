@@ -1,5 +1,6 @@
 module Immich exposing (..)
 
+import ApiTypes exposing (ApiKey, ApiUrl, apiKeyToString, apiUrlToString)
 import Date exposing (Date, fromIsoString)
 import Http
 import Json.Decode as Decode
@@ -132,8 +133,15 @@ buildUrlWithQuery baseUrl pathSegments queryParams =
     crossOrigin baseUrl pathSegments (List.map (\( key, value ) -> string key value) queryParams)
 
 
-getImmichApiPaths : String -> String -> ImmichApiPaths
-getImmichApiPaths baseUrl immichApiKey =
+getImmichApiPaths : ApiUrl -> ApiKey -> ImmichApiPaths
+getImmichApiPaths apiUrl apiKey =
+    let
+        baseUrl =
+            apiUrlToString apiUrl
+
+        immichApiKey =
+            apiKeyToString apiKey
+    in
     { downloadAsset = \id -> joinUrl baseUrl [ "api", "assets", id, "original" ]
     , fetchMembershipForAsset = \assetId -> buildUrlWithQuery baseUrl [ "api", "albums" ] [ ( "assetId", assetId ) ]
     , searchRandom = joinUrl baseUrl [ "api", "search", "random" ]
@@ -277,6 +285,36 @@ makeAssetIdsBody assetIds =
     Encode.object [ ( "ids", Encode.list Encode.string assetIds ) ]
 
 
+{-| Convert MediaTypeFilter to JSON field list for API requests
+-}
+mediaTypeToField : MediaTypeFilter -> List ( String, Encode.Value )
+mediaTypeToField mediaType =
+    case mediaType of
+        AllMedia ->
+            []
+
+        ImagesOnly ->
+            [ ( "type", Encode.string "IMAGE" ) ]
+
+        VideosOnly ->
+            [ ( "type", Encode.string "VIDEO" ) ]
+
+
+{-| Convert StatusFilter to JSON field list for API requests
+-}
+statusToField : StatusFilter -> List ( String, Encode.Value )
+statusToField status =
+    case status of
+        AllStatuses ->
+            []
+
+        FavoritesOnly ->
+            [ ( "isFavorite", Encode.bool True ) ]
+
+        ArchivedOnly ->
+            [ ( "isArchived", Encode.bool True ) ]
+
+
 makeSearchBody : ImageSearchConfig -> Int -> Int -> Encode.Value
 makeSearchBody config size page =
     makeSearchBodyWithAlbum config Nothing size page
@@ -332,26 +370,10 @@ makeSearchBodyWithAlbum config maybeAlbumId size page =
                     []
 
         mediaTypeField =
-            case config.mediaType of
-                AllMedia ->
-                    []
-
-                ImagesOnly ->
-                    [ ( "type", Encode.string "IMAGE" ) ]
-
-                VideosOnly ->
-                    [ ( "type", Encode.string "VIDEO" ) ]
+            mediaTypeToField config.mediaType
 
         statusField =
-            case config.status of
-                AllStatuses ->
-                    []
-
-                FavoritesOnly ->
-                    [ ( "isFavorite", Encode.bool True ) ]
-
-                ArchivedOnly ->
-                    [ ( "isArchived", Encode.bool True ) ]
+            statusToField config.status
 
         albumField =
             case maybeAlbumId of
@@ -373,11 +395,11 @@ makeSearchBodyWithAlbum config maybeAlbumId size page =
 -- API FUNCTIONS (REFACTORED)
 
 
-getAllAlbums : String -> String -> Cmd Msg
-getAllAlbums baseUrl key =
+getAllAlbums : ApiUrl -> ApiKey -> Cmd Msg
+getAllAlbums apiUrl apiKey =
     makeGetRequest
-        key
-        (joinUrl baseUrl [ "api", "albums" ])
+        (apiKeyToString apiKey)
+        (joinUrl (apiUrlToString apiUrl) [ "api", "albums" ])
         (Decode.list albumDecoder)
         AlbumsFetched
 
@@ -414,26 +436,10 @@ fetchImagesPaginated apiPaths config size page =
                             []
 
                 mediaTypeField =
-                    case config.mediaType of
-                        AllMedia ->
-                            []
-
-                        ImagesOnly ->
-                            [ ( "type", Encode.string "IMAGE" ) ]
-
-                        VideosOnly ->
-                            [ ( "type", Encode.string "VIDEO" ) ]
+                    mediaTypeToField config.mediaType
 
                 statusField =
-                    case config.status of
-                        AllStatuses ->
-                            []
-
-                        FavoritesOnly ->
-                            [ ( "isFavorite", Encode.bool True ) ]
-
-                        ArchivedOnly ->
-                            [ ( "isArchived", Encode.bool True ) ]
+                    statusToField config.status
 
                 paginationFields =
                     [ ( "size", Encode.int size )
@@ -490,26 +496,10 @@ searchAssetsPaginated apiPaths searchContext searchText mediaType status size pa
                     ( apiPaths.searchAssets, [ ( "ocr", Encode.string searchText ) ] )
 
         mediaTypeField =
-            case mediaType of
-                AllMedia ->
-                    []
-
-                ImagesOnly ->
-                    [ ( "type", Encode.string "IMAGE" ) ]
-
-                VideosOnly ->
-                    [ ( "type", Encode.string "VIDEO" ) ]
+            mediaTypeToField mediaType
 
         statusField =
-            case status of
-                AllStatuses ->
-                    []
-
-                FavoritesOnly ->
-                    [ ( "isFavorite", Encode.bool True ) ]
-
-                ArchivedOnly ->
-                    [ ( "isArchived", Encode.bool True ) ]
+            statusToField status
 
         paginationFields =
             [ ( "size", Encode.int size )
@@ -546,26 +536,10 @@ fetchAlbumAssetsPaginated apiPaths albumId order mediaType status size page =
             [ ( "albumIds", Encode.list Encode.string [ albumId ] ) ]
 
         mediaTypeField =
-            case mediaType of
-                AllMedia ->
-                    []
-
-                ImagesOnly ->
-                    [ ( "type", Encode.string "IMAGE" ) ]
-
-                VideosOnly ->
-                    [ ( "type", Encode.string "VIDEO" ) ]
+            mediaTypeToField mediaType
 
         statusField =
-            case status of
-                AllStatuses ->
-                    []
-
-                FavoritesOnly ->
-                    [ ( "isFavorite", Encode.bool True ) ]
-
-                ArchivedOnly ->
-                    [ ( "isArchived", Encode.bool True ) ]
+            statusToField status
 
         -- Order field - Immich API supports order for metadata search
         -- Note: API sorting is limited, so we may still need client-side sorting for some orders

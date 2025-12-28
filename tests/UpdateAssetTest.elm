@@ -5,50 +5,13 @@ import Dict exposing (Dict)
 import Expect
 import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichAsset, ImmichAssetId)
 import Test exposing (..)
+import TestGenerators exposing (createTestAlbum, createTestAsset, createTestAssetWithActions)
 import UpdateAsset exposing (..)
 import ViewAlbums exposing (AlbumSearch, AssetWithActions, InputMode(..), PropertyChange(..))
 
 
 
 -- Helper functions to create test data
-
-
-createTestAsset : String -> String -> ImmichAsset
-createTestAsset id title =
-    { id = id
-    , path = "/test/path"
-    , title = title
-    , mimeType = "image/jpeg"
-    , isFavourite = False
-    , isArchived = False
-    , albumMembership = []
-    , fileCreatedAt = Date.fromRataDie 1
-    , fileModifiedAt = Date.fromRataDie 1
-    , fileCreatedAtString = "2000-01-01T00:00:00.000Z"
-    , fileModifiedAtString = "2000-01-01T00:00:00.000Z"
-    , thumbhash = Nothing
-    , duration = Nothing
-    }
-
-
-createTestAlbum : String -> String -> ImmichAlbum
-createTestAlbum id albumName =
-    { id = id
-    , albumName = albumName
-    , assetCount = 0
-    , assets = []
-    , createdAt = Date.fromRataDie 1
-    }
-
-
-createTestAssetWithActions : String -> String -> AssetWithActions
-createTestAssetWithActions id title =
-    { asset = createTestAsset id title
-    , isFavourite = RemainFalse
-    , isArchived = RemainFalse
-    , albumMembership = Dict.empty
-    , isVideoLoaded = True
-    }
 
 
 createTestAlbumSearch : String -> String -> AlbumSearch

@@ -1,9 +1,7 @@
 module Menus exposing
-    ( AlbumConfig
-    , SearchConfig
+    ( SearchConfig
     , TimelineConfig
     , addToRecentSearches
-    , defaultAlbumConfig
     , defaultSearchConfig
     , defaultTimelineConfig
     , generateSearchSuggestions
@@ -16,6 +14,7 @@ module Menus exposing
     , viewTimelineView
     )
 
+import AssetSourceTypes exposing (AlbumConfig, defaultAlbumConfig)
 import Date
 import Dict exposing (Dict)
 import Element exposing (Element, column, el, fill, fillPortion, height, minimum, paddingXY, px, row, text, width)
@@ -51,14 +50,6 @@ type alias SearchConfig =
     , recentSearches : List String
     , showSuggestions : Bool
     , suggestions : List String
-    }
-
-
-type alias AlbumConfig =
-    { mediaType : MediaTypeFilter
-    , order : ImageOrder
-    , status : StatusFilter
-    , moveFromMode : Bool
     }
 
 
@@ -451,15 +442,6 @@ defaultSearchConfig =
     , recentSearches = []
     , showSuggestions = False
     , suggestions = []
-    }
-
-
-defaultAlbumConfig : AlbumConfig
-defaultAlbumConfig =
-    { mediaType = AllMedia
-    , order = CreatedDesc
-    , status = AllStatuses
-    , moveFromMode = False
     }
 
 

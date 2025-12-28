@@ -1,16 +1,17 @@
 module Types exposing
     ( AlbumPaginationContext
     , AssetSourceUpdate(..)
+    , FeedbackMessage(..)
     , ImageIndex
     , NavigationHistoryEntry
     , PaginationState
     , SourceLoadState
     , UserMode(..)
+    , feedbackMessageToString
     )
 
-import AssetSourceTypes exposing (AssetSource(..))
+import AssetSourceTypes exposing (AlbumConfig, AssetSource(..))
 import Immich exposing (ImageOrder, ImageSearchConfig, ImmichAlbum, ImmichAlbumId, ImmichAssetId, MediaTypeFilter, SearchContext, StatusFilter)
-import Menus exposing (AlbumConfig)
 import UpdateAsset exposing (AssetState)
 import UpdateMenus exposing (MenuState)
 
@@ -53,6 +54,33 @@ type alias SourceLoadState =
     { fetchedAssetList : Maybe Bool
     , fetchedAssetMembership : Maybe Bool
     }
+
+
+{-| Feedback messages for user notifications
+-}
+type FeedbackMessage
+    = AlbumsLoaded Int
+    | AlbumsReloaded Int
+    | NoAlbumsFound
+    | AlbumMembershipFetchFailed String
+
+
+{-| Convert FeedbackMessage to a displayable string
+-}
+feedbackMessageToString : FeedbackMessage -> String
+feedbackMessageToString msg =
+    case msg of
+        AlbumsLoaded count ->
+            "Loaded " ++ String.fromInt count ++ " albums"
+
+        AlbumsReloaded count ->
+            "Reloaded " ++ String.fromInt count ++ " albums"
+
+        NoAlbumsFound ->
+            "No albums found"
+
+        AlbumMembershipFetchFailed error ->
+            "Album membership fetch failed: " ++ error
 
 
 {-| Enum for tracking which part of loading completed

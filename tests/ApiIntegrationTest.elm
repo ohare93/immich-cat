@@ -6,6 +6,7 @@ import Immich exposing (..)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Test exposing (..)
+import ApiTypes exposing (ApiKey(..), ApiUrl(..))
 import Url exposing (percentEncode)
 
 
@@ -120,7 +121,7 @@ suite =
                             "test-api-key-12345"
 
                         apiPaths =
-                            getImmichApiPaths baseUrl apiKey
+                            getImmichApiPaths (ApiUrl baseUrl) (ApiKey apiKey)
                     in
                     Expect.all
                         [ \() -> Expect.equal apiPaths.apiKey apiKey
@@ -141,7 +142,7 @@ suite =
                             "https://test.com"
 
                         apiPaths =
-                            getImmichApiPaths baseUrl "key"
+                            getImmichApiPaths (ApiUrl baseUrl) (ApiKey "key")
 
                         result =
                             apiPaths.fetchMembershipForAsset "asset123"

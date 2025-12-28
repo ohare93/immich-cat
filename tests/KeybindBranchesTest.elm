@@ -8,21 +8,7 @@ import Immich exposing (ImmichAlbum)
 import KeybindBranches exposing (createBranchDictionary, generateAlbumKeybindings, generateBranches)
 import Set
 import Test exposing (Test, describe, fuzz, test)
-import TestGenerators exposing (testAlbumGenerator)
-
-
-
--- Helper function to create test albums
-
-
-createTestAlbum : String -> String -> ImmichAlbum
-createTestAlbum id albumName =
-    { id = id
-    , albumName = albumName
-    , assetCount = 0
-    , assets = []
-    , createdAt = Date.fromRataDie 1
-    }
+import TestGenerators exposing (createTestAlbum, testAlbumGenerator)
 
 
 suite : Test

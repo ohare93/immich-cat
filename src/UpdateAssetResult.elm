@@ -13,10 +13,10 @@ leaving only Cmd generation in Main.elm.
 
 -}
 
-import AssetSourceTypes exposing (AssetSource(..))
+import AssetSourceTypes exposing (AlbumConfig, AssetSource(..))
 import Dict exposing (Dict)
 import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichAsset, ImmichAssetId, SearchContext(..))
-import Menus exposing (AlbumConfig, defaultSearchConfig)
+import Menus exposing (defaultSearchConfig)
 import Types exposing (ImageIndex, NavigationHistoryEntry, PaginationState, UserMode(..))
 import UpdateAsset exposing (AssetResult(..), AssetState(..))
 import UpdateMenus exposing (MenuState(..))

@@ -1,31 +1,14 @@
 module UpdateMenuResultTest exposing (..)
 
-import AssetSourceTypes exposing (AssetSource(..))
+import AssetSourceTypes exposing (AlbumConfig, AssetSource(..))
 import Date
 import Expect
 import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImageSearchConfig, ImmichAlbum, MediaTypeFilter(..), SearchContext(..), StatusFilter(..))
-import Menus exposing (AlbumConfig)
 import Test exposing (Test, describe, test)
+import TestGenerators exposing (defaultPaginationState)
 import Types exposing (PaginationState)
 import UpdateMenuResult exposing (MenuResultAction(..), processMenuResult)
 import UpdateMenus exposing (MenuResult(..), MenuState(..))
-
-
-{-| Create a default PaginationState for testing
--}
-defaultPaginationState : PaginationState
-defaultPaginationState =
-    { currentConfig = Nothing
-    , currentQuery = Nothing
-    , currentSearchContext = Nothing
-    , currentAlbumContext = Nothing
-    , totalAssets = 0
-    , currentPage = 1
-    , hasMorePages = False
-    , isLoadingMore = False
-    , loadedAssets = 0
-    , maxAssetsToFetch = 10000
-    }
 
 
 {-| Create a test ImmichAlbum

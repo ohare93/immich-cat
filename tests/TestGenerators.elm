@@ -3,6 +3,12 @@ module TestGenerators exposing
     , albumNameGenerator
     , assetIdGenerator
     , categorisationFilterGenerator
+    , createTestAlbum
+    , createTestAsset
+    , createTestAssetWithActions
+    , defaultAlbumSearch
+    , defaultImageSearchConfig
+    , defaultPaginationState
     , durationStringGenerator
     , imageOrderGenerator
     , keybindingGenerator
@@ -13,8 +19,11 @@ module TestGenerators exposing
     )
 
 import Date exposing (Date)
+import Dict exposing (Dict)
 import Fuzz exposing (Fuzzer, andMap, bool, constant, int, list, map, map2, map3, map4, map5, maybe, oneOf, string)
-import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImmichAlbum, ImmichAsset, MediaTypeFilter(..), StatusFilter(..))
+import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImageSearchConfig, ImmichAlbum, ImmichAsset, MediaTypeFilter(..), StatusFilter(..))
+import Types exposing (PaginationState)
+import ViewAlbums exposing (AlbumPagination, AlbumSearch, AssetWithActions, PropertyChange(..))
 
 
 {-| Generate valid-looking asset IDs (UUID-like)
@@ -332,3 +341,89 @@ testAlbumGenerator =
         assetCountGen
         assetsGen
         dateGen
+
+
+{-| Create a simple test asset with minimal defaults for unit tests
+-}
+createTestAsset : String -> String -> ImmichAsset
+createTestAsset id title =
+    { id = id
+    , path = "/test/path"
+    , title = title
+    , mimeType = "image/jpeg"
+    , isFavourite = False
+    , isArchived = False
+    , albumMembership = []
+    , fileCreatedAt = Date.fromRataDie 1
+    , fileModifiedAt = Date.fromRataDie 1
+    , fileCreatedAtString = "2000-01-01T00:00:00.000Z"
+    , fileModifiedAtString = "2000-01-01T00:00:00.000Z"
+    , thumbhash = Nothing
+    , duration = Nothing
+    }
+
+
+{-| Create a simple test album with minimal defaults for unit tests
+-}
+createTestAlbum : String -> String -> ImmichAlbum
+createTestAlbum id albumName =
+    { id = id
+    , albumName = albumName
+    , assetCount = 0
+    , assets = []
+    , createdAt = Date.fromRataDie 1
+    }
+
+
+{-| Create a test AssetWithActions from a test asset
+-}
+createTestAssetWithActions : String -> String -> AssetWithActions
+createTestAssetWithActions id title =
+    { asset = createTestAsset id title
+    , isFavourite = RemainFalse
+    , isArchived = RemainFalse
+    , albumMembership = Dict.empty
+    , isVideoLoaded = True
+    }
+
+
+{-| Default pagination state for testing
+-}
+defaultPaginationState : PaginationState
+defaultPaginationState =
+    { currentConfig = Nothing
+    , currentQuery = Nothing
+    , currentSearchContext = Nothing
+    , currentAlbumContext = Nothing
+    , totalAssets = 0
+    , currentPage = 1
+    , hasMorePages = False
+    , isLoadingMore = False
+    , loadedAssets = 0
+    , maxAssetsToFetch = 10000
+    }
+
+
+{-| Default album search state for testing
+-}
+defaultAlbumSearch : AlbumSearch
+defaultAlbumSearch =
+    { searchString = ""
+    , albumScores = Dict.empty
+    , selectedIndex = 0
+    , partialKeybinding = ""
+    , pagination = { currentPage = 0, itemsPerPage = 10, totalItems = 0 }
+    , invalidInputWarning = Nothing
+    , inputFocused = False
+    }
+
+
+{-| Default image search config for testing
+-}
+defaultImageSearchConfig : ImageSearchConfig
+defaultImageSearchConfig =
+    { order = CreatedDesc
+    , categorisation = All
+    , mediaType = AllMedia
+    , status = AllStatuses
+    }

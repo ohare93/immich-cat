@@ -17,6 +17,7 @@ import Dict exposing (Dict)
 import Helpers exposing (applySortingToAssets, listOverrideDict)
 import Immich exposing (ImageSearchConfig, ImmichAlbum, ImmichAlbumId, ImmichAsset, ImmichAssetId, ImmichLoadState(..))
 import KeybindBranches exposing (generateAlbumKeybindings)
+import Types exposing (FeedbackMessage(..))
 
 
 {-| Result of processing fetched albums.
@@ -25,7 +26,7 @@ type alias FetchAlbumsResult =
     { knownAlbums : Dict ImmichAlbumId ImmichAlbum
     , albumsLoadState : ImmichLoadState
     , albumKeybindings : Dict ImmichAlbumId String
-    , reloadFeedback : Maybe String
+    , reloadFeedback : Maybe FeedbackMessage
     }
 
 
@@ -35,7 +36,7 @@ handleFetchAlbumsResult :
     { showReloadFeedback : Bool
     , albums : List ImmichAlbum
     , currentKnownAlbums : Dict ImmichAlbumId ImmichAlbum
-    , currentReloadFeedback : Maybe String
+    , currentReloadFeedback : Maybe FeedbackMessage
     }
     -> FetchAlbumsResult
 handleFetchAlbumsResult config =
@@ -58,18 +59,14 @@ handleFetchAlbumsResult config =
         feedbackMessage =
             if config.showReloadFeedback then
                 if albumCount > 0 then
-                    let
-                        actionText =
-                            if isFirstLoad then
-                                "Loaded"
+                    if isFirstLoad then
+                        Just (AlbumsLoaded albumCount)
 
-                            else
-                                "Reloaded"
-                    in
-                    Just (actionText ++ " " ++ String.fromInt albumCount ++ " albums")
+                    else
+                        Just (AlbumsReloaded albumCount)
 
                 else
-                    Just "No albums found"
+                    Just NoAlbumsFound
 
             else
                 config.currentReloadFeedback

@@ -12,9 +12,9 @@ leaving only Cmd generation in Main.elm.
 
 -}
 
-import AssetSourceTypes exposing (AssetSource(..))
+import AssetSourceTypes exposing (AlbumConfig, AssetSource(..), defaultAlbumConfig)
 import Immich exposing (ImageSearchConfig, ImmichAlbum, SearchContext)
-import Menus exposing (AlbumConfig)
+import Menus
 import Types exposing (AlbumPaginationContext, PaginationState, SourceLoadState, UserMode(..))
 import UpdateMenus exposing (MenuResult(..), MenuState(..))
 
@@ -134,7 +134,7 @@ processMenuResult menuResult currentPaginationState maybeUserMode =
                             -- Album without config shouldn't be produced by menus, use default config
                             let
                                 config =
-                                    Menus.defaultAlbumConfig
+                                    defaultAlbumConfig
 
                                 albumContext =
                                     { albumId = album.id

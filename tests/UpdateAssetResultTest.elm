@@ -1,14 +1,13 @@
 module UpdateAssetResultTest exposing (..)
 
-import AssetSourceTypes exposing (AssetSource(..))
+import AssetSourceTypes exposing (AlbumConfig, AssetSource(..), defaultAlbumConfig)
 import Date
 import Dict
 import Expect
 import Fuzz exposing (Fuzzer)
 import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImageSearchConfig, ImmichAlbum, ImmichAsset, ImmichAssetId, MediaTypeFilter(..), SearchContext(..), StatusFilter(..))
-import Menus exposing (AlbumConfig, defaultAlbumConfig)
 import Test exposing (Test, describe, fuzz, test)
-import TestGenerators
+import TestGenerators exposing (defaultAlbumSearch, defaultImageSearchConfig, defaultPaginationState)
 import Types exposing (ImageIndex, PaginationState, UserMode(..))
 import UpdateAsset exposing (AssetResult(..), AssetState(..))
 import UpdateAssetResult exposing (AssetResultAction(..), processAssetResult, processToggleAlbumMembership)
@@ -16,23 +15,6 @@ import UpdateMenus exposing (MenuState(..))
 import ViewAlbums exposing (AssetWithActions, InputMode(..), PropertyChange(..), flipPropertyChange)
 import ViewAsset exposing (TimeViewMode(..))
 import ViewGrid
-
-
-{-| Create a default PaginationState for testing
--}
-defaultPaginationState : PaginationState
-defaultPaginationState =
-    { currentConfig = Nothing
-    , currentQuery = Nothing
-    , currentSearchContext = Nothing
-    , currentAlbumContext = Nothing
-    , totalAssets = 0
-    , currentPage = 1
-    , hasMorePages = False
-    , isLoadingMore = False
-    , loadedAssets = 0
-    , maxAssetsToFetch = 10000
-    }
 
 
 {-| Create a test ImmichAsset
@@ -90,31 +72,6 @@ createAssetWithActions id isFav isArch =
             RemainFalse
     , albumMembership = Dict.empty
     , isVideoLoaded = False
-    }
-
-
-{-| Create a default AlbumSearch for testing
--}
-defaultAlbumSearch : ViewAlbums.AlbumSearch
-defaultAlbumSearch =
-    { searchString = ""
-    , albumScores = Dict.empty
-    , selectedIndex = 0
-    , partialKeybinding = ""
-    , pagination = { currentPage = 0, itemsPerPage = 10, totalItems = 0 }
-    , invalidInputWarning = Nothing
-    , inputFocused = False
-    }
-
-
-{-| Create a default ImageSearchConfig for testing
--}
-defaultImageSearchConfig : ImageSearchConfig
-defaultImageSearchConfig =
-    { order = CreatedDesc
-    , categorisation = All
-    , mediaType = AllMedia
-    , status = AllStatuses
     }
 
 

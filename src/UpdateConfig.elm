@@ -17,6 +17,7 @@ Main.elm uses these results to update Model and generate port commands.
 
 -}
 
+import ApiTypes exposing (ApiKey(..), ApiUrl(..))
 import Dict exposing (Dict)
 import Helpers exposing (validateConfig)
 import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichLoadState(..), getImmichApiPaths)
@@ -69,7 +70,7 @@ handleSaveConfig config =
             ConfigValid
                 { finalUrl = finalUrl
                 , finalApiKey = finalApiKey
-                , immichApiPaths = getImmichApiPaths finalUrl finalApiKey
+                , immichApiPaths = getImmichApiPaths (ApiUrl finalUrl) (ApiKey finalApiKey)
                 }
 
 
@@ -203,7 +204,7 @@ handleConfigLoaded config =
     , configValidationMessage = intermediate.validationMessage
     , baseUrl = finalUrl
     , apiKey = finalApiKey
-    , immichApiPaths = getImmichApiPaths finalUrl finalApiKey
+    , immichApiPaths = getImmichApiPaths (ApiUrl finalUrl) (ApiKey finalApiKey)
     , knownAlbums =
         if credentialsChanged then
             Dict.empty

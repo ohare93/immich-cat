@@ -7,23 +7,13 @@ import Fuzz exposing (Fuzzer, string)
 import Helpers
 import Immich exposing (ImmichAlbum, ImmichAlbumId)
 import Test exposing (..)
-import TestGenerators exposing (albumNameGenerator, testAlbumGenerator)
+import TestGenerators exposing (albumNameGenerator, createTestAlbum, testAlbumGenerator)
 import UpdateAlbums exposing (..)
 import ViewAlbums exposing (AlbumSearch)
 
 
 
 -- Helper functions to create test data
-
-
-createTestAlbum : String -> String -> ImmichAlbum
-createTestAlbum id albumName =
-    { id = id
-    , albumName = albumName
-    , assetCount = 0
-    , assets = []
-    , createdAt = Date.fromRataDie 1
-    }
 
 
 createTestAlbumSearch : String -> String -> AlbumSearch

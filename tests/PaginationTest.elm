@@ -5,26 +5,10 @@ import Fuzz exposing (intRange)
 import Immich exposing (ImageOrder(..), ImageSearchConfig, PaginatedAssetResponse, SearchContext(..))
 import Pagination exposing (NextPageRequestType(..), TimelineSyncAction(..), classifyTimelineSyncBehavior, computeNextPageRequest, shouldFetchNextPage)
 import Test exposing (Test, describe, fuzz, fuzz2, fuzz3, test)
+import TestGenerators exposing (defaultPaginationState)
 import Types exposing (AlbumPaginationContext, PaginationState, SourceLoadState, UserMode(..))
 import UpdateAsset exposing (AssetState(..))
 import UpdateMenus exposing (MenuState(..))
-
-
-{-| Create a default PaginationState for testing
--}
-defaultPaginationState : PaginationState
-defaultPaginationState =
-    { currentConfig = Nothing
-    , currentQuery = Nothing
-    , currentSearchContext = Nothing
-    , currentAlbumContext = Nothing
-    , totalAssets = 0
-    , currentPage = 1
-    , hasMorePages = False
-    , isLoadingMore = False
-    , loadedAssets = 0
-    , maxAssetsToFetch = 10000
-    }
 
 
 {-| Create a default PaginatedAssetResponse for testing

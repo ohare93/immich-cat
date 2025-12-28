@@ -1,7 +1,8 @@
 port module Main exposing (main)
 
+import ApiTypes exposing (ApiKey(..), ApiUrl(..))
 import AssetNavigation
-import AssetSourceTypes exposing (AssetSource(..))
+import AssetSourceTypes exposing (AlbumConfig, AssetSource(..), defaultAlbumConfig)
 import Browser exposing (element)
 import Browser.Events exposing (onKeyDown, onKeyUp, onResize, onVisibilityChange)
 import Date
@@ -18,7 +19,7 @@ import Json.Decode as Decode
 import KeybindBranches exposing (generateAlbumKeybindings)
 import KeyboardInput
 import LoadState
-import Menus exposing (AlbumConfig, defaultAlbumConfig, defaultSearchConfig)
+import Menus exposing (defaultSearchConfig)
 import Navigation exposing (recordNavigationState, setCurrentNavigationState, updateCurrentHistoryEntry)
 import Pagination
 import Process
@@ -26,7 +27,7 @@ import ProcessImmichMsg
 import Task
 import Theme exposing (DeviceClass(..), Theme(..))
 import TitleHelpers exposing (createDetailedViewTitle, getMoveFromInfo)
-import Types exposing (AlbumPaginationContext, AssetSourceUpdate(..), ImageIndex, NavigationHistoryEntry, PaginationState, SourceLoadState, UserMode(..))
+import Types exposing (AlbumPaginationContext, AssetSourceUpdate(..), FeedbackMessage(..), ImageIndex, NavigationHistoryEntry, PaginationState, SourceLoadState, UserMode(..), feedbackMessageToString)
 import UpdateAlbums exposing (AlbumMsg)
 import UpdateAsset exposing (AssetMsg(..), AssetResult(..), AssetState(..), updateAsset)
 import UpdateAssetResult
@@ -120,7 +121,7 @@ type alias Model =
     , imageIndex : ImageIndex
     , imageSearchConfig : ImageSearchConfig
     , timeViewMode : TimeViewMode
-    , reloadFeedback : Maybe String
+    , reloadFeedback : Maybe FeedbackMessage
     , controlPressed : Bool
     , altPressed : Bool
 
@@ -193,7 +194,7 @@ init flags =
       , apiKey = flags.immichApiKey
       , envBaseUrl = flags.immichApiUrl
       , envApiKey = flags.immichApiKey
-      , immichApiPaths = getImmichApiPaths flags.immichApiUrl flags.immichApiKey
+      , immichApiPaths = getImmichApiPaths (ApiUrl flags.immichApiUrl) (ApiKey flags.immichApiKey)
       , screenHeight = 800 -- Default, will be updated by window resize
       , screenWidth = 1200 -- Default, will be updated by window resize
       , deviceClass = Theme.classifyDevice 1200 800 -- Will be updated by WindowResize
@@ -334,8 +335,11 @@ viewMenuState model menuState =
             let
                 isConfigured =
                     not (String.isEmpty model.baseUrl) && not (String.isEmpty model.apiKey)
+
+                reloadFeedbackString =
+                    Maybe.map feedbackMessageToString model.reloadFeedback
             in
-            Menus.viewMainMenu (model.deviceClass == Mobile) model.reloadFeedback isConfigured
+            Menus.viewMainMenu (model.deviceClass == Mobile) reloadFeedbackString isConfigured
 
         TimelineView config ->
             Menus.viewTimelineView model config LoadDataAgain LoadTimelineAssets
@@ -579,7 +583,7 @@ handleConfigMessage configMsg model =
 
         immichCmd =
             if result.shouldInitializeImmich then
-                Immich.getAllAlbums result.context.baseUrl result.context.apiKey |> Cmd.map ImmichMsg
+                Immich.getAllAlbums (ApiUrl result.context.baseUrl) (ApiKey result.context.apiKey) |> Cmd.map ImmichMsg
 
             else
                 Cmd.none
@@ -706,7 +710,7 @@ handleMenuResult menuResult model =
             ( modelWithPagination, loadCmd )
 
         UpdateMenuResult.ReloadAlbumsAction ->
-            ( model, Immich.getAllAlbums model.baseUrl model.apiKey |> Cmd.map ImmichMsg )
+            ( model, Immich.getAllAlbums (ApiUrl model.baseUrl) (ApiKey model.apiKey) |> Cmd.map ImmichMsg )
 
         UpdateMenuResult.UpdateSearchFocusAction focused ->
             case model.userMode of
@@ -937,7 +941,7 @@ handleAssetResult assetResult model =
             ( { model | paginationState = updatedPaginationState }, loadMoreCmd )
 
         UpdateAssetResult.ReloadAlbumsAction ->
-            ( model, Immich.getAllAlbums model.baseUrl model.apiKey |> Cmd.map ImmichMsg )
+            ( model, Immich.getAllAlbums (ApiUrl model.baseUrl) (ApiKey model.apiKey) |> Cmd.map ImmichMsg )
 
         UpdateAssetResult.NoAction ->
             ( model, Cmd.none )
@@ -947,7 +951,7 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         LoadDataAgain ->
-            ( model, Immich.getAllAlbums model.baseUrl model.apiKey |> Cmd.map ImmichMsg )
+            ( model, Immich.getAllAlbums (ApiUrl model.baseUrl) (ApiKey model.apiKey) |> Cmd.map ImmichMsg )
 
         ClearReloadFeedback ->
             ( { model | reloadFeedback = Nothing }, Cmd.none )
@@ -1278,12 +1282,7 @@ update msg model =
                     -- Handle both pagination AND timeline sync
                     let
                         modelWithTimelineSync =
-                            case Pagination.classifyTimelineSyncBehavior (newModel.paginationState.currentConfig /= Nothing) newModel.userMode of
-                                Pagination.SyncTimelineView ->
-                                    Tuple.first (switchToEditIfAssetFound newModel 0)
-
-                                Pagination.NoTimelineSync ->
-                                    newModel
+                            applyTimelineSyncIfNeeded (newModel.paginationState.currentConfig /= Nothing) newModel
 
                         ( modelAfterPagination, paginationCmd ) =
                             processPaginatedResponse paginatedResponse 2 modelWithTimelineSync
@@ -1294,12 +1293,7 @@ update msg model =
                     -- Handle both pagination AND timeline sync
                     let
                         modelWithTimelineSync =
-                            case Pagination.classifyTimelineSyncBehavior (newModel.paginationState.currentConfig /= Nothing) newModel.userMode of
-                                Pagination.SyncTimelineView ->
-                                    Tuple.first (switchToEditIfAssetFound newModel 0)
-
-                                Pagination.NoTimelineSync ->
-                                    newModel
+                            applyTimelineSyncIfNeeded (newModel.paginationState.currentConfig /= Nothing) newModel
 
                         ( modelAfterPagination, paginationCmd ) =
                             processPaginatedResponse paginatedResponse (page + 1) modelWithTimelineSync
@@ -1324,12 +1318,7 @@ update msg model =
                     -- Need to handle timeline sync for assets
                     let
                         modelWithTimelineSync =
-                            case Pagination.classifyTimelineSyncBehavior (newModel.paginationState.currentConfig /= Nothing) newModel.userMode of
-                                Pagination.SyncTimelineView ->
-                                    Tuple.first (switchToEditIfAssetFound newModel 0)
-
-                                Pagination.NoTimelineSync ->
-                                    newModel
+                            applyTimelineSyncIfNeeded (newModel.paginationState.currentConfig /= Nothing) newModel
                     in
                     ( modelWithTimelineSync, result.cmd )
 
@@ -1337,12 +1326,7 @@ update msg model =
                     -- Need to handle timeline sync for assets
                     let
                         modelWithTimelineSync =
-                            case Pagination.classifyTimelineSyncBehavior (newModel.paginationState.currentConfig /= Nothing) newModel.userMode of
-                                Pagination.SyncTimelineView ->
-                                    Tuple.first (switchToEditIfAssetFound newModel 0)
-
-                                Pagination.NoTimelineSync ->
-                                    newModel
+                            applyTimelineSyncIfNeeded (newModel.paginationState.currentConfig /= Nothing) newModel
                     in
                     ( modelWithTimelineSync, result.cmd )
 
@@ -1446,12 +1430,7 @@ handleFetchAssets assets model =
                 , imageIndex = result.imageIndex
             }
     in
-    case Pagination.classifyTimelineSyncBehavior result.isTimelineView model.userMode of
-        Pagination.SyncTimelineView ->
-            Tuple.first (switchToEditIfAssetFound updatedModel 0)
-
-        Pagination.NoTimelineSync ->
-            updatedModel
+    applyTimelineSyncIfNeeded result.isTimelineView updatedModel
 
 
 
@@ -1597,6 +1576,22 @@ generateNextPageCmd apiPaths request =
                 |> Cmd.map ImmichMsg
 
 
+{-| Apply timeline sync if needed based on whether we're in a timeline view.
+
+This helper eliminates duplication of the timeline sync pattern that appears
+in several places when handling Immich responses.
+
+-}
+applyTimelineSyncIfNeeded : Bool -> Model -> Model
+applyTimelineSyncIfNeeded isTimelineView model =
+    case Pagination.classifyTimelineSyncBehavior isTimelineView model.userMode of
+        Pagination.SyncTimelineView ->
+            Tuple.first (switchToEditIfAssetFound model 0)
+
+        Pagination.NoTimelineSync ->
+            model
+
+
 {-| Transition to viewing an asset, creating a new history entry.
 
 The primary entry point for switching to EditAsset mode. Performs:
@@ -1707,12 +1702,7 @@ appendFetchedAssets newAssets model =
             }
     in
     -- For timeline views, sync ViewAsset state if currently viewing an asset
-    case Pagination.classifyTimelineSyncBehavior result.isTimelineView model.userMode of
-        Pagination.SyncTimelineView ->
-            Tuple.first (switchToEditIfAssetFound updatedModel 0)
-
-        Pagination.NoTimelineSync ->
-            updatedModel
+    applyTimelineSyncIfNeeded result.isTimelineView updatedModel
 
 
 

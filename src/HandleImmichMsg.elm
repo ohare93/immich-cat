@@ -26,7 +26,7 @@ import Pagination
 import Process
 import ProcessImmichMsg
 import Task
-import Types exposing (AssetSourceUpdate(..), ImageIndex, PaginationState, UserMode(..))
+import Types exposing (AssetSourceUpdate(..), FeedbackMessage(..), ImageIndex, PaginationState, UserMode(..))
 import UpdateAsset exposing (AssetState(..))
 import UpdateImmich
 import ViewAlbums exposing (AlbumSearch, AssetWithActions, InputMode(..))
@@ -44,7 +44,7 @@ type alias ImmichMsgContext =
     , imageIndex : ImageIndex
     , currentAssets : List ImmichAssetId
     , paginationState : PaginationState
-    , reloadFeedback : Maybe String
+    , reloadFeedback : Maybe FeedbackMessage
     , imagesLoadState : ImmichLoadState
     , albumsLoadState : ImmichLoadState
     , currentAssetsSource : AssetSource
@@ -129,7 +129,7 @@ updateContextForMessage imsg context =
             context |> handleFetchAssetMembership assetWithMembership
 
         Immich.AssetMembershipFetched (Err httpError) ->
-            { context | reloadFeedback = Just ("Album membership fetch failed: " ++ Immich.errorToString httpError) }
+            { context | reloadFeedback = Just (AlbumMembershipFetchFailed (Immich.errorToString httpError)) }
 
         Immich.AlbumFetchedWithClientSideFiltering _ _ _ (Ok album) ->
             context |> handleFetchAlbums False [ album ]

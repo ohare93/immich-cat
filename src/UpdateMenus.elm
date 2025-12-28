@@ -5,12 +5,12 @@ module UpdateMenus exposing
     , updateMenus
     )
 
-import AssetSourceTypes exposing (AssetSource(..))
+import AssetSourceTypes exposing (AlbumConfig, AssetSource(..), defaultAlbumConfig)
 import Dict exposing (Dict)
 import Helpers exposing (isSupportedSearchLetter, toggleCategorisation, toggleMediaType, toggleOrder, toggleOrderHandler, toggleStatus)
 import Immich exposing (ImageSearchConfig, ImmichAlbum, ImmichAlbumId, ImmichApiPaths, SearchContext(..))
 import KeybindBranches exposing (generateAlbumKeybindings)
-import Menus exposing (AlbumConfig, SearchConfig, TimelineConfig, defaultAlbumConfig, defaultSearchConfig, defaultTimelineConfig, toggleSearchContext)
+import Menus exposing (SearchConfig, TimelineConfig, defaultSearchConfig, defaultTimelineConfig, toggleSearchContext)
 import UpdateAlbums
 import ViewAlbums exposing (AlbumSearch, createAlbumSearchWithWarning, getAlbumSearchWithHeight)
 

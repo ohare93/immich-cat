@@ -23,9 +23,10 @@ Main.elm uses a helper to apply these to model.userMode.
 
 -}
 
+import AssetSourceTypes exposing (AlbumConfig)
 import Dict exposing (Dict)
 import Immich exposing (CategorisationFilter, ImageOrder, ImmichAlbum, ImmichAsset, ImmichAssetId, MediaTypeFilter, SearchContext, StatusFilter)
-import Menus exposing (AlbumConfig, SearchConfig, TimelineConfig, addToRecentSearches, generateSearchSuggestions)
+import Menus exposing (SearchConfig, TimelineConfig, addToRecentSearches, generateSearchSuggestions)
 import UpdateMenus exposing (MenuState(..))
 
 

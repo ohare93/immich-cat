@@ -2,12 +2,12 @@ module FilteringTest exposing (..)
 
 -- Import the types from Immich and Menus modules
 
+import AssetSourceTypes exposing (defaultAlbumConfig)
 import Expect
 import Immich exposing (CategorisationFilter(..), ImageOrder(..), MediaTypeFilter(..), SearchContext(..), StatusFilter(..))
 import Menus
     exposing
-        ( defaultAlbumConfig
-        , defaultSearchConfig
+        ( defaultSearchConfig
         , defaultTimelineConfig
         )
 import Test exposing (..)
