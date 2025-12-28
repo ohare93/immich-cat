@@ -72,18 +72,53 @@ type alias ImmichApiPaths =
 
 
 
+-- Helper function to collapse consecutive slashes in a string
+
+
+collapseSlashes : String -> String
+collapseSlashes str =
+    if String.contains "//" str then
+        collapseSlashes (String.replace "//" "/" str)
+
+    else
+        str
+
+
+
+-- Helper function to remove all trailing slashes
+
+
+removeTrailingSlashes : String -> String
+removeTrailingSlashes str =
+    if String.endsWith "/" str then
+        removeTrailingSlashes (String.dropRight 1 str)
+
+    else
+        str
+
+
+
 -- Helper function to properly join URL paths using crossOrigin
 
 
 joinUrl : String -> List String -> String
 joinUrl baseUrl pathSegments =
     let
-        cleanBase =
-            if String.endsWith "/" baseUrl then
-                String.dropRight 1 baseUrl
+        trimmed =
+            String.trim baseUrl
 
-            else
-                baseUrl
+        -- Remove all trailing slashes
+        withoutTrailingSlash =
+            removeTrailingSlashes trimmed
+
+        -- Collapse consecutive slashes (except after protocol)
+        cleanBase =
+            case String.split "://" withoutTrailingSlash of
+                [ protocol, rest ] ->
+                    protocol ++ "://" ++ collapseSlashes rest
+
+                _ ->
+                    collapseSlashes withoutTrailingSlash
     in
     crossOrigin cleanBase pathSegments []
 
