@@ -29,6 +29,54 @@
         }
       }
     },
+    "elmPackages.elm-language-server@latest": {
+      "last_modified": "2025-11-23T21:50:36Z",
+      "resolved": "github:NixOS/nixpkgs/ee09932cedcef15aaf476f9343d1dea2cb77e261#elmPackages.elm-language-server",
+      "source": "devbox-search",
+      "version": "2.8.0",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/a6bp6n9cahf1ac9rx9p6k5w2wcv2jabh-elm-language-server-2.8.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/a6bp6n9cahf1ac9rx9p6k5w2wcv2jabh-elm-language-server-2.8.0"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/yv6nwa3v0xck8nj8iqf3nfdnvnpam5nh-elm-language-server-2.8.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/yv6nwa3v0xck8nj8iqf3nfdnvnpam5nh-elm-language-server-2.8.0"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/kvahyr30fyaszxjsaixw6m5fpwl3xzrj-elm-language-server-2.8.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/kvahyr30fyaszxjsaixw6m5fpwl3xzrj-elm-language-server-2.8.0"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/zf7a7mp3kjdbzkwadxgqwzplirkn8xyg-elm-language-server-2.8.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/zf7a7mp3kjdbzkwadxgqwzplirkn8xyg-elm-language-server-2.8.0"
+        }
+      }
+    },
     "elmPackages.elm-live": {
       "resolved": "github:NixOS/nixpkgs/9b008d60392981ad674e04016d25619281550a9d?narHash=sha256-mgFxAPLWw0Kq%2BC8P3dRrZrOYEQXOtKuYVlo9xvPntt8%3D#elmPackages.elm-live",
       "source": "nixpkg",
@@ -141,6 +189,54 @@
     "github:NixOS/nixpkgs/nixpkgs-unstable": {
       "last_modified": "2025-07-08T04:39:49Z",
       "resolved": "github:NixOS/nixpkgs/9b008d60392981ad674e04016d25619281550a9d?lastModified=1751949589&narHash=sha256-mgFxAPLWw0Kq%2BC8P3dRrZrOYEQXOtKuYVlo9xvPntt8%3D"
+    },
+    "uv@latest": {
+      "last_modified": "2025-12-18T02:44:17Z",
+      "resolved": "github:NixOS/nixpkgs/def3da69945bbe338c373fddad5a1bb49cf199ce#uv",
+      "source": "devbox-search",
+      "version": "0.9.18",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/8p7xc548qhrs4ns82bamyxnjm1h6w16s-uv-0.9.18",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/8p7xc548qhrs4ns82bamyxnjm1h6w16s-uv-0.9.18"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/s2r0d03va9llzxbvjwd2ncpmn3nysnp6-uv-0.9.18",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/s2r0d03va9llzxbvjwd2ncpmn3nysnp6-uv-0.9.18"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/wz27b8hmvng619crzsfcdh9vywdakxa3-uv-0.9.18",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/wz27b8hmvng619crzsfcdh9vywdakxa3-uv-0.9.18"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/hba3r60zyn9mcqp2s71qwv7rlkv3qskn-uv-0.9.18",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/hba3r60zyn9mcqp2s71qwv7rlkv3qskn-uv-0.9.18"
+        }
+      }
     }
   }
 }

@@ -4,7 +4,9 @@
     "elmPackages.elm-test",
     "elmPackages.elm-format",
     "elmPackages.elm-live",
-    "elmPackages.nodejs@latest"
+    "elmPackages.nodejs@latest",
+    "uv@latest",
+    "elmPackages.elm-language-server@latest"
   ],
   "shell": {
     "init_hook": [
