@@ -14,11 +14,13 @@ import Html exposing (Html)
 import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImageSearchConfig, ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..), MediaTypeFilter(..), SearchContext(..), StatusFilter(..), getAllAlbums, getImmichApiPaths)
 import Json.Decode as Decode
 import KeybindBranches exposing (generateAlbumKeybindings)
+import KeyboardInput
 import LoadState
 import Menus exposing (AlbumConfig, defaultAlbumConfig, defaultSearchConfig)
-import Navigation
+import Navigation exposing (recordNavigationState, setCurrentNavigationState, updateCurrentHistoryEntry)
 import Pagination
 import Process
+import ProcessImmichMsg
 import Task
 import Theme exposing (DeviceClass(..), Theme(..))
 import TitleHelpers exposing (createDetailedViewTitle, getMoveFromInfo)
@@ -34,6 +36,7 @@ import UpdateMenus exposing (MenuMsg(..), MenuResult(..), MenuState(..), updateM
 import ViewAlbums exposing (AlbumSearch, AssetWithActions, InputMode(..), PropertyChange(..))
 import ViewAsset exposing (TimeViewMode(..))
 import ViewGrid
+import ViewInputMode
 
 
 
@@ -261,48 +264,6 @@ applyNavigateResult result model =
                 ( restoredModel, Cmd.none )
 
 
-recordNavigationState : UserMode -> Model -> Model
-recordNavigationState newMode model =
-    let
-        navFields =
-            Navigation.clearForwardQueueForViewAssets newMode (getNavFields model)
-    in
-    { model | navigationForwardQueue = navFields.navigationForwardQueue }
-
-
-setCurrentNavigationState : Model -> Model
-setCurrentNavigationState model =
-    let
-        maybeEntry =
-            Navigation.createCurrentNavigationEntry
-                model.userMode
-                model.currentAssetsSource
-                model.currentAssets
-                model.imageIndex
-                model.paginationState
-    in
-    case maybeEntry of
-        Just entry ->
-            { model | currentNavigationState = Just entry }
-
-        Nothing ->
-            model
-
-
-updateCurrentHistoryEntry : Model -> Model
-updateCurrentHistoryEntry model =
-    { model
-        | currentNavigationState =
-            Navigation.updateCurrentEntry
-                model.currentNavigationState
-                model.userMode
-                model.currentAssetsSource
-                model.currentAssets
-                model.imageIndex
-                model.paginationState
-    }
-
-
 navigateHistoryBack : Model -> ( Model, Cmd Msg )
 navigateHistoryBack model =
     applyNavigateResult (Navigation.navigateBack (getNavFields model)) model
@@ -381,50 +342,7 @@ viewMenuState model menuState =
             Menus.viewSearchView model config ChangeSearchQuery SelectSearchSuggestion ExecuteSearch ClearSearchQuery
 
         AlbumBrowse search ->
-            Element.row [ width fill, height fill ]
-                [ Element.column [ width (fillPortion 4 |> minimum 280), height fill, paddingXY 15 15, Element.spacingXY 0 15 ]
-                    [ el [ Font.size 20, Font.bold ] (text "📁 Browse Albums")
-                    , if search.searchString /= "" then
-                        text ("Search: \"" ++ search.searchString ++ "\"")
-
-                      else
-                        text ""
-                    , if search.partialKeybinding /= "" then
-                        let
-                            nextChars =
-                                ViewAlbums.getNextAvailableCharacters search.partialKeybinding model.albumKeybindings
-
-                            nextCharString =
-                                String.fromList nextChars
-                        in
-                        column []
-                            [ el [ Font.color <| Element.fromRgb { red = 1, green = 0.6, blue = 0, alpha = 1 } ] <|
-                                text ("Keybind: \"" ++ search.partialKeybinding ++ "\"")
-                            , if List.isEmpty nextChars then
-                                el [ Font.color <| Element.fromRgb { red = 1, green = 0.2, blue = 0.2, alpha = 1 }, Font.size 12 ] <| text "No matches"
-
-                              else
-                                el [ Font.color <| Theme.getMutedTextColor model.theme, Font.size 12 ] <| text ("Next: " ++ nextCharString)
-                            ]
-
-                      else
-                        text ""
-                    , case search.invalidInputWarning of
-                        Just warning ->
-                            el [ Font.color <| Element.fromRgb { red = 1, green = 0.2, blue = 0.2, alpha = 1 }, Font.size 12 ] <| text ("Invalid: \"" ++ warning ++ "\"")
-
-                        Nothing ->
-                            text ""
-                    , ViewAlbums.viewSidebarAlbums search model.albumKeybindings model.knownAlbums SelectAlbum (Theme.getKeybindTextColor model.theme) (Theme.getMutedTextColor model.theme) (Theme.getHighlightColor model.theme)
-                    ]
-                , Element.column [ width (fillPortion 5), height fill, paddingXY 20 20 ]
-                    [ el [ Font.size 16 ] (text "Select an album from the left to configure and view its contents.")
-                    , el [ Font.size 14, Font.color <| Theme.getMutedTextColor model.theme ] (text "Type album name or keybinding to filter the list.")
-                    ]
-                , Element.column [ width (fillPortion 4 |> minimum 300), height fill, paddingXY 15 15 ]
-                    [ viewContextHelp (AlbumBrowseContext SelectingAlbum)
-                    ]
-                ]
+            Menus.viewAlbumBrowse model search SelectAlbum
 
         AlbumView album config ->
             Menus.viewAlbumView model album config LoadAlbumAssets
@@ -548,82 +466,7 @@ isInInputMode userMode =
 
 viewInputMode : UserMode -> Theme -> Element msg
 viewInputMode userMode theme =
-    let
-        inputMode =
-            case userMode of
-                MainMenu menuState ->
-                    case menuState of
-                        MainMenuHome ->
-                            NormalMode
-
-                        TimelineView _ ->
-                            NormalMode
-
-                        SearchView config ->
-                            if config.inputFocused then
-                                InsertMode
-
-                            else
-                                NormalMode
-
-                        AlbumBrowse _ ->
-                            KeybindingMode
-
-                        AlbumView _ _ ->
-                            NormalMode
-
-                        Settings ->
-                            NormalMode
-
-                ViewAssets assetState ->
-                    case assetState of
-                        SearchAssetInput _ ->
-                            InsertMode
-
-                        SelectAlbumInput _ ->
-                            InsertMode
-
-                        EditAsset editInputMode _ _ ->
-                            editInputMode
-
-                        CreateAlbumConfirmation editInputMode _ _ _ ->
-                            editInputMode
-
-                        ShowEditAssetHelp editInputMode _ _ ->
-                            editInputMode
-
-                        GridView _ ->
-                            NormalMode
-
-                LoadingAssets _ ->
-                    NormalMode
-
-        themeText =
-            case theme of
-                Light ->
-                    "☀️"
-
-                Dark ->
-                    "🌙"
-
-                System ->
-                    "⚙️"
-    in
-    row [ width fill ]
-        [ case inputMode of
-            NormalMode ->
-                el [ width (fillPortion 1), Background.color <| Element.fromRgb { red = 0.8, green = 0.8, blue = 0.8, alpha = 1 } ] <| text "Normal"
-
-            InsertMode ->
-                el [ width (fillPortion 1), Background.color <| Element.fromRgb { red = 0, green = 1, blue = 0, alpha = 1 } ] <| text "Input"
-
-            KeybindingMode ->
-                el [ width (fillPortion 1), Background.color <| Element.fromRgb { red = 1, green = 0.5, blue = 0, alpha = 1 } ] <| text "Keybind"
-
-            ScrollViewMode _ ->
-                el [ width (fillPortion 1), Background.color <| Element.fromRgb { red = 0.5, green = 0, blue = 1, alpha = 1 } ] <| text "Scroll"
-        , el [ width (px 40), Background.color <| Theme.getSecondaryColor theme, Font.color <| Theme.getTextColor theme, Element.centerX ] <| text themeText
-        ]
+    ViewInputMode.viewInputModeIndicator (ViewInputMode.computeInputMode userMode) theme
 
 
 
@@ -639,6 +482,87 @@ updateMenuState fn model =
 
         _ ->
             model
+
+
+
+-- KEYBOARD INPUT HELPERS --
+
+
+{-| Handle Escape key press.
+Resets modifiers and routes to appropriate handler based on user mode.
+-}
+handleEscapeKey : Model -> ( Model, Cmd Msg )
+handleEscapeKey model =
+    case model.userMode of
+        MainMenu menuState ->
+            handleMenuResult (updateMenus (MenuKeyPress "Escape") menuState model.knownAlbums model.immichApiPaths model.screenHeight) model
+
+        ViewAssets assetState ->
+            handleAssetResult (updateAsset (AssetKeyPress "Escape") assetState model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets model.knownAssets) model
+
+        LoadingAssets _ ->
+            -- Save current state if transitioning from ViewAssets context
+            let
+                updatedModel =
+                    case model.currentAssetsSource of
+                        NoAssets ->
+                            model
+
+                        _ ->
+                            -- We have asset context, save it
+                            let
+                                currentEntry =
+                                    { userMode = model.userMode
+                                    , currentAssetsSource = model.currentAssetsSource
+                                    , currentAssets = model.currentAssets
+                                    , imageIndex = model.imageIndex
+                                    , paginationState = model.paginationState
+                                    }
+
+                                updatedBackStack =
+                                    case model.currentNavigationState of
+                                        Just existing ->
+                                            -- Push existing current state to back stack
+                                            List.take 19 (existing :: model.navigationBackStack)
+
+                                        Nothing ->
+                                            model.navigationBackStack
+                            in
+                            { model
+                                | navigationBackStack = updatedBackStack
+                                , currentNavigationState = Just currentEntry
+                                , navigationForwardQueue = [] -- Clear forward queue
+                            }
+            in
+            ( { updatedModel | userMode = MainMenu MainMenuHome }, Cmd.none )
+
+
+{-| Handle a regular (non-modifier, non-escape) key press.
+Routes to appropriate handler based on user mode.
+-}
+handleRegularKey : String -> Model -> ( Model, Cmd Msg )
+handleRegularKey effectiveKey model =
+    case model.userMode of
+        MainMenu menuState ->
+            if effectiveKey == "T" && not (isInInputMode model.userMode) then
+                ( { model | theme = Theme.nextTheme model.theme }, Cmd.none )
+
+            else
+                handleMenuResult (updateMenus (MenuKeyPress effectiveKey) menuState model.knownAlbums model.immichApiPaths model.screenHeight) model
+
+        ViewAssets assetState ->
+            handleAssetResult (updateAsset (AssetKeyPress effectiveKey) assetState model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets model.knownAssets) model
+
+        LoadingAssets _ ->
+            case effectiveKey of
+                "g" ->
+                    ( { model | userMode = MainMenu Settings }, Cmd.none )
+
+                "T" ->
+                    ( { model | theme = Theme.nextTheme model.theme }, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
 
 
 
@@ -1028,27 +952,45 @@ update msg model =
                         SelectAlbumInput _ ->
                             ( createLoadStateForCurrentAssetSource (Album album) model, Immich.getAlbum model.immichApiPaths album.id |> Cmd.map ImmichMsg )
 
-                        EditAsset inputMode asset search ->
+                        EditAsset _ _ _ ->
+                            -- Use consolidated album toggle logic (same as keyboard path)
+                            -- Note: Always resets to NormalMode for consistency with keyboard behavior
                             let
-                                currentPropertyChange =
-                                    Maybe.withDefault RemainFalse (Dict.get album.id asset.albumMembership)
-
-                                currentlyInAlbum =
-                                    ViewAlbums.isCurrentlyInAlbum currentPropertyChange
-
-                                isNotInAlbum =
-                                    not currentlyInAlbum
-
-                                toggledAsset =
-                                    ViewAlbums.toggleAssetAlbum asset album
-
-                                newPropertyChange =
-                                    Maybe.withDefault RemainFalse (Dict.get album.id toggledAsset.albumMembership)
-
-                                isAddition =
-                                    ViewAlbums.isAddingToAlbum newPropertyChange
+                                context =
+                                    { userMode = model.userMode
+                                    , currentAssetsSource = model.currentAssetsSource
+                                    , currentAssets = model.currentAssets
+                                    , imageIndex = model.imageIndex
+                                    , paginationState = model.paginationState
+                                    , currentNavigationState = model.currentNavigationState
+                                    , navigationBackStack = model.navigationBackStack
+                                    , screenHeight = model.screenHeight
+                                    , timeViewMode = model.timeViewMode
+                                    , baseUrl = model.baseUrl
+                                    }
                             in
-                            ( { model | userMode = ViewAssets (EditAsset inputMode toggledAsset (ViewAlbums.getAlbumSearch "" model.knownAlbums)), pendingAlbumChanges = [ ( album.id, isAddition ) ] }, Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum |> Cmd.map ImmichMsg )
+                            case UpdateAssetResult.processToggleAlbumMembership album context of
+                                UpdateAssetResult.ToggleAlbumMembershipAction data ->
+                                    let
+                                        primaryCmd =
+                                            Immich.albumChangeAssetMembership model.immichApiPaths data.targetAlbumId [ data.newAsset.asset.id ] data.isAddition
+                                                |> Cmd.map ImmichMsg
+
+                                        moveFromCmd =
+                                            case data.moveFromSourceId of
+                                                Just sourceId ->
+                                                    Immich.albumChangeAssetMembership model.immichApiPaths sourceId [ data.newAsset.asset.id ] False
+                                                        |> Cmd.map ImmichMsg
+
+                                                Nothing ->
+                                                    Cmd.none
+                                    in
+                                    ( { model | userMode = ViewAssets (EditAsset NormalMode data.newAsset data.newSearch), pendingAlbumChanges = data.pendingChanges }
+                                    , Cmd.batch [ primaryCmd, moveFromCmd ]
+                                    )
+
+                                _ ->
+                                    ( model, Cmd.none )
 
                         _ ->
                             ( model, Cmd.none )
@@ -1057,125 +999,61 @@ update msg model =
                     ( model, Cmd.none )
 
         KeyPress key ->
-            -- Always reset modifier states on ANY Escape press (even Alt+Escape)
-            if key == "Escape" then
-                let
-                    resetModel =
-                        { model | controlPressed = False, altPressed = False }
-                in
-                -- Continue with normal Escape processing using reset model
-                case resetModel.userMode of
-                    MainMenu menuState ->
-                        handleMenuResult (updateMenus (MenuKeyPress "Escape") menuState resetModel.knownAlbums resetModel.immichApiPaths resetModel.screenHeight) resetModel
+            -- Use pure keyboard input processing
+            let
+                modifiers =
+                    { controlPressed = model.controlPressed
+                    , altPressed = model.altPressed
+                    }
+            in
+            case KeyboardInput.classifyKeyPress key modifiers of
+                KeyboardInput.EscapePressed ->
+                    -- Reset modifiers and handle escape
+                    let
+                        newModifiers =
+                            KeyboardInput.resetModifiers
 
-                    ViewAssets assetState ->
-                        handleAssetResult (updateAsset (AssetKeyPress "Escape") assetState resetModel.albumKeybindings resetModel.knownAlbums resetModel.screenHeight resetModel.currentAssets resetModel.knownAssets) resetModel
+                        resetModel =
+                            { model | controlPressed = newModifiers.controlPressed, altPressed = newModifiers.altPressed }
+                    in
+                    handleEscapeKey resetModel
 
-                    LoadingAssets _ ->
-                        -- Save current state if transitioning from ViewAssets context
-                        let
-                            updatedModel =
-                                case resetModel.currentAssetsSource of
-                                    NoAssets ->
-                                        resetModel
+                KeyboardInput.ModifierPressed KeyboardInput.SetControlPressed ->
+                    ( { model | controlPressed = True }, Cmd.none )
 
-                                    _ ->
-                                        -- We have asset context, save it
-                                        let
-                                            currentEntry =
-                                                { userMode = resetModel.userMode
-                                                , currentAssetsSource = resetModel.currentAssetsSource
-                                                , currentAssets = resetModel.currentAssets
-                                                , imageIndex = resetModel.imageIndex
-                                                , paginationState = resetModel.paginationState
-                                                }
+                KeyboardInput.ModifierPressed KeyboardInput.SetAltPressed ->
+                    ( { model | altPressed = True }, Cmd.none )
 
-                                            updatedBackStack =
-                                                case resetModel.currentNavigationState of
-                                                    Just existing ->
-                                                        -- Push existing current state to back stack
-                                                        List.take 19 (existing :: resetModel.navigationBackStack)
+                KeyboardInput.NavigationBack ->
+                    navigateHistoryBack model
 
-                                                    Nothing ->
-                                                        resetModel.navigationBackStack
-                                        in
-                                        { resetModel
-                                            | navigationBackStack = updatedBackStack
-                                            , currentNavigationState = Just currentEntry
-                                            , navigationForwardQueue = [] -- Clear forward queue
-                                        }
-                        in
-                        ( { updatedModel | userMode = MainMenu MainMenuHome }, Cmd.none )
+                KeyboardInput.NavigationForward ->
+                    navigateHistoryForward model
 
-            else if key == "Control" then
-                -- Control key pressed - just track state, don't pass to handlers
-                ( { model | controlPressed = True }, Cmd.none )
-
-            else if key == "Alt" then
-                -- Alt key pressed - just track state, don't pass to handlers
-                ( { model | altPressed = True }, Cmd.none )
-
-            else
-                let
-                    -- If Control or Alt is pressed, prefix the key appropriately
-                    effectiveKey =
-                        if model.controlPressed then
-                            "Control+" ++ key
-
-                        else if model.altPressed then
-                            "Alt+" ++ key
-
-                        else
-                            key
-                in
-                -- Handle navigation keys at top level (work in all views)
-                case effectiveKey of
-                    "Alt+o" ->
-                        navigateHistoryBack model
-
-                    "Alt+i" ->
-                        navigateHistoryForward model
-
-                    _ ->
-                        case model.userMode of
-                            MainMenu menuState ->
-                                if effectiveKey == "T" && not (isInInputMode model.userMode) then
-                                    ( { model | theme = Theme.nextTheme model.theme }, Cmd.none )
-
-                                else
-                                    handleMenuResult (updateMenus (MenuKeyPress effectiveKey) menuState model.knownAlbums model.immichApiPaths model.screenHeight) model
-
-                            ViewAssets assetState ->
-                                handleAssetResult (updateAsset (AssetKeyPress effectiveKey) assetState model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets model.knownAssets) model
-
-                            LoadingAssets _ ->
-                                -- Escape is already handled at the top of KeyPress
-                                case effectiveKey of
-                                    "g" ->
-                                        ( { model | userMode = MainMenu Settings }, Cmd.none )
-
-                                    "T" ->
-                                        ( { model | theme = Theme.nextTheme model.theme }, Cmd.none )
-
-                                    _ ->
-                                        ( model, Cmd.none )
+                KeyboardInput.RegularKeyPressed effectiveKey ->
+                    handleRegularKey effectiveKey model
 
         KeyRelease key ->
-            if key == "Control" then
-                -- Control key released - clear state
-                ( { model | controlPressed = False }, Cmd.none )
+            let
+                modifiers =
+                    { controlPressed = model.controlPressed
+                    , altPressed = model.altPressed
+                    }
+            in
+            case KeyboardInput.processKeyRelease key modifiers of
+                KeyboardInput.ModifierReleased newState ->
+                    ( { model | controlPressed = newState.controlPressed, altPressed = newState.altPressed }, Cmd.none )
 
-            else if key == "Alt" then
-                -- Alt key released - clear state
-                ( { model | altPressed = False }, Cmd.none )
-
-            else
-                -- Ignore other key releases
-                ( model, Cmd.none )
+                KeyboardInput.KeyReleaseIgnored ->
+                    ( model, Cmd.none )
 
         VisibilityChanged visibility ->
             -- Reset modifier states when window visibility changes (handles Alt+Tab, etc.)
-            ( { model | controlPressed = False, altPressed = False }, Cmd.none )
+            let
+                newModifiers =
+                    KeyboardInput.resetModifiers
+            in
+            ( { model | controlPressed = newModifiers.controlPressed, altPressed = newModifiers.altPressed }, Cmd.none )
 
         WindowResize width height ->
             let
@@ -1189,32 +1067,7 @@ update msg model =
                 updatedModel =
                     case model.userMode of
                         ViewAssets assetState ->
-                            case assetState of
-                                SelectAlbumInput search ->
-                                    { newModel | userMode = ViewAssets (SelectAlbumInput { search | pagination = ViewAlbums.updatePagination height search.pagination }) }
-
-                                EditAsset inputMode asset search ->
-                                    { newModel | userMode = ViewAssets (EditAsset inputMode asset { search | pagination = ViewAlbums.updatePagination height search.pagination }) }
-
-                                CreateAlbumConfirmation inputMode asset search albumName ->
-                                    { newModel | userMode = ViewAssets (CreateAlbumConfirmation inputMode asset { search | pagination = ViewAlbums.updatePagination height search.pagination } albumName) }
-
-                                ShowEditAssetHelp inputMode asset search ->
-                                    { newModel | userMode = ViewAssets (ShowEditAssetHelp inputMode asset { search | pagination = ViewAlbums.updatePagination height search.pagination }) }
-
-                                GridView gridState ->
-                                    let
-                                        screenWidth =
-                                            height * 16 // 9
-
-                                        -- Assume 16:9 ratio
-                                        updatedGridState =
-                                            ViewGrid.updateGridState (ViewGrid.GridResized screenWidth height) gridState []
-                                    in
-                                    { newModel | userMode = ViewAssets (GridView updatedGridState) }
-
-                                _ ->
-                                    newModel
+                            { newModel | userMode = ViewAssets (UpdateAsset.updateAssetStateOnResize width height assetState) }
 
                         _ ->
                             newModel
@@ -1464,45 +1317,31 @@ update msg model =
             in
             case imsg of
                 Immich.AlbumAssetsChanged (Ok _) ->
-                    -- Album membership change succeeded, update album asset count and refresh membership data
+                    -- Album membership change succeeded - use pure function to compute updates
                     let
-                        -- Pop one pending change and update its album count
-                        ( updatedModel, remainingChanges ) =
-                            case newModel.pendingAlbumChanges of
-                                ( albumId, isAddition ) :: rest ->
-                                    let
-                                        countChange =
-                                            if isAddition then
-                                                1
+                        result =
+                            ProcessImmichMsg.processAlbumChangeSuccess
+                                newModel.pendingAlbumChanges
+                                newModel.userMode
 
-                                            else
-                                                -1
+                        modelWithCount =
+                            case result.albumCountUpdate of
+                                Just ( albumId, countChange ) ->
+                                    updateAlbumAssetCount albumId countChange newModel
 
-                                        modelWithUpdatedCount =
-                                            updateAlbumAssetCount albumId countChange newModel
-                                    in
-                                    ( { modelWithUpdatedCount | pendingAlbumChanges = rest }, rest )
+                                Nothing ->
+                                    newModel
 
-                                [] ->
-                                    ( newModel, [] )
+                        updatedModel =
+                            { modelWithCount | pendingAlbumChanges = result.updatedPendingChanges }
 
-                        -- Only fetch membership when ALL pending changes are processed
                         membershipCmd =
-                            if List.isEmpty remainingChanges then
-                                case updatedModel.userMode of
-                                    ViewAssets assetState ->
-                                        case assetState of
-                                            EditAsset _ asset _ ->
-                                                Immich.fetchMembershipForAsset updatedModel.immichApiPaths asset.asset.id |> Cmd.map ImmichMsg
+                            case result.assetIdForMembership of
+                                Just assetId ->
+                                    Immich.fetchMembershipForAsset updatedModel.immichApiPaths assetId |> Cmd.map ImmichMsg
 
-                                            _ ->
-                                                Cmd.none
-
-                                    _ ->
-                                        Cmd.none
-
-                            else
-                                Cmd.none
+                                Nothing ->
+                                    Cmd.none
                     in
                     ( updatedModel, membershipCmd )
 
@@ -1522,19 +1361,30 @@ update msg model =
                     ( newModel, clearFeedbackCmd )
 
                 Immich.AlbumCreated (Ok album) ->
+                    -- Auto-add current asset to newly created album
                     case model.userMode of
                         LoadingAssets _ ->
                             getCurrentAssetWithActions newModel
                                 |> Maybe.map
                                     (\( assetWithActions, _ ) ->
                                         let
-                                            updatedAsset =
-                                                ViewAlbums.toggleAssetAlbum assetWithActions album
+                                            result =
+                                                ProcessImmichMsg.processAlbumCreatedSuccess
+                                                    album
+                                                    assetWithActions
+                                                    newModel.knownAlbums
 
                                             updatedModel =
-                                                { newModel | userMode = ViewAssets (EditAsset NormalMode updatedAsset (ViewAlbums.getAlbumSearch "" newModel.knownAlbums)) }
+                                                { newModel
+                                                    | userMode = ViewAssets (EditAsset NormalMode result.updatedAsset result.newSearch)
+                                                    , pendingAlbumChanges = [ result.pendingChange ]
+                                                }
+
+                                            addToAlbumCmd =
+                                                Immich.albumChangeAssetMembership newModel.immichApiPaths album.id [ assetWithActions.asset.id ] True
+                                                    |> Cmd.map ImmichMsg
                                         in
-                                        ( { updatedModel | pendingAlbumChanges = [ ( album.id, True ) ] }, Immich.albumChangeAssetMembership newModel.immichApiPaths album.id [ assetWithActions.asset.id ] True |> Cmd.map ImmichMsg )
+                                        ( updatedModel, addToAlbumCmd )
                                     )
                                 |> Maybe.withDefault ( newModel, Cmd.none )
 
@@ -1644,16 +1494,12 @@ handleFetchAssets assets model =
                 , imageIndex = result.imageIndex
             }
     in
-    if result.isTimelineView then
-        case model.userMode of
-            ViewAssets _ ->
-                Tuple.first (switchToEditIfAssetFound updatedModel 0)
+    case Pagination.classifyTimelineSyncBehavior result.isTimelineView model.userMode of
+        Pagination.SyncTimelineView ->
+            Tuple.first (switchToEditIfAssetFound updatedModel 0)
 
-            _ ->
-                updatedModel
-
-    else
-        updatedModel
+        Pagination.NoTimelineSync ->
+            updatedModel
 
 
 
@@ -1690,6 +1536,17 @@ handleUpdateLoadingState updateType model =
             model
 
 
+{-| Guard function that checks if asset loading is complete.
+
+Examines the LoadingAssets state to determine if all required data
+has loaded. If complete, transitions to EditAsset mode via
+switchToEditIfAssetFound. If not in LoadingAssets mode, is a no-op.
+
+INVARIANT: Only meaningful when model.userMode is LoadingAssets.
+Acts as a state machine guard - called after fetch operations
+(success or error) to check if the loading phase can end.
+
+-}
 checkIfLoadingComplete : Model -> ( Model, Cmd Msg )
 checkIfLoadingComplete model =
     case model.userMode of
@@ -1788,10 +1645,23 @@ generateNextPageCmd apiPaths request =
                 |> Cmd.map ImmichMsg
 
 
+{-| Transition to viewing an asset, creating a new history entry.
 
--- Normalize asset PropertyChange states after successful API call
+The primary entry point for switching to EditAsset mode. Performs:
 
+1.  Asset lookup by index
+2.  State computation with video loaded state preservation
+3.  Navigation history recording (recordNavigationState + setCurrentNavigationState)
+4.  Album membership fetch (Cmd)
 
+If asset not found, enters LoadingAssets mode as a fallback.
+
+INVARIANT: Creates a new history entry internally via recordNavigationState
+and setCurrentNavigationState. Do not call these functions separately
+with the result. Use switchToAssetWithoutHistory for history navigation
+that should not create new entries.
+
+-}
 switchToEditIfAssetFound : Model -> ImageIndex -> ( Model, Cmd Msg )
 switchToEditIfAssetFound model index =
     -- Use pure function to compute asset view state
@@ -1885,16 +1755,12 @@ appendFetchedAssets newAssets model =
             }
     in
     -- For timeline views, sync ViewAsset state if currently viewing an asset
-    if result.isTimelineView then
-        case model.userMode of
-            ViewAssets _ ->
-                Tuple.first (switchToEditIfAssetFound updatedModel 0)
+    case Pagination.classifyTimelineSyncBehavior result.isTimelineView model.userMode of
+        Pagination.SyncTimelineView ->
+            Tuple.first (switchToEditIfAssetFound updatedModel 0)
 
-            _ ->
-                updatedModel
-
-    else
-        updatedModel
+        Pagination.NoTimelineSync ->
+            updatedModel
 
 
 

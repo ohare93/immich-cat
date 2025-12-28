@@ -6,7 +6,10 @@ module Navigation exposing
     , getCurrentAssetWithActions
     , navigateBack
     , navigateForward
+    , recordNavigationState
+    , setCurrentNavigationState
     , updateCurrentEntry
+    , updateCurrentHistoryEntry
     )
 
 {-| Pure functions for managing navigation history.
@@ -219,3 +222,143 @@ getCurrentAssetWithActions currentAssets imageIndex knownAssets knownAlbums scre
         |> List.head
         |> Maybe.andThen (\id -> Dict.get id knownAssets)
         |> Maybe.map (\asset -> ( getAssetWithActions asset, getAlbumSearchWithHeight "" knownAlbums screenHeight ))
+
+
+
+-- MODEL UPDATE HELPERS
+-- These functions update navigation-related fields on any record with the required fields.
+-- They use extensible records to work with Main.Model without depending on it.
+
+
+{-| Record navigation state when entering a new asset view.
+
+Clears the forward queue when entering ViewAssets mode (vim-style branching).
+When you navigate to a new asset view after going back in history,
+the forward queue is cleared (you've branched off).
+
+INVARIANT: Call BEFORE setCurrentNavigationState when establishing
+a new history entry. Never use with updateCurrentHistoryEntry.
+
+Usage pattern for new history entries:
+
+    model |> recordNavigationState newMode |> setCurrentNavigationState
+
+-}
+recordNavigationState :
+    UserMode
+    ->
+        { a
+            | navigationBackStack : List NavigationHistoryEntry
+            , currentNavigationState : Maybe NavigationHistoryEntry
+            , navigationForwardQueue : List NavigationHistoryEntry
+        }
+    ->
+        { a
+            | navigationBackStack : List NavigationHistoryEntry
+            , currentNavigationState : Maybe NavigationHistoryEntry
+            , navigationForwardQueue : List NavigationHistoryEntry
+        }
+recordNavigationState newMode model =
+    let
+        navFields =
+            { navigationBackStack = model.navigationBackStack
+            , currentNavigationState = model.currentNavigationState
+            , navigationForwardQueue = model.navigationForwardQueue
+            }
+
+        updated =
+            clearForwardQueueForViewAssets newMode navFields
+    in
+    { model | navigationForwardQueue = updated.navigationForwardQueue }
+
+
+{-| Create a snapshot of the current state for navigation history.
+
+Creates a navigation entry containing userMode, asset source, current
+assets list, image index, and pagination state. Only creates an entry
+when in ViewAssets mode (history only tracks asset viewing states).
+
+INVARIANT: Call AFTER recordNavigationState when establishing a new
+history entry. Together they form the complete history entry pattern.
+
+Usage pattern for new history entries:
+
+    model |> recordNavigationState newMode |> setCurrentNavigationState
+
+-}
+setCurrentNavigationState :
+    { a
+        | userMode : UserMode
+        , currentAssetsSource : AssetSource
+        , currentAssets : List ImmichAssetId
+        , imageIndex : ImageIndex
+        , paginationState : PaginationState
+        , currentNavigationState : Maybe NavigationHistoryEntry
+    }
+    ->
+        { a
+            | userMode : UserMode
+            , currentAssetsSource : AssetSource
+            , currentAssets : List ImmichAssetId
+            , imageIndex : ImageIndex
+            , paginationState : PaginationState
+            , currentNavigationState : Maybe NavigationHistoryEntry
+        }
+setCurrentNavigationState model =
+    let
+        maybeEntry =
+            createCurrentNavigationEntry
+                model.userMode
+                model.currentAssetsSource
+                model.currentAssets
+                model.imageIndex
+                model.paginationState
+    in
+    case maybeEntry of
+        Just entry ->
+            { model | currentNavigationState = Just entry }
+
+        Nothing ->
+            model
+
+
+{-| Update the current history entry in-place without branching.
+
+Used when navigating between assets via back/forward (history restoration).
+Updates the current entry's imageIndex and state without creating a new
+history entry or clearing the forward queue.
+
+INVARIANT: Only use in switchToAssetWithoutHistory for history navigation.
+Never pair with recordNavigationState or setCurrentNavigationState - this
+is an in-place update, not a branch point.
+
+-}
+updateCurrentHistoryEntry :
+    { a
+        | userMode : UserMode
+        , currentAssetsSource : AssetSource
+        , currentAssets : List ImmichAssetId
+        , imageIndex : ImageIndex
+        , paginationState : PaginationState
+        , currentNavigationState : Maybe NavigationHistoryEntry
+    }
+    ->
+        { a
+            | userMode : UserMode
+            , currentAssetsSource : AssetSource
+            , currentAssets : List ImmichAssetId
+            , imageIndex : ImageIndex
+            , paginationState : PaginationState
+            , currentNavigationState : Maybe NavigationHistoryEntry
+        }
+updateCurrentHistoryEntry model =
+    { model
+        | currentNavigationState =
+            updateCurrentEntry
+                model.currentNavigationState
+                model.userMode
+                model.currentAssetsSource
+                model.currentAssets
+                model.imageIndex
+                model.paginationState
+    }

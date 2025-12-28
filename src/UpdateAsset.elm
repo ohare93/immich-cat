@@ -5,13 +5,14 @@ module UpdateAsset exposing
     , AssetState(..)
     , handleEditAssetInput
     , updateAsset
+    , updateAssetStateOnResize
     )
 
 import Dict exposing (Dict)
 import Helpers exposing (isKeybindingLetter, isSupportedSearchLetter, loopImageIndexOverArray)
 import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichAsset, ImmichAssetId)
 import KeybindingValidation exposing (KeybindingValidationResult(..), validateKeybindingInput)
-import ViewAlbums exposing (AlbumSearch, AssetWithActions, InputMode(..), clearAlbumSearchWarning, getAlbumByExactKeybinding, getSelectedAlbumForAsset, halfPageDown, halfPageUp, moveSelectionDownForAsset, moveSelectionUpForAsset, pageDown, pageUp, resetPagination, updateAlbumSearchString)
+import ViewAlbums exposing (AlbumSearch, AssetWithActions, InputMode(..), clearAlbumSearchWarning, getAlbumByExactKeybinding, getSelectedAlbumForAsset, halfPageDown, halfPageUp, moveSelectionDownForAsset, moveSelectionUpForAsset, pageDown, pageUp, resetPagination, updateAlbumSearchString, updatePagination)
 import ViewGrid exposing (GridMsg, GridState)
 
 
@@ -1069,3 +1070,39 @@ handleGridViewMessage gridMsg gridState currentAssets knownAssets =
 
         _ ->
             StayInAssets (GridView updatedGridState)
+
+
+{-| Update AssetState when the window is resized.
+
+Pure function that updates pagination or grid state based on new screen dimensions.
+Used by WindowResize handler to update pagination calculations.
+
+-}
+updateAssetStateOnResize : Int -> Int -> AssetState -> AssetState
+updateAssetStateOnResize width height assetState =
+    case assetState of
+        SelectAlbumInput search ->
+            SelectAlbumInput { search | pagination = updatePagination height search.pagination }
+
+        EditAsset inputMode asset search ->
+            EditAsset inputMode asset { search | pagination = updatePagination height search.pagination }
+
+        CreateAlbumConfirmation inputMode asset search albumName ->
+            CreateAlbumConfirmation inputMode asset { search | pagination = updatePagination height search.pagination } albumName
+
+        ShowEditAssetHelp inputMode asset search ->
+            ShowEditAssetHelp inputMode asset { search | pagination = updatePagination height search.pagination }
+
+        GridView gridState ->
+            let
+                screenWidth =
+                    height * 16 // 9
+
+                -- Assume 16:9 ratio for grid layout
+                updatedGridState =
+                    ViewGrid.updateGridState (ViewGrid.GridResized screenWidth height) gridState []
+            in
+            GridView updatedGridState
+
+        SearchAssetInput searchString ->
+            SearchAssetInput searchString

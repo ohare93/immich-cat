@@ -2,7 +2,9 @@ module Pagination exposing
     ( AppendAssetsResult
     , NextPageRequest
     , NextPageRequestType(..)
+    , TimelineSyncAction(..)
     , appendAssetsResult
+    , classifyTimelineSyncBehavior
     , computeNextPageRequest
     , shouldFetchNextPage
     , updatePaginationStateFromResponse
@@ -18,7 +20,7 @@ depending on Model. Main.elm uses these to update pagination state.
 import Dict exposing (Dict)
 import Helpers exposing (applySortingToAssets, listOverrideDict)
 import Immich exposing (ImageSearchConfig, ImmichAsset, ImmichAssetId, PaginatedAssetResponse, SearchContext)
-import Types exposing (AlbumPaginationContext, PaginationState)
+import Types exposing (AlbumPaginationContext, PaginationState, UserMode(..))
 
 
 {-| Update pagination state from an API response.
@@ -190,3 +192,37 @@ computeNextPageRequest nextPage paginationState =
 
                         Nothing ->
                             Nothing
+
+
+
+-- TIMELINE SYNC DECISION
+
+
+{-| Action to take after fetching assets for timeline sync.
+-}
+type TimelineSyncAction
+    = SyncTimelineView
+    | NoTimelineSync
+
+
+{-| Classify whether to sync the timeline view after fetching assets.
+
+For timeline views, when the user is in ViewAssets mode, we need to
+sync the view state by calling switchToEditIfAssetFound.
+
+This consolidates the duplicate decision logic from handleFetchAssets
+and appendFetchedAssets.
+
+-}
+classifyTimelineSyncBehavior : Bool -> UserMode -> TimelineSyncAction
+classifyTimelineSyncBehavior isTimelineView userMode =
+    if isTimelineView then
+        case userMode of
+            ViewAssets _ ->
+                SyncTimelineView
+
+            _ ->
+                NoTimelineSync
+
+    else
+        NoTimelineSync

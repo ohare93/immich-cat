@@ -3,6 +3,7 @@ module UpdateAssetResult exposing
     , AssetResultContext
     , ToggleAlbumData
     , processAssetResult
+    , processToggleAlbumMembership
     )
 
 {-| Pure functions for processing AssetResult values.
@@ -248,7 +249,16 @@ processToggleArchived context =
             NoAction
 
 
-{-| Process AssetToggleAlbumMembership with move-from logic.
+{-| Process album membership toggle with move-from logic.
+
+Used by both:
+
+  - Keyboard path (AssetToggleAlbumMembership via UpdateAsset)
+  - UI click path (SelectAlbum message in Main.elm)
+
+Handles move-from mode: when enabled and viewing a FilteredAlbum,
+adding to another album also removes from the source album.
+
 -}
 processToggleAlbumMembership : ImmichAlbum -> AssetResultContext -> AssetResultAction
 processToggleAlbumMembership album context =

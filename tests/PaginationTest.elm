@@ -2,9 +2,11 @@ module PaginationTest exposing (..)
 
 import Expect
 import Immich exposing (ImageOrder(..), ImageSearchConfig, PaginatedAssetResponse, SearchContext(..))
-import Pagination exposing (NextPageRequestType(..), computeNextPageRequest, shouldFetchNextPage)
+import Pagination exposing (NextPageRequestType(..), TimelineSyncAction(..), classifyTimelineSyncBehavior, computeNextPageRequest, shouldFetchNextPage)
 import Test exposing (Test, describe, test)
-import Types exposing (AlbumPaginationContext, PaginationState)
+import Types exposing (AlbumPaginationContext, PaginationState, SourceLoadState, UserMode(..))
+import UpdateAsset exposing (AssetState(..))
+import UpdateMenus exposing (MenuState(..))
 
 
 {-| Create a default PaginationState for testing
@@ -309,5 +311,45 @@ suite =
 
                         Nothing ->
                             Expect.fail "Expected Just request"
+            ]
+        , describe "classifyTimelineSyncBehavior"
+            [ test "returns SyncTimelineView when isTimelineView and ViewAssets" <|
+                \_ ->
+                    let
+                        userMode =
+                            ViewAssets (SearchAssetInput "")
+                    in
+                    Expect.equal SyncTimelineView (classifyTimelineSyncBehavior True userMode)
+            , test "returns NoTimelineSync when isTimelineView but MainMenu" <|
+                \_ ->
+                    let
+                        userMode =
+                            MainMenu MainMenuHome
+                    in
+                    Expect.equal NoTimelineSync (classifyTimelineSyncBehavior True userMode)
+            , test "returns NoTimelineSync when isTimelineView but LoadingAssets" <|
+                \_ ->
+                    let
+                        loadState =
+                            { fetchedAssetList = Nothing, fetchedAssetMembership = Nothing }
+
+                        userMode =
+                            LoadingAssets loadState
+                    in
+                    Expect.equal NoTimelineSync (classifyTimelineSyncBehavior True userMode)
+            , test "returns NoTimelineSync when not timeline view even with ViewAssets" <|
+                \_ ->
+                    let
+                        userMode =
+                            ViewAssets (SearchAssetInput "")
+                    in
+                    Expect.equal NoTimelineSync (classifyTimelineSyncBehavior False userMode)
+            , test "returns NoTimelineSync when not timeline view and MainMenu" <|
+                \_ ->
+                    let
+                        userMode =
+                            MainMenu MainMenuHome
+                    in
+                    Expect.equal NoTimelineSync (classifyTimelineSyncBehavior False userMode)
             ]
         ]

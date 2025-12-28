@@ -8,6 +8,7 @@ module Menus exposing
     , defaultTimelineConfig
     , generateSearchSuggestions
     , toggleSearchContext
+    , viewAlbumBrowse
     , viewAlbumView
     , viewMainMenu
     , viewSearchView
@@ -25,6 +26,8 @@ import Element.Input as Input exposing (button)
 import HelpText exposing (AlbumBrowseState(..), ViewContext(..), viewContextHelp)
 import Helpers exposing (categorisationToString, mediaTypeToString, orderToString, statusToString)
 import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImmichAlbum, ImmichAsset, ImmichAssetId, ImmichLoadState, MediaTypeFilter(..), SearchContext(..), StatusFilter(..))
+import Theme exposing (Theme)
+import ViewAlbums exposing (AlbumSearch)
 
 
 
@@ -189,6 +192,62 @@ viewAlbumView model album config loadAlbumAssetsMsg =
             ]
         , column [ width (fillPortion 4 |> minimum 300), height fill, paddingXY 15 15 ]
             [ viewContextHelp (AlbumBrowseContext ConfiguringView)
+            ]
+        ]
+
+
+
+-- Album browse view
+
+
+viewAlbumBrowse :
+    { a | albumKeybindings : Dict ImmichAssetId String, knownAlbums : Dict ImmichAssetId ImmichAlbum, theme : Theme }
+    -> AlbumSearch
+    -> (ImmichAlbum -> msg)
+    -> Element msg
+viewAlbumBrowse model search selectAlbumMsg =
+    row [ width fill, height fill ]
+        [ column [ width (fillPortion 4 |> minimum 280), height fill, paddingXY 15 15, Element.spacingXY 0 15 ]
+            [ el [ Font.size 20, Font.bold ] (text "📁 Browse Albums")
+            , if search.searchString /= "" then
+                text ("Search: \"" ++ search.searchString ++ "\"")
+
+              else
+                text ""
+            , if search.partialKeybinding /= "" then
+                let
+                    nextChars =
+                        ViewAlbums.getNextAvailableCharacters search.partialKeybinding model.albumKeybindings
+
+                    nextCharString =
+                        String.fromList nextChars
+                in
+                column []
+                    [ el [ Font.color <| Element.fromRgb { red = 1, green = 0.6, blue = 0, alpha = 1 } ] <|
+                        text ("Keybind: \"" ++ search.partialKeybinding ++ "\"")
+                    , if List.isEmpty nextChars then
+                        el [ Font.color <| Element.fromRgb { red = 1, green = 0.2, blue = 0.2, alpha = 1 }, Font.size 12 ] <| text "No matches"
+
+                      else
+                        el [ Font.color <| Theme.getMutedTextColor model.theme, Font.size 12 ] <| text ("Next: " ++ nextCharString)
+                    ]
+
+              else
+                text ""
+            , case search.invalidInputWarning of
+                Just warning ->
+                    el [ Font.color <| Element.fromRgb { red = 1, green = 0.2, blue = 0.2, alpha = 1 }, Font.size 12 ] <| text ("Invalid: \"" ++ warning ++ "\"")
+
+                Nothing ->
+                    text ""
+            , ViewAlbums.viewSidebarAlbums search model.albumKeybindings model.knownAlbums selectAlbumMsg (Theme.getKeybindTextColor model.theme) (Theme.getMutedTextColor model.theme) (Theme.getHighlightColor model.theme)
+            ]
+        , column [ width (fillPortion 5), height fill, paddingXY 20 20 ]
+            [ el [ Font.size 16 ] (text "Select an album from the left to configure and view its contents.")
+            , el [ Font.size 14, Font.color <| Theme.getMutedTextColor model.theme ] (text "Type album name or keybinding to filter the list.")
+            ]
+        , column [ width (fillPortion 4 |> minimum 300), height fill, paddingXY 15 15 ]
+            [ viewContextHelp (AlbumBrowseContext SelectingAlbum)
             ]
         ]
 
