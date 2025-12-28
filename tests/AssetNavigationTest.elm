@@ -1,5 +1,6 @@
 module AssetNavigationTest exposing (..)
 
+import Array
 import AssetNavigation exposing (AssetSwitchResult(..), buildAssetViewState, findAssetByIndex, preserveVideoLoadedState)
 import Date
 import Dict
@@ -65,7 +66,7 @@ suite =
                             createAsset "asset-3"
 
                         currentAssets =
-                            [ "asset-1", "asset-2", "asset-3" ]
+                            Array.fromList [ "asset-1", "asset-2", "asset-3" ]
 
                         knownAssets =
                             Dict.fromList
@@ -90,7 +91,7 @@ suite =
                             createAsset "asset-1"
 
                         currentAssets =
-                            [ "asset-1" ]
+                            Array.fromList [ "asset-1" ]
 
                         knownAssets =
                             Dict.fromList [ ( "asset-1", asset1 ) ]
@@ -103,7 +104,7 @@ suite =
                 \_ ->
                     let
                         currentAssets =
-                            [ "asset-1", "asset-2" ]
+                            Array.fromList [ "asset-1", "asset-2" ]
 
                         knownAssets =
                             Dict.empty
@@ -122,7 +123,7 @@ suite =
                             createAsset "second"
 
                         currentAssets =
-                            [ "first", "second" ]
+                            Array.fromList [ "first", "second" ]
 
                         knownAssets =
                             Dict.fromList
@@ -149,7 +150,7 @@ suite =
                             Dict.fromList [ ( "asset-1", asset1 ) ]
 
                         result =
-                            findAssetByIndex [] 0 knownAssets
+                            findAssetByIndex Array.empty 0 knownAssets
                     in
                     Expect.equal Nothing result
             , test "returns Nothing for negative index (via List.drop behavior)" <|
@@ -159,23 +160,17 @@ suite =
                             createAsset "asset-1"
 
                         currentAssets =
-                            [ "asset-1" ]
+                            Array.fromList [ "asset-1" ]
 
                         knownAssets =
                             Dict.fromList [ ( "asset-1", asset1 ) ]
 
-                        -- List.drop with negative number returns the whole list
-                        -- so this should return the first asset
+                        -- Array.get with negative index returns Nothing
                         result =
                             findAssetByIndex currentAssets -1 knownAssets
                     in
-                    -- Note: List.drop -1 returns the original list, so this actually finds the asset
-                    case result of
-                        Just asset ->
-                            Expect.equal "asset-1" asset.id
-
-                        Nothing ->
-                            Expect.fail "List.drop with negative returns original list"
+                    -- Array.get -1 returns Nothing (unlike List.drop -1 which returns the whole list)
+                    Expect.equal Nothing result
             ]
         , describe "buildAssetViewState"
             [ test "returns AssetFound when asset exists" <|
@@ -185,7 +180,7 @@ suite =
                             createAsset "found-asset"
 
                         currentAssets =
-                            [ "found-asset" ]
+                            Array.fromList [ "found-asset" ]
 
                         knownAssets =
                             Dict.fromList [ ( "found-asset", asset1 ) ]
@@ -211,7 +206,7 @@ suite =
                 \_ ->
                     let
                         currentAssets =
-                            [ "missing-asset" ]
+                            Array.fromList [ "missing-asset" ]
 
                         knownAssets =
                             Dict.empty
@@ -230,7 +225,7 @@ suite =
                             createAsset "asset-1"
 
                         currentAssets =
-                            [ "asset-1" ]
+                            Array.fromList [ "asset-1" ]
 
                         knownAssets =
                             Dict.fromList [ ( "asset-1", asset1 ) ]
@@ -255,7 +250,7 @@ suite =
                             createAsset "a3"
 
                         currentAssets =
-                            [ "a1", "a2", "a3" ]
+                            Array.fromList [ "a1", "a2", "a3" ]
 
                         knownAssets =
                             Dict.fromList

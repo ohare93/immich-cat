@@ -12,6 +12,7 @@ leaving only Cmd generation and navigation state updates in Main.elm.
 
 -}
 
+import Array exposing (Array)
 import Dict exposing (Dict)
 import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichAsset, ImmichAssetId)
 import Types exposing (ImageIndex, UserMode(..))
@@ -31,14 +32,13 @@ type AssetSwitchResult
     | AssetNotFound
 
 
-{-| Find an asset by index in the current assets list.
+{-| Find an asset by index in the current assets array.
 Pure function that looks up the asset in the known assets dictionary.
+O(1) lookup using Array.get instead of O(n) List.drop.
 -}
-findAssetByIndex : List ImmichAssetId -> ImageIndex -> Dict ImmichAssetId ImmichAsset -> Maybe ImmichAsset
+findAssetByIndex : Array ImmichAssetId -> ImageIndex -> Dict ImmichAssetId ImmichAsset -> Maybe ImmichAsset
 findAssetByIndex currentAssets index knownAssets =
-    currentAssets
-        |> List.drop index
-        |> List.head
+    Array.get index currentAssets
         |> Maybe.andThen (\id -> Dict.get id knownAssets)
 
 
@@ -46,7 +46,7 @@ findAssetByIndex currentAssets index knownAssets =
 Returns an AssetSwitchResult containing all computed values.
 -}
 buildAssetViewState :
-    List ImmichAssetId
+    Array ImmichAssetId
     -> ImageIndex
     -> Dict ImmichAssetId ImmichAsset
     -> Dict ImmichAlbumId ImmichAlbum

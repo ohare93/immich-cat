@@ -1,12 +1,12 @@
 module ApiIntegrationTest exposing (..)
 
+import ApiTypes exposing (ApiKey(..), ApiUrl(..))
 import Expect
 import Fuzz exposing (..)
 import Immich exposing (..)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Test exposing (..)
-import ApiTypes exposing (ApiKey(..), ApiUrl(..))
 import Url exposing (percentEncode)
 
 

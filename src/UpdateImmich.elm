@@ -13,6 +13,7 @@ Main.elm uses these results to update Model.
 
 -}
 
+import Array exposing (Array)
 import Dict exposing (Dict)
 import Helpers exposing (applySortingToAssets, listOverrideDict)
 import Immich exposing (ImageSearchConfig, ImmichAlbum, ImmichAlbumId, ImmichAsset, ImmichAssetId, ImmichLoadState(..))
@@ -82,7 +83,7 @@ handleFetchAlbumsResult config =
 -}
 type alias FetchAssetsResult =
     { knownAssets : Dict ImmichAssetId ImmichAsset
-    , currentAssets : List ImmichAssetId
+    , currentAssets : Array ImmichAssetId
     , imagesLoadState : ImmichLoadState
     , imageIndex : Int
     , isTimelineView : Bool
@@ -114,7 +115,7 @@ handleFetchAssetsResult config =
         Just _ ->
             -- Timeline view with sorting - jump to first asset
             { knownAssets = listOverrideDict sortedAssets (\a -> ( a.id, a )) config.currentKnownAssets
-            , currentAssets = List.map .id sortedAssets
+            , currentAssets = Array.fromList (List.map .id sortedAssets)
             , imagesLoadState = ImmichLoadSuccess
             , imageIndex = 0
             , isTimelineView = True
@@ -123,7 +124,7 @@ handleFetchAssetsResult config =
         Nothing ->
             -- No timeline sorting, preserve current index
             { knownAssets = listOverrideDict sortedAssets (\a -> ( a.id, a )) config.currentKnownAssets
-            , currentAssets = List.map .id sortedAssets
+            , currentAssets = Array.fromList (List.map .id sortedAssets)
             , imagesLoadState = ImmichLoadSuccess
             , imageIndex = config.currentImageIndex
             , isTimelineView = False

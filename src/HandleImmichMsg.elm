@@ -15,6 +15,7 @@ The Main.elm update function is responsible for:
 
 -}
 
+import Array exposing (Array)
 import AssetNavigation
 import AssetSourceTypes exposing (AssetSource)
 import Dict exposing (Dict)
@@ -42,7 +43,7 @@ type alias ImmichMsgContext =
     , pendingAlbumChanges : List ( ImmichAlbumId, Bool )
     , userMode : UserMode
     , imageIndex : ImageIndex
-    , currentAssets : List ImmichAssetId
+    , currentAssets : Array ImmichAssetId
     , paginationState : PaginationState
     , reloadFeedback : Maybe FeedbackMessage
     , imagesLoadState : ImmichLoadState
@@ -330,9 +331,7 @@ handleFetchAssetMembership assetWithMembership context =
 
                 -- Check if we're currently viewing this asset and need to update the view state
                 currentAssetId =
-                    updatedContext.currentAssets
-                        |> List.drop updatedContext.imageIndex
-                        |> List.head
+                    Array.get updatedContext.imageIndex updatedContext.currentAssets
 
                 isCurrentlyViewingThisAsset =
                     currentAssetId == Just assetWithMembership.assetId

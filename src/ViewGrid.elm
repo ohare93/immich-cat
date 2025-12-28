@@ -8,6 +8,7 @@ module ViewGrid exposing
     , viewGrid
     )
 
+import Array exposing (Array)
 import Dict exposing (Dict)
 import Element exposing (Element, column, el, fill, height, html, paddingXY, row, spacing, text, width)
 import Element.Background as Background
@@ -344,8 +345,17 @@ getSelectedAsset state =
 moveSelection : String -> GridState -> List ImmichAsset -> GridState
 moveSelection direction state assets =
     let
-        assetIds =
-            List.map .id assets
+        -- Convert to Array for O(1) access (List operations are O(n))
+        assetIdsArray =
+            Array.fromList (List.map .id assets)
+
+        arrayLength =
+            Array.length assetIdsArray
+
+        -- Build reverse lookup for O(1) index finding (vs O(n) list scan)
+        assetIdToIndex =
+            Array.toIndexedList assetIdsArray
+                |> List.foldl (\( idx, id ) dict -> Dict.insert id idx dict) Dict.empty
 
         currentIndex =
             case state.focusedAssetId of
@@ -353,17 +363,7 @@ moveSelection direction state assets =
                     0
 
                 Just assetId ->
-                    List.indexedMap
-                        (\i id ->
-                            if id == assetId then
-                                Just i
-
-                            else
-                                Nothing
-                        )
-                        assetIds
-                        |> List.filterMap identity
-                        |> List.head
+                    Dict.get assetId assetIdToIndex
                         |> Maybe.withDefault 0
 
         newIndex =
@@ -372,26 +372,25 @@ moveSelection direction state assets =
                     max 0 (currentIndex - state.gridColumns)
 
                 "ArrowDown" ->
-                    min (List.length assets - 1) (currentIndex + state.gridColumns)
+                    min (arrayLength - 1) (currentIndex + state.gridColumns)
 
                 "ArrowLeft" ->
                     max 0 (currentIndex - 1)
 
                 "ArrowRight" ->
-                    min (List.length assets - 1) (currentIndex + 1)
+                    min (arrayLength - 1) (currentIndex + 1)
 
                 "Home" ->
                     0
 
                 "End" ->
-                    List.length assets - 1
+                    arrayLength - 1
 
                 _ ->
                     currentIndex
 
         newFocusedAssetId =
-            List.drop newIndex assetIds
-                |> List.head
+            Array.get newIndex assetIdsArray
 
         -- Calculate new scroll position to keep focused item visible
         newScrollTop =

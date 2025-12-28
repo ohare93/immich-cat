@@ -20,6 +20,7 @@ trigger asset loading.
 
 -}
 
+import Array exposing (Array)
 import AssetSourceTypes exposing (AssetSource)
 import Dict exposing (Dict)
 import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichAsset, ImmichAssetId)
@@ -44,7 +45,7 @@ type NavigateResult
         { navFields : NavigationFields
         , userMode : UserMode
         , currentAssetsSource : AssetSource
-        , currentAssets : List ImmichAssetId
+        , currentAssets : Array ImmichAssetId
         , imageIndex : ImageIndex
         , paginationState : PaginationState
         , needsAssetSwitch : Bool
@@ -70,7 +71,7 @@ Returns Nothing if not in ViewAssets mode.
 createCurrentNavigationEntry :
     UserMode
     -> AssetSource
-    -> List ImmichAssetId
+    -> Array ImmichAssetId
     -> ImageIndex
     -> PaginationState
     -> Maybe NavigationHistoryEntry
@@ -96,7 +97,7 @@ updateCurrentEntry :
     Maybe NavigationHistoryEntry
     -> UserMode
     -> AssetSource
-    -> List ImmichAssetId
+    -> Array ImmichAssetId
     -> ImageIndex
     -> PaginationState
     -> Maybe NavigationHistoryEntry
@@ -211,16 +212,14 @@ navigateForward navFields =
 Pure helper for looking up the asset at the current index.
 -}
 getCurrentAssetWithActions :
-    List ImmichAssetId
+    Array ImmichAssetId
     -> ImageIndex
     -> Dict ImmichAssetId ImmichAsset
     -> Dict ImmichAlbumId ImmichAlbum
     -> Int
     -> Maybe ( AssetWithActions, AlbumSearch )
 getCurrentAssetWithActions currentAssets imageIndex knownAssets knownAlbums screenHeight =
-    currentAssets
-        |> List.drop imageIndex
-        |> List.head
+    Array.get imageIndex currentAssets
         |> Maybe.andThen (\id -> Dict.get id knownAssets)
         |> Maybe.map (\asset -> ( getAssetWithActions asset, getAlbumSearchWithHeight "" knownAlbums screenHeight ))
 
@@ -291,7 +290,7 @@ setCurrentNavigationState :
     { a
         | userMode : UserMode
         , currentAssetsSource : AssetSource
-        , currentAssets : List ImmichAssetId
+        , currentAssets : Array ImmichAssetId
         , imageIndex : ImageIndex
         , paginationState : PaginationState
         , currentNavigationState : Maybe NavigationHistoryEntry
@@ -300,7 +299,7 @@ setCurrentNavigationState :
         { a
             | userMode : UserMode
             , currentAssetsSource : AssetSource
-            , currentAssets : List ImmichAssetId
+            , currentAssets : Array ImmichAssetId
             , imageIndex : ImageIndex
             , paginationState : PaginationState
             , currentNavigationState : Maybe NavigationHistoryEntry
@@ -338,7 +337,7 @@ updateCurrentHistoryEntry :
     { a
         | userMode : UserMode
         , currentAssetsSource : AssetSource
-        , currentAssets : List ImmichAssetId
+        , currentAssets : Array ImmichAssetId
         , imageIndex : ImageIndex
         , paginationState : PaginationState
         , currentNavigationState : Maybe NavigationHistoryEntry
@@ -347,7 +346,7 @@ updateCurrentHistoryEntry :
         { a
             | userMode : UserMode
             , currentAssetsSource : AssetSource
-            , currentAssets : List ImmichAssetId
+            , currentAssets : Array ImmichAssetId
             , imageIndex : ImageIndex
             , paginationState : PaginationState
             , currentNavigationState : Maybe NavigationHistoryEntry

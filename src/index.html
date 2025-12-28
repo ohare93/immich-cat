@@ -77,10 +77,18 @@
         }
 
         if (preloadQueue.has(imageUrl)) {
-          while (preloadQueue.has(imageUrl) && !assetCache.has(imageUrl)) {
+          // Wait for in-flight preload with safety limit (5 seconds max)
+          let attempts = 0;
+          while (preloadQueue.has(imageUrl) && !assetCache.has(imageUrl) && attempts < 100) {
             await new Promise((resolve) => setTimeout(resolve, 50));
+            attempts++;
           }
-          return assetCache.get(imageUrl);
+          // Return cached result if available, otherwise fall through to fetch
+          if (assetCache.has(imageUrl)) {
+            return assetCache.get(imageUrl);
+          }
+          // Preload timed out or failed, remove stale queue entry and fetch directly
+          preloadQueue.delete(imageUrl);
         }
 
         preloadQueue.add(imageUrl);

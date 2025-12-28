@@ -1,5 +1,6 @@
 module UpdateAssetKeybindingTest exposing (..)
 
+import Array exposing (Array)
 import Date
 import Dict exposing (Dict)
 import Expect
@@ -71,9 +72,9 @@ testKnownAlbums =
         ]
 
 
-testCurrentAssets : List ImmichAssetId
+testCurrentAssets : Array ImmichAssetId
 testCurrentAssets =
-    [ "asset1", "asset2", "asset3" ]
+    Array.fromList [ "asset1", "asset2", "asset3" ]
 
 
 

@@ -14,6 +14,7 @@ module Menus exposing
     , viewTimelineView
     )
 
+import Array exposing (Array)
 import AssetSourceTypes exposing (AlbumConfig, defaultAlbumConfig)
 import Date
 import Dict exposing (Dict)
@@ -135,7 +136,7 @@ viewMainMenuOption key title description =
 -- Timeline view
 
 
-viewTimelineView : { a | albumKeybindings : Dict ImmichAssetId String, currentAssets : List ImmichAssetId, imagesLoadState : ImmichLoadState, knownAlbums : Dict ImmichAssetId ImmichAlbum, knownAssets : Dict ImmichAssetId ImmichAsset, imageIndex : Int } -> TimelineConfig -> msg -> msg -> Element msg
+viewTimelineView : { a | albumKeybindings : Dict ImmichAssetId String, currentAssets : Array ImmichAssetId, imagesLoadState : ImmichLoadState, knownAlbums : Dict ImmichAssetId ImmichAlbum, knownAssets : Dict ImmichAssetId ImmichAsset, imageIndex : Int } -> TimelineConfig -> msg -> msg -> Element msg
 viewTimelineView model config loadDataMsg loadTimelineAssetsMsg =
     row [ width fill, height fill ]
         [ column [ width (fillPortion 3 |> minimum 220), height fill, paddingXY 15 15, Element.spacingXY 0 15 ]
@@ -153,7 +154,7 @@ viewTimelineView model config loadDataMsg loadTimelineAssetsMsg =
 -- Search view
 
 
-viewSearchView : { a | albumKeybindings : Dict ImmichAssetId String, currentAssets : List ImmichAssetId, imagesLoadState : ImmichLoadState, knownAlbums : Dict ImmichAssetId ImmichAlbum, knownAssets : Dict ImmichAssetId ImmichAsset } -> SearchConfig -> (String -> msg) -> (String -> msg) -> msg -> msg -> Element msg
+viewSearchView : { a | albumKeybindings : Dict ImmichAssetId String, currentAssets : Array ImmichAssetId, imagesLoadState : ImmichLoadState, knownAlbums : Dict ImmichAssetId ImmichAlbum, knownAssets : Dict ImmichAssetId ImmichAsset } -> SearchConfig -> (String -> msg) -> (String -> msg) -> msg -> msg -> Element msg
 viewSearchView model config onQueryChange onSuggestionSelect executeSearchMsg clearSearchMsg =
     row [ width fill, height fill ]
         [ column [ width (fillPortion 3 |> minimum 220), height fill, paddingXY 15 15, Element.spacingXY 0 15 ]
@@ -172,7 +173,7 @@ viewSearchView model config onQueryChange onSuggestionSelect executeSearchMsg cl
 -- Album view
 
 
-viewAlbumView : { a | albumKeybindings : Dict ImmichAssetId String, currentAssets : List ImmichAssetId, imagesLoadState : ImmichLoadState, knownAlbums : Dict ImmichAssetId ImmichAlbum } -> ImmichAlbum -> AlbumConfig -> (ImmichAlbum -> msg) -> Element msg
+viewAlbumView : { a | albumKeybindings : Dict ImmichAssetId String, currentAssets : Array ImmichAssetId, imagesLoadState : ImmichLoadState, knownAlbums : Dict ImmichAssetId ImmichAlbum } -> ImmichAlbum -> AlbumConfig -> (ImmichAlbum -> msg) -> Element msg
 viewAlbumView model album config loadAlbumAssetsMsg =
     row [ width fill, height fill ]
         [ column [ width (fillPortion 3 |> minimum 220), height fill, paddingXY 15 15, Element.spacingXY 0 15 ]
@@ -247,7 +248,7 @@ viewAlbumBrowse model search selectAlbumMsg =
 -- Settings view
 
 
-viewSettings : { a | albumKeybindings : Dict ImmichAssetId String, currentAssets : List ImmichAssetId, imagesLoadState : ImmichLoadState, knownAlbums : Dict ImmichAssetId ImmichAlbum, configuredApiUrl : Maybe String, configuredApiKey : Maybe String, settingsApiUrl : String, settingsApiKey : String, configValidationMessage : Maybe String } -> (String -> msg) -> (String -> msg) -> (String -> String -> msg) -> msg -> Element msg
+viewSettings : { a | albumKeybindings : Dict ImmichAssetId String, currentAssets : Array ImmichAssetId, imagesLoadState : ImmichLoadState, knownAlbums : Dict ImmichAssetId ImmichAlbum, configuredApiUrl : Maybe String, configuredApiKey : Maybe String, settingsApiUrl : String, settingsApiKey : String, configValidationMessage : Maybe String } -> (String -> msg) -> (String -> msg) -> (String -> String -> msg) -> msg -> Element msg
 viewSettings model onUrlChange onApiKeyChange onSaveConfig onClearConfig =
     row [ width fill, height fill ]
         [ column [ width (fillPortion 3 |> minimum 400), height fill, paddingXY 20 20, Element.spacingXY 0 20 ]

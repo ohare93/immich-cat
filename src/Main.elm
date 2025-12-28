@@ -1,6 +1,7 @@
 port module Main exposing (main)
 
 import ApiTypes exposing (ApiKey(..), ApiUrl(..))
+import Array exposing (Array)
 import AssetNavigation
 import AssetSourceTypes exposing (AlbumConfig, AssetSource(..), defaultAlbumConfig)
 import Browser exposing (element)
@@ -138,7 +139,7 @@ type alias Model =
     , configValidationMessage : Maybe String
 
     -- Immich fields
-    , currentAssets : List ImmichAssetId
+    , currentAssets : Array ImmichAssetId
     , knownAssets : Dict ImmichAssetId ImmichAsset
     , imagesLoadState : ImmichLoadState
     , knownAlbums : Dict ImmichAlbumId ImmichAlbum
@@ -184,7 +185,7 @@ init flags =
       , configValidationMessage = Nothing
 
       -- Immich fields
-      , currentAssets = []
+      , currentAssets = Array.empty
       , knownAssets = Dict.empty
       , imagesLoadState = ImmichLoading
       , knownAlbums = Dict.empty
@@ -415,7 +416,7 @@ viewAssetState model assetState =
                 moveFromInfo =
                     getMoveFromInfo model.currentAssetsSource
             in
-            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) moveFromInfo SelectAlbum (Theme.getKeybindTextColor model.theme) (Theme.getMutedTextColor model.theme) (Theme.getHighlightColor model.theme)) (ViewAsset.viewEditAsset model.immichApiPaths model.apiKey model.imageIndex (List.length model.currentAssets) viewTitle asset model.currentAssets model.knownAssets model.currentDateMillis model.timeViewMode inputMode)
+            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) moveFromInfo SelectAlbum (Theme.getKeybindTextColor model.theme) (Theme.getMutedTextColor model.theme) (Theme.getHighlightColor model.theme)) (ViewAsset.viewEditAsset model.immichApiPaths model.apiKey model.imageIndex (Array.length model.currentAssets) viewTitle asset model.currentAssets model.knownAssets model.currentDateMillis model.timeViewMode inputMode)
 
         CreateAlbumConfirmation _ asset search albumName ->
             let
@@ -619,7 +620,7 @@ handleEscapeKey model =
             handleMenuResult (updateMenus (MenuKeyPress "Escape") menuState model.knownAlbums model.immichApiPaths model.screenHeight) model
 
         ViewAssets assetState ->
-            handleAssetResult (updateAsset (AssetKeyPress "Escape") assetState model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets model.knownAssets) model
+            handleAssetResult (updateAsset (AssetKeyPress "Escape") assetState model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets model.knownAssets model.imageIndex) model
 
         LoadingAssets _ ->
             -- Save current state if transitioning from ViewAssets context
@@ -672,7 +673,7 @@ handleRegularKey effectiveKey model =
                 handleMenuResult (updateMenus (MenuKeyPress effectiveKey) menuState model.knownAlbums model.immichApiPaths model.screenHeight) model
 
         ViewAssets assetState ->
-            handleAssetResult (updateAsset (AssetKeyPress effectiveKey) assetState model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets model.knownAssets) model
+            handleAssetResult (updateAsset (AssetKeyPress effectiveKey) assetState model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets model.knownAssets model.imageIndex) model
 
         LoadingAssets _ ->
             case effectiveKey of
@@ -1227,7 +1228,7 @@ update msg model =
         AssetMsg assetMsg ->
             case model.userMode of
                 ViewAssets assetState ->
-                    handleAssetResult (updateAsset assetMsg assetState model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets model.knownAssets) model
+                    handleAssetResult (updateAsset assetMsg assetState model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets model.knownAssets model.imageIndex) model
 
                 _ ->
                     ( model, Cmd.none )
@@ -1368,9 +1369,7 @@ handleFetchAssetMembership assetWithMembership model =
 
                 -- Check if we're currently viewing this asset and need to update the view state
                 currentAssetId =
-                    updatedModel.currentAssets
-                        |> List.drop updatedModel.imageIndex
-                        |> List.head
+                    Array.get updatedModel.imageIndex updatedModel.currentAssets
 
                 isCurrentlyViewingThisAsset =
                     currentAssetId == Just assetWithMembership.assetId

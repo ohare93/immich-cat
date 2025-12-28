@@ -13,6 +13,7 @@ leaving only Cmd generation in Main.elm.
 
 -}
 
+import Array exposing (Array)
 import AssetSourceTypes exposing (AlbumConfig, AssetSource(..))
 import Dict exposing (Dict)
 import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichAsset, ImmichAssetId, SearchContext(..))
@@ -80,7 +81,7 @@ type AssetResultAction
 type alias AssetResultContext =
     { userMode : UserMode
     , currentAssetsSource : AssetSource
-    , currentAssets : List ImmichAssetId
+    , currentAssets : Array ImmichAssetId
     , imageIndex : ImageIndex
     , paginationState : PaginationState
     , currentNavigationState : Maybe NavigationHistoryEntry
@@ -422,18 +423,13 @@ processSwitchToGridView context =
 processSwitchToDetailView : ImmichAssetId -> AssetResultContext -> AssetResultAction
 processSwitchToDetailView assetId context =
     let
-        maybeIndex =
-            context.currentAssets
-                |> List.indexedMap
-                    (\index id ->
-                        if id == assetId then
-                            Just index
+        -- Build O(1) lookup from assetId to index
+        assetIdToIndex =
+            Array.toIndexedList context.currentAssets
+                |> List.foldl (\( idx, id ) dict -> Dict.insert id idx dict) Dict.empty
 
-                        else
-                            Nothing
-                    )
-                |> List.filterMap identity
-                |> List.head
+        maybeIndex =
+            Dict.get assetId assetIdToIndex
     in
     SwitchToDetailViewAction maybeIndex
 

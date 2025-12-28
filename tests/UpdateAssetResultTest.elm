@@ -1,5 +1,6 @@
 module UpdateAssetResultTest exposing (..)
 
+import Array exposing (Array)
 import AssetSourceTypes exposing (AlbumConfig, AssetSource(..), defaultAlbumConfig)
 import Date
 import Dict
@@ -81,7 +82,7 @@ defaultContext : UpdateAssetResult.AssetResultContext
 defaultContext =
     { userMode = MainMenu MainMenuHome
     , currentAssetsSource = ImageSearch defaultImageSearchConfig
-    , currentAssets = []
+    , currentAssets = Array.empty
     , imageIndex = 0
     , paginationState = defaultPaginationState
     , currentNavigationState = Nothing
@@ -98,7 +99,7 @@ editAssetContext : AssetWithActions -> UpdateAssetResult.AssetResultContext
 editAssetContext asset =
     { defaultContext
         | userMode = ViewAssets (EditAsset NormalMode asset defaultAlbumSearch)
-        , currentAssets = [ asset.asset.id ]
+        , currentAssets = Array.fromList [ asset.asset.id ]
     }
 
 
@@ -149,7 +150,7 @@ suite =
                         context =
                             { defaultContext
                                 | userMode = ViewAssets (EditAsset NormalMode asset defaultAlbumSearch)
-                                , currentAssets = [ "test-asset" ]
+                                , currentAssets = Array.fromList [ "test-asset" ]
                                 , imageIndex = 0
                             }
 
@@ -160,7 +161,7 @@ suite =
                         GoToMainMenuAction data ->
                             case data.currentEntry of
                                 Just entry ->
-                                    Expect.equal [ "test-asset" ] entry.currentAssets
+                                    Expect.equal (Array.fromList [ "test-asset" ]) entry.currentAssets
 
                                 Nothing ->
                                     Expect.fail "Expected currentEntry to be Just"
@@ -410,7 +411,7 @@ suite =
                 \_ ->
                     let
                         context =
-                            { defaultContext | currentAssets = [ "a1", "a2", "a3" ] }
+                            { defaultContext | currentAssets = Array.fromList [ "a1", "a2", "a3" ] }
 
                         result =
                             processAssetResult (AssetSwitchToDetailView "a2") context
@@ -425,7 +426,7 @@ suite =
                 \_ ->
                     let
                         context =
-                            { defaultContext | currentAssets = [ "a1", "a2", "a3" ] }
+                            { defaultContext | currentAssets = Array.fromList [ "a1", "a2", "a3" ] }
 
                         result =
                             processAssetResult (AssetSwitchToDetailView "not-found") context

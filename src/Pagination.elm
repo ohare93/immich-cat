@@ -17,6 +17,7 @@ depending on Model. Main.elm uses these to update pagination state.
 
 -}
 
+import Array exposing (Array)
 import Dict exposing (Dict)
 import Helpers exposing (applySortingToAssets, listOverrideDict)
 import Immich exposing (ImageSearchConfig, ImmichAsset, ImmichAssetId, PaginatedAssetResponse, SearchContext)
@@ -56,7 +57,7 @@ Contains all the pure computed values that Main.elm uses to update Model.
 -}
 type alias AppendAssetsResult =
     { knownAssets : Dict ImmichAssetId ImmichAsset
-    , currentAssets : List ImmichAssetId
+    , currentAssets : Array ImmichAssetId
     , imageIndex : Int
     , isTimelineView : Bool
     }
@@ -69,7 +70,7 @@ Main.elm interprets the result and decides whether to call switchToEditIfAssetFo
 appendAssetsResult :
     List ImmichAsset
     -> Dict ImmichAssetId ImmichAsset
-    -> List ImmichAssetId
+    -> Array ImmichAssetId
     -> Int
     -> Maybe ImageSearchConfig
     -> AppendAssetsResult
@@ -81,8 +82,9 @@ appendAssetsResult newAssets knownAssets existingAssetIds currentImageIndex mayb
         newAssetIds =
             List.map .id newAssets
 
+        -- Convert Array to List for append, then work with List
         combinedAssetIds =
-            existingAssetIds ++ newAssetIds
+            Array.toList existingAssetIds ++ newAssetIds
 
         ( finalAssetIds, finalImageIndex, isTimeline ) =
             case maybeConfig of
@@ -96,11 +98,11 @@ appendAssetsResult newAssets knownAssets existingAssetIds currentImageIndex mayb
                         sortedAssets =
                             applySortingToAssets config.order allAssets
                     in
-                    ( List.map .id sortedAssets, 0, True )
+                    ( Array.fromList (List.map .id sortedAssets), 0, True )
 
                 Nothing ->
                     -- Non-timeline view: preserve order and current index
-                    ( combinedAssetIds, currentImageIndex, False )
+                    ( Array.fromList combinedAssetIds, currentImageIndex, False )
     in
     { knownAssets = updatedKnownAssets
     , currentAssets = finalAssetIds

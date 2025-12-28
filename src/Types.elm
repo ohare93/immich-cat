@@ -10,6 +10,7 @@ module Types exposing
     , feedbackMessageToString
     )
 
+import Array exposing (Array)
 import AssetSourceTypes exposing (AlbumConfig, AssetSource(..))
 import Immich exposing (ImageOrder, ImageSearchConfig, ImmichAlbum, ImmichAlbumId, ImmichAssetId, MediaTypeFilter, SearchContext, StatusFilter)
 import UpdateAsset exposing (AssetState)
@@ -102,7 +103,7 @@ type UserMode
 type alias NavigationHistoryEntry =
     { userMode : UserMode
     , currentAssetsSource : AssetSource
-    , currentAssets : List ImmichAssetId
+    , currentAssets : Array ImmichAssetId
     , imageIndex : ImageIndex
     , paginationState : PaginationState
     }

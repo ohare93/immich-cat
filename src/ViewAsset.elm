@@ -7,6 +7,7 @@ module ViewAsset exposing
     , viewLoadingAssets
     )
 
+import Array exposing (Array)
 import Date exposing (Date)
 import Dict exposing (Dict)
 import Element exposing (Element, alignRight, alignTop, centerX, centerY, column, el, fill, height, paddingXY, px, row, text, width)
@@ -47,11 +48,12 @@ type alias AssetCounts =
 -- Calculate asset counts for different time periods with exclusive buckets
 
 
-calculateAssetCounts : TimeViewMode -> Date -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> AssetCounts
+calculateAssetCounts : TimeViewMode -> Date -> Array ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> AssetCounts
 calculateAssetCounts timeMode currentDate assetIds knownAssets =
     let
         assets =
-            List.filterMap (\id -> Dict.get id knownAssets) assetIds
+            Array.toList assetIds
+                |> List.filterMap (\id -> Dict.get id knownAssets)
 
         -- Calculate date boundaries based on time mode
         dateBoundaries =
@@ -206,7 +208,7 @@ formatTimeSinceUpload currentDate uploadDate =
 -- Main asset view function
 
 
-viewAsset : ImmichApiPaths -> String -> AssetWithActions -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> Element msg
+viewAsset : ImmichApiPaths -> String -> AssetWithActions -> Array ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> Element msg
 viewAsset apiPaths apiKey assetWithActions currentAssets knownAssets imageIndex =
     let
         asset =
@@ -255,22 +257,19 @@ viewAsset apiPaths apiKey assetWithActions currentAssets knownAssets imageIndex 
 -- Image view function
 
 
-viewImage : ImmichAsset -> ImmichApiPaths -> String -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> Element msg
+viewImage : ImmichAsset -> ImmichApiPaths -> String -> Array ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> Element msg
 viewImage asset apiPaths apiKey currentAssets knownAssets imageIndex =
     let
         preloadList =
             let
-                currentIndex =
-                    imageIndex
-
                 preloadIndices =
-                    List.range (currentIndex - 5) (currentIndex + 5)
+                    List.range (imageIndex - 5) (imageIndex + 5)
 
                 validIndices =
-                    List.filter (\i -> i >= 0 && i < List.length currentAssets) preloadIndices
+                    List.filter (\i -> i >= 0 && i < Array.length currentAssets) preloadIndices
             in
             validIndices
-                |> List.filterMap (\i -> List.drop i currentAssets |> List.head)
+                |> List.filterMap (\i -> Array.get i currentAssets)
                 |> List.filterMap (\assetId -> Dict.get assetId knownAssets)
                 |> List.map
                     (\preloadAsset ->
@@ -308,22 +307,19 @@ viewImage asset apiPaths apiKey currentAssets knownAssets imageIndex =
 -- Video view function
 
 
-viewVideo : ImmichAsset -> ImmichApiPaths -> String -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> Element msg
+viewVideo : ImmichAsset -> ImmichApiPaths -> String -> Array ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> Element msg
 viewVideo asset apiPaths apiKey currentAssets knownAssets imageIndex =
     let
         preloadList =
             let
-                currentIndex =
-                    imageIndex
-
                 preloadIndices =
-                    List.range (currentIndex - 2) (currentIndex + 2)
+                    List.range (imageIndex - 2) (imageIndex + 2)
 
                 validIndices =
-                    List.filter (\i -> i >= 0 && i < List.length currentAssets) preloadIndices
+                    List.filter (\i -> i >= 0 && i < Array.length currentAssets) preloadIndices
             in
             validIndices
-                |> List.filterMap (\i -> List.drop i currentAssets |> List.head)
+                |> List.filterMap (\i -> Array.get i currentAssets)
                 |> List.filterMap (\assetId -> Dict.get assetId knownAssets)
                 |> List.map
                     (\preloadAsset ->
@@ -452,7 +448,7 @@ viewScrollVideo asset apiPaths apiKey scrollState =
 -- Edit asset view function
 
 
-viewEditAsset : ImmichApiPaths -> String -> ImageIndex -> Int -> String -> AssetWithActions -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> TimeViewMode -> InputMode -> Element msg
+viewEditAsset : ImmichApiPaths -> String -> ImageIndex -> Int -> String -> AssetWithActions -> Array ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> TimeViewMode -> InputMode -> Element msg
 viewEditAsset apiPaths apiKey imageIndex totalAssets viewTitle currentAsset currentAssets knownAssets currentDateMillis timeMode inputMode =
     let
         -- Convert milliseconds to proper Date
@@ -560,11 +556,12 @@ viewEditAssetHelp inputMode =
 -- Grid view function
 
 
-viewGridAssets : ImmichApiPaths -> String -> GridState -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Bool -> Bool -> (GridMsg -> msg) -> Element msg
+viewGridAssets : ImmichApiPaths -> String -> GridState -> Array ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Bool -> Bool -> (GridMsg -> msg) -> Element msg
 viewGridAssets apiPaths apiKey gridState currentAssets knownAssets hasMorePages isLoadingMore toMsg =
     let
         assets =
-            List.filterMap (\id -> Dict.get id knownAssets) currentAssets
+            Array.toList currentAssets
+                |> List.filterMap (\id -> Dict.get id knownAssets)
     in
     ViewGrid.viewGrid apiPaths apiKey gridState assets hasMorePages isLoadingMore toMsg
 

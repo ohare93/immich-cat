@@ -8,6 +8,7 @@ module UpdateAsset exposing
     , updateAssetStateOnResize
     )
 
+import Array
 import Dict exposing (Dict)
 import Helpers exposing (isKeybindingLetter, isSupportedSearchLetter, loopImageIndexOverArray)
 import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichAsset, ImmichAssetId)
@@ -108,7 +109,7 @@ type AssetAction
 -- Handle EditAsset keyboard input
 
 
-handleEditAssetInput : String -> InputMode -> AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Int -> List ImmichAssetId -> AssetAction
+handleEditAssetInput : String -> InputMode -> AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Int -> Array.Array ImmichAssetId -> AssetAction
 handleEditAssetInput key inputMode asset search albumKeybindings knownAlbums screenHeight currentAssets =
     if inputMode == InsertMode then
         handleInsertModeInput key inputMode asset search albumKeybindings knownAlbums
@@ -351,7 +352,7 @@ handleStartKeybindingMode partialKey asset search albumKeybindings knownAlbums =
 -- Handle Normal Mode input
 
 
-handleNormalModeInput : String -> InputMode -> AssetWithActions -> AlbumSearch -> Int -> List ImmichAssetId -> AssetAction
+handleNormalModeInput : String -> InputMode -> AssetWithActions -> AlbumSearch -> Int -> Array.Array ImmichAssetId -> AssetAction
 handleNormalModeInput key inputMode asset search screenHeight currentAssets =
     case key of
         "ArrowLeft" ->
@@ -650,13 +651,13 @@ moveSelectionDownForSearch search albumKeybindings albums =
 -- This function now takes an AssetState and returns an AssetResult
 
 
-updateAsset : AssetMsg -> AssetState -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Int -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> AssetResult msg
-updateAsset assetMsg assetState albumKeybindings knownAlbums screenHeight currentAssets knownAssets =
+updateAsset : AssetMsg -> AssetState -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Int -> Array.Array ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> AssetResult msg
+updateAsset assetMsg assetState albumKeybindings knownAlbums screenHeight currentAssets knownAssets imageIndex =
     case assetMsg of
         AssetKeyPress key ->
             case assetState of
                 EditAsset inputMode asset search ->
-                    handleEditAssetKeyPress key inputMode asset search albumKeybindings knownAlbums screenHeight currentAssets
+                    handleEditAssetKeyPress key inputMode asset search albumKeybindings knownAlbums screenHeight currentAssets imageIndex
 
                 SearchAssetInput searchString ->
                     handleSearchAssetKeyPress key searchString
@@ -686,13 +687,13 @@ updateAsset assetMsg assetState albumKeybindings knownAlbums screenHeight curren
 -- Helper functions that convert asset actions to asset results
 
 
-handleEditAssetKeyPress : String -> InputMode -> AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Int -> List ImmichAssetId -> AssetResult msg
-handleEditAssetKeyPress key inputMode asset search albumKeybindings knownAlbums screenHeight currentAssets =
+handleEditAssetKeyPress : String -> InputMode -> AssetWithActions -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> Int -> Array.Array ImmichAssetId -> Int -> AssetResult msg
+handleEditAssetKeyPress key inputMode asset search albumKeybindings knownAlbums screenHeight currentAssets imageIndex =
     let
         action =
             handleEditAssetInput key inputMode asset search albumKeybindings knownAlbums screenHeight currentAssets
     in
-    convertAssetActionToResult action inputMode asset search currentAssets
+    convertAssetActionToResult action inputMode asset search currentAssets imageIndex
 
 
 handleSearchAssetKeyPress : String -> String -> AssetResult msg
@@ -770,8 +771,8 @@ handleShowEditAssetHelpKeyPress key inputMode asset search =
 -- Helper to convert legacy AssetAction to AssetResult
 
 
-convertAssetActionToResult : AssetAction -> InputMode -> AssetWithActions -> AlbumSearch -> List ImmichAssetId -> AssetResult msg
-convertAssetActionToResult action inputMode asset search currentAssets =
+convertAssetActionToResult : AssetAction -> InputMode -> AssetWithActions -> AlbumSearch -> Array.Array ImmichAssetId -> Int -> AssetResult msg
+convertAssetActionToResult action inputMode asset search currentAssets imageIndex =
     case action of
         ChangeAssetToMainMenu ->
             GoToMainMenu
@@ -790,22 +791,9 @@ convertAssetActionToResult action inputMode asset search currentAssets =
 
         ChangeImageIndex indexChange ->
             let
-                currentIndex =
-                    currentAssets
-                        |> List.indexedMap
-                            (\index assetId ->
-                                if assetId == asset.asset.id then
-                                    Just index
-
-                                else
-                                    Nothing
-                            )
-                        |> List.filterMap identity
-                        |> List.head
-                        |> Maybe.withDefault 0
-
+                -- Use imageIndex directly (O(1)) instead of O(n) list scan
                 newIndex =
-                    loopImageIndexOverArray currentIndex indexChange (List.length currentAssets)
+                    loopImageIndexOverArray imageIndex indexChange (Array.length currentAssets)
             in
             AssetSwitchToAssetIndex newIndex
 
@@ -983,11 +971,11 @@ convertAssetActionToResult action inputMode asset search currentAssets =
 -- Grid view handler functions
 
 
-handleGridViewKeyPress : String -> GridState -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> AssetResult msg
+handleGridViewKeyPress : String -> GridState -> Array.Array ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> AssetResult msg
 handleGridViewKeyPress key gridState currentAssets knownAssets =
     let
         assets =
-            List.filterMap (\id -> Dict.get id knownAssets) currentAssets
+            List.filterMap (\id -> Dict.get id knownAssets) (Array.toList currentAssets)
     in
     case key of
         "Escape" ->
@@ -1013,11 +1001,11 @@ handleGridViewKeyPress key gridState currentAssets knownAssets =
             StayInAssets (GridView updatedGridState)
 
 
-handleGridViewMessage : GridMsg -> GridState -> List ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> AssetResult msg
+handleGridViewMessage : GridMsg -> GridState -> Array.Array ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> AssetResult msg
 handleGridViewMessage gridMsg gridState currentAssets knownAssets =
     let
         assets =
-            List.filterMap (\id -> Dict.get id knownAssets) currentAssets
+            List.filterMap (\id -> Dict.get id knownAssets) (Array.toList currentAssets)
 
         updatedGridState =
             ViewGrid.updateGridState gridMsg gridState assets
