@@ -1,6 +1,10 @@
 module Pagination exposing
     ( AppendAssetsResult
+    , NextPageRequest
+    , NextPageRequestType(..)
     , appendAssetsResult
+    , computeNextPageRequest
+    , shouldFetchNextPage
     , updatePaginationStateFromResponse
     )
 
@@ -13,8 +17,8 @@ depending on Model. Main.elm uses these to update pagination state.
 
 import Dict exposing (Dict)
 import Helpers exposing (applySortingToAssets, listOverrideDict)
-import Immich exposing (ImageSearchConfig, ImmichAsset, ImmichAssetId, PaginatedAssetResponse)
-import Types exposing (PaginationState)
+import Immich exposing (ImageSearchConfig, ImmichAsset, ImmichAssetId, PaginatedAssetResponse, SearchContext)
+import Types exposing (AlbumPaginationContext, PaginationState)
 
 
 {-| Update pagination state from an API response.
@@ -101,3 +105,88 @@ appendAssetsResult newAssets knownAssets existingAssetIds currentImageIndex mayb
     , imageIndex = finalImageIndex
     , isTimelineView = isTimeline
     }
+
+
+
+-- PAGINATION DECISION HELPERS
+
+
+{-| Determine if we should fetch the next page of results.
+Pure function that checks pagination conditions.
+
+Returns True if:
+
+  - Response indicates more pages exist
+  - We haven't reached the max assets limit
+  - We're not in a text search (text search doesn't auto-paginate)
+
+-}
+shouldFetchNextPage : PaginatedAssetResponse -> PaginationState -> Bool
+shouldFetchNextPage paginatedResponse paginationState =
+    let
+        reachedLimit =
+            paginationState.loadedAssets >= paginationState.maxAssetsToFetch
+    in
+    paginatedResponse.hasNextPage && not reachedLimit && paginationState.currentQuery == Nothing
+
+
+{-| Type of next page request to make.
+Main.elm uses this to determine which Immich API function to call.
+-}
+type NextPageRequestType
+    = TimelineRequest ImageSearchConfig
+    | TextSearchRequest String SearchContext
+    | AlbumRequest AlbumPaginationContext
+
+
+{-| Parameters for fetching the next page.
+-}
+type alias NextPageRequest =
+    { pageSize : Int
+    , nextPage : Int
+    , requestType : NextPageRequestType
+    }
+
+
+{-| Compute the next page request based on pagination state.
+Returns Nothing if no more pages should be fetched.
+Main.elm uses this to generate the appropriate Cmd.
+-}
+computeNextPageRequest : Int -> PaginationState -> Maybe NextPageRequest
+computeNextPageRequest nextPage paginationState =
+    case paginationState.currentConfig of
+        Just config ->
+            Just
+                { pageSize = 1000
+                , nextPage = nextPage
+                , requestType = TimelineRequest config
+                }
+
+        Nothing ->
+            case ( paginationState.currentQuery, paginationState.currentSearchContext ) of
+                ( Just query, Just searchContext ) ->
+                    Just
+                        { pageSize = 1000
+                        , nextPage = nextPage
+                        , requestType = TextSearchRequest query searchContext
+                        }
+
+                ( Just query, Nothing ) ->
+                    -- Fallback to content search
+                    Just
+                        { pageSize = 1000
+                        , nextPage = nextPage
+                        , requestType = TextSearchRequest query Immich.ContentSearch
+                        }
+
+                _ ->
+                    case paginationState.currentAlbumContext of
+                        Just albumContext ->
+                            Just
+                                { pageSize = 1000
+                                , nextPage = nextPage
+                                , requestType = AlbumRequest albumContext
+                                }
+
+                        Nothing ->
+                            Nothing

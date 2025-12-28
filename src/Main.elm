@@ -1,5 +1,6 @@
 port module Main exposing (main)
 
+import AssetNavigation
 import Browser exposing (element)
 import Browser.Events exposing (onKeyDown, onKeyUp, onResize, onVisibilityChange)
 import Date
@@ -24,9 +25,11 @@ import TitleHelpers exposing (createDetailedViewTitle, getMoveFromInfo)
 import Types exposing (AlbumPaginationContext, AssetSource(..), AssetSourceUpdate(..), ImageIndex, NavigationHistoryEntry, PaginationState, SourceLoadState, UserMode(..))
 import UpdateAlbums exposing (AlbumMsg)
 import UpdateAsset exposing (AssetMsg(..), AssetResult(..), AssetState(..), updateAsset)
+import UpdateAssetResult
 import UpdateConfig
 import UpdateImmich
 import UpdateMenuConfig
+import UpdateMenuResult
 import UpdateMenus exposing (MenuMsg(..), MenuResult(..), MenuState(..), updateMenus)
 import ViewAlbums exposing (AlbumSearch, AssetWithActions, InputMode(..), PropertyChange(..))
 import ViewAsset exposing (TimeViewMode(..))
@@ -644,53 +647,27 @@ updateMenuState fn model =
 
 handleMenuResult : MenuResult msg -> Model -> ( Model, Cmd Msg )
 handleMenuResult menuResult model =
-    case menuResult of
-        StayInMenu newMenuState ->
+    case UpdateMenuResult.processMenuResult menuResult model.paginationState (Just model.userMode) of
+        UpdateMenuResult.StayInMenuAction newMenuState ->
             ( { model | userMode = MainMenu newMenuState }, Cmd.none )
 
-        MenuLoadAssets assetSource ->
-            -- Convert to Main's AssetSource and load assets
+        UpdateMenuResult.LoadAssetsAction config loadType ->
             let
-                mainAssetSource =
-                    convertMenuAssetSource assetSource
-
                 loadModel =
-                    createLoadStateForCurrentAssetSource mainAssetSource model
+                    createLoadStateForCurrentAssetSource config.assetSource model
 
-                -- Set pagination state based on asset source
-                ( modelWithPagination, loadCmd ) =
-                    case assetSource of
-                        UpdateMenus.ImageSearch searchConfig ->
-                            let
-                                paginatedModel =
-                                    { loadModel | paginationState = { currentConfig = Just searchConfig, currentQuery = Nothing, currentSearchContext = Nothing, currentAlbumContext = Nothing, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = loadModel.paginationState.maxAssetsToFetch } }
-                            in
-                            ( paginatedModel, Immich.fetchImagesPaginated paginatedModel.immichApiPaths searchConfig 1000 1 |> Cmd.map ImmichMsg )
+                modelWithPagination =
+                    { loadModel | paginationState = config.paginationState }
 
-                        UpdateMenus.TextSearch query searchContext ->
-                            let
-                                paginatedModel =
-                                    { loadModel | paginationState = { currentConfig = Nothing, currentQuery = Just query, currentSearchContext = Just searchContext, currentAlbumContext = Nothing, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = loadModel.paginationState.maxAssetsToFetch } }
-                            in
-                            ( paginatedModel, Immich.searchAssetsPaginated paginatedModel.immichApiPaths searchContext query AllMedia AllStatuses 1000 1 |> Cmd.map ImmichMsg )
-
-                        UpdateMenus.FilteredAlbum album config ->
-                            let
-                                albumContext =
-                                    { albumId = album.id, order = config.order, mediaType = config.mediaType, status = config.status }
-
-                                paginatedModel =
-                                    { loadModel | paginationState = { currentConfig = Nothing, currentQuery = Nothing, currentSearchContext = Nothing, currentAlbumContext = Just albumContext, totalAssets = 0, currentPage = 1, hasMorePages = False, isLoadingMore = False, loadedAssets = 0, maxAssetsToFetch = loadModel.paginationState.maxAssetsToFetch } }
-                            in
-                            ( paginatedModel, Immich.fetchAlbumAssetsWithFilters paginatedModel.immichApiPaths album.id config.order config.mediaType config.status |> Cmd.map ImmichMsg )
+                loadCmd =
+                    generateMenuLoadCmd loadType modelWithPagination
             in
             ( modelWithPagination, loadCmd )
 
-        MenuReloadAlbums ->
+        UpdateMenuResult.ReloadAlbumsAction ->
             ( model, Immich.getAllAlbums model.baseUrl model.apiKey |> Cmd.map ImmichMsg )
 
-        MenuUpdateSearchInput focused ->
-            -- Handle search input focus change
+        UpdateMenuResult.UpdateSearchFocusAction focused ->
             case model.userMode of
                 MainMenu menuState ->
                     case menuState of
@@ -704,19 +681,47 @@ handleMenuResult menuResult model =
                     ( model, Cmd.none )
 
 
+{-| Generate the load Cmd based on LoadType from menu result.
+-}
+generateMenuLoadCmd : UpdateMenuResult.LoadType -> Model -> Cmd Msg
+generateMenuLoadCmd loadType model =
+    case loadType of
+        UpdateMenuResult.TimelineLoad searchConfig ->
+            Immich.fetchImagesPaginated model.immichApiPaths searchConfig 1000 1 |> Cmd.map ImmichMsg
+
+        UpdateMenuResult.TextSearchLoad query searchContext ->
+            Immich.searchAssetsPaginated model.immichApiPaths searchContext query AllMedia AllStatuses 1000 1 |> Cmd.map ImmichMsg
+
+        UpdateMenuResult.AlbumLoad album config ->
+            Immich.fetchAlbumAssetsWithFilters model.immichApiPaths album.id config.order config.mediaType config.status |> Cmd.map ImmichMsg
+
+
 
 -- Helper function to handle AssetResult
 
 
 handleAssetResult : AssetResult msg -> Model -> ( Model, Cmd Msg )
 handleAssetResult assetResult model =
-    case assetResult of
-        StayInAssets newAssetState ->
+    let
+        context =
+            { userMode = model.userMode
+            , currentAssetsSource = model.currentAssetsSource
+            , currentAssets = model.currentAssets
+            , imageIndex = model.imageIndex
+            , paginationState = model.paginationState
+            , currentNavigationState = model.currentNavigationState
+            , navigationBackStack = model.navigationBackStack
+            , screenHeight = model.screenHeight
+            , timeViewMode = model.timeViewMode
+            , baseUrl = model.baseUrl
+            }
+    in
+    case UpdateAssetResult.processAssetResult assetResult context of
+        UpdateAssetResult.StayInAssetsAction newAssetState ->
             let
                 newUserMode =
                     ViewAssets newAssetState
 
-                -- Record navigation state when transitioning to ViewAssets
                 updatedModel =
                     { model | userMode = newUserMode }
                         |> recordNavigationState newUserMode
@@ -724,46 +729,26 @@ handleAssetResult assetResult model =
             in
             ( updatedModel, Cmd.none )
 
-        GoToMainMenu ->
-            -- Save current ViewAssets state before going to MainMenu
+        UpdateAssetResult.GoToMainMenuAction data ->
             let
                 updatedModel =
-                    case model.userMode of
-                        ViewAssets _ ->
-                            -- Save current ViewAssets state to back stack so we can return to it
-                            let
-                                currentEntry =
-                                    { userMode = model.userMode
-                                    , currentAssetsSource = model.currentAssetsSource
-                                    , currentAssets = model.currentAssets
-                                    , imageIndex = model.imageIndex
-                                    , paginationState = model.paginationState
-                                    }
-
-                                updatedBackStack =
-                                    case model.currentNavigationState of
-                                        Just existing ->
-                                            -- Push existing current state to back stack
-                                            List.take 19 (existing :: model.navigationBackStack)
-
-                                        Nothing ->
-                                            model.navigationBackStack
-                            in
+                    case data.currentEntry of
+                        Just entry ->
                             { model
-                                | navigationBackStack = updatedBackStack
-                                , currentNavigationState = Just currentEntry
-                                , navigationForwardQueue = [] -- Clear forward queue
+                                | navigationBackStack = data.newBackStack
+                                , currentNavigationState = Just entry
+                                , navigationForwardQueue = []
                             }
 
-                        _ ->
+                        Nothing ->
                             model
             in
             ( { updatedModel | userMode = MainMenu MainMenuHome }, Cmd.none )
 
-        GoToSearchView query ->
+        UpdateAssetResult.GoToSearchViewAction query ->
             ( { model | userMode = MainMenu (SearchView { defaultSearchConfig | query = query }) }, Cmd.none )
 
-        AssetLoadTextSearch query ->
+        UpdateAssetResult.LoadTextSearchAction query ->
             let
                 mainAssetSource =
                     TextSearch query ContentSearch
@@ -776,7 +761,7 @@ handleAssetResult assetResult model =
             in
             ( loadModel, loadCmd )
 
-        AssetLoadAlbum album ->
+        UpdateAssetResult.LoadAlbumAction album ->
             let
                 mainAssetSource =
                     Album album
@@ -789,243 +774,70 @@ handleAssetResult assetResult model =
             in
             ( loadModel, loadCmd )
 
-        AssetSwitchToAssetIndex newIndex ->
-            -- Update current history entry and switch to asset index
-            -- This is asset navigation within the same view, not a new navigation
+        UpdateAssetResult.SwitchToAssetIndexAction newIndex ->
             switchToAssetWithoutHistory model newIndex
 
-        AssetToggleFavorite ->
-            -- Handle favorite toggle
+        UpdateAssetResult.ToggleFavoriteAction newAsset newIsFavorite ->
             case model.userMode of
-                ViewAssets assetState ->
-                    case assetState of
-                        EditAsset inputMode asset search ->
-                            let
-                                newAsset =
-                                    { asset | isFavourite = ViewAlbums.flipPropertyChange asset.isFavourite }
-
-                                newIsFavorite =
-                                    case newAsset.isFavourite of
-                                        ChangeToTrue ->
-                                            True
-
-                                        RemainTrue ->
-                                            True
-
-                                        ChangeToFalse ->
-                                            False
-
-                                        RemainFalse ->
-                                            False
-                            in
-                            ( { model | userMode = ViewAssets (EditAsset inputMode newAsset search) }, Immich.updateAssetFavorite model.immichApiPaths asset.asset.id newIsFavorite |> Cmd.map ImmichMsg )
-
-                        _ ->
-                            ( model, Cmd.none )
+                ViewAssets (EditAsset inputMode _ search) ->
+                    ( { model | userMode = ViewAssets (EditAsset inputMode newAsset search) }
+                    , Immich.updateAssetFavorite model.immichApiPaths newAsset.asset.id newIsFavorite |> Cmd.map ImmichMsg
+                    )
 
                 _ ->
                     ( model, Cmd.none )
 
-        AssetToggleArchived ->
-            -- Handle archived toggle
+        UpdateAssetResult.ToggleArchivedAction newAsset newIsArchived ->
             case model.userMode of
-                ViewAssets assetState ->
-                    case assetState of
-                        EditAsset inputMode asset search ->
-                            let
-                                newAsset =
-                                    { asset | isArchived = ViewAlbums.flipPropertyChange asset.isArchived }
-
-                                newIsArchived =
-                                    case newAsset.isArchived of
-                                        ChangeToTrue ->
-                                            True
-
-                                        RemainTrue ->
-                                            True
-
-                                        ChangeToFalse ->
-                                            False
-
-                                        RemainFalse ->
-                                            False
-                            in
-                            ( { model | userMode = ViewAssets (EditAsset inputMode newAsset search) }, Immich.updateAssetArchived model.immichApiPaths asset.asset.id newIsArchived |> Cmd.map ImmichMsg )
-
-                        _ ->
-                            ( model, Cmd.none )
+                ViewAssets (EditAsset inputMode _ search) ->
+                    ( { model | userMode = ViewAssets (EditAsset inputMode newAsset search) }
+                    , Immich.updateAssetArchived model.immichApiPaths newAsset.asset.id newIsArchived |> Cmd.map ImmichMsg
+                    )
 
                 _ ->
                     ( model, Cmd.none )
 
-        AssetToggleAlbumMembership album ->
-            -- Handle album membership toggle
-            case model.userMode of
-                ViewAssets assetState ->
-                    case assetState of
-                        EditAsset inputMode asset search ->
-                            let
-                                currentPropertyChange =
-                                    Maybe.withDefault RemainFalse (Dict.get album.id asset.albumMembership)
-
-                                currentlyInAlbum =
-                                    ViewAlbums.isCurrentlyInAlbum currentPropertyChange
-
-                                isNotInAlbum =
-                                    not currentlyInAlbum
-
-                                toggledAsset =
-                                    ViewAlbums.toggleAssetAlbum asset album
-
-                                newPropertyChange =
-                                    Maybe.withDefault RemainFalse (Dict.get album.id toggledAsset.albumMembership)
-
-                                isAddition =
-                                    ViewAlbums.isAddingToAlbum newPropertyChange
-
-                                newSearch =
-                                    { search | partialKeybinding = "", pagination = ViewAlbums.resetPagination search.pagination, invalidInputWarning = Nothing }
-
-                                -- Check if we should also remove from source album (move-from mode)
-                                ( finalAsset, moveFromCmd, maybeSourceAlbumId ) =
-                                    case model.currentAssetsSource of
-                                        FilteredAlbum sourceAlbum config ->
-                                            let
-                                                -- Check if asset is still in source album (RemainTrue means not yet removed)
-                                                sourceAlbumState =
-                                                    Maybe.withDefault RemainFalse (Dict.get sourceAlbum.id asset.albumMembership)
-
-                                                shouldRemoveFromSource =
-                                                    sourceAlbumState == RemainTrue
-                                            in
-                                            -- Only trigger move-from if:
-                                            -- 1. moveFromMode is enabled
-                                            -- 2. We're adding to a different album (not the source)
-                                            -- 3. This is actually an addition (not a removal)
-                                            -- 4. Asset is still in source album (not already removed)
-                                            if config.moveFromMode && isAddition && album.id /= sourceAlbum.id && shouldRemoveFromSource then
-                                                let
-                                                    -- Also mark the source album as removed in the asset's state
-                                                    assetWithSourceRemoved =
-                                                        { toggledAsset
-                                                            | albumMembership =
-                                                                Dict.insert sourceAlbum.id ChangeToFalse toggledAsset.albumMembership
-                                                        }
-
-                                                    -- Command to remove from source album
-                                                    removeFromSourceCmd =
-                                                        Immich.albumChangeAssetMembership model.immichApiPaths sourceAlbum.id [ asset.asset.id ] False
-                                                            |> Cmd.map ImmichMsg
-                                                in
-                                                ( assetWithSourceRemoved, removeFromSourceCmd, Just sourceAlbum.id )
-
-                                            else
-                                                ( toggledAsset, Cmd.none, Nothing )
-
-                                        _ ->
-                                            ( toggledAsset, Cmd.none, Nothing )
-
-                                -- Primary command to add/remove from target album
-                                primaryCmd =
-                                    Immich.albumChangeAssetMembership model.immichApiPaths album.id [ asset.asset.id ] isNotInAlbum
-                                        |> Cmd.map ImmichMsg
-
-                                -- Track all pending album changes (target + source if Move Mode)
-                                pendingChanges =
-                                    case maybeSourceAlbumId of
-                                        Just sourceId ->
-                                            [ ( album.id, isAddition ), ( sourceId, False ) ]
-
-                                        Nothing ->
-                                            [ ( album.id, isAddition ) ]
-                            in
-                            ( { model | userMode = ViewAssets (EditAsset NormalMode finalAsset newSearch), pendingAlbumChanges = pendingChanges }
-                            , Cmd.batch [ primaryCmd, moveFromCmd ]
-                            )
-
-                        _ ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
-
-        AssetOpenInImmich ->
-            -- Handle opening in Immich
-            case model.userMode of
-                ViewAssets assetState ->
-                    case assetState of
-                        EditAsset _ asset _ ->
-                            let
-                                immichUrl =
-                                    model.baseUrl ++ "/photos/" ++ asset.asset.id
-                            in
-                            ( model, openUrl immichUrl )
-
-                        _ ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
-
-        AssetYankToClipboard ->
-            -- Handle yanking asset to clipboard
-            case model.userMode of
-                ViewAssets assetState ->
-                    case assetState of
-                        EditAsset _ asset _ ->
-                            ( model, yankAssetToClipboard asset.asset.id )
-
-                        _ ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
-
-        AssetToggleMoveFromMode ->
-            -- Toggle move-from mode when viewing a filtered album
-            case model.currentAssetsSource of
-                FilteredAlbum album config ->
-                    let
-                        newConfig =
-                            { config | moveFromMode = not config.moveFromMode }
-                    in
-                    ( { model | currentAssetsSource = FilteredAlbum album newConfig }, Cmd.none )
-
-                _ ->
-                    -- Move mode only applicable when viewing a filtered album
-                    ( model, Cmd.none )
-
-        AssetCreateAlbum albumName ->
-            -- Handle album creation
-            ( { model | userMode = LoadingAssets { fetchedAssetList = Nothing, fetchedAssetMembership = Nothing } }, Immich.createAlbum model.immichApiPaths albumName |> Cmd.map ImmichMsg )
-
-        AssetToggleTimeView ->
-            -- Handle time view toggle
+        UpdateAssetResult.ToggleAlbumMembershipAction data ->
             let
-                newTimeViewMode =
-                    case model.timeViewMode of
-                        Absolute ->
-                            Relative
+                primaryCmd =
+                    Immich.albumChangeAssetMembership model.immichApiPaths data.targetAlbumId [ data.newAsset.asset.id ] data.isAddition
+                        |> Cmd.map ImmichMsg
 
-                        Relative ->
-                            Absolute
+                moveFromCmd =
+                    case data.moveFromSourceId of
+                        Just sourceId ->
+                            Immich.albumChangeAssetMembership model.immichApiPaths sourceId [ data.newAsset.asset.id ] False
+                                |> Cmd.map ImmichMsg
+
+                        Nothing ->
+                            Cmd.none
             in
+            ( { model | userMode = ViewAssets (EditAsset NormalMode data.newAsset data.newSearch), pendingAlbumChanges = data.pendingChanges }
+            , Cmd.batch [ primaryCmd, moveFromCmd ]
+            )
+
+        UpdateAssetResult.OpenInImmichAction url ->
+            ( model, openUrl url )
+
+        UpdateAssetResult.YankToClipboardAction assetId ->
+            ( model, yankAssetToClipboard assetId )
+
+        UpdateAssetResult.ToggleMoveFromModeAction album newConfig ->
+            ( { model | currentAssetsSource = FilteredAlbum album newConfig }, Cmd.none )
+
+        UpdateAssetResult.CreateAlbumAction albumName ->
+            ( { model | userMode = LoadingAssets { fetchedAssetList = Nothing, fetchedAssetMembership = Nothing } }
+            , Immich.createAlbum model.immichApiPaths albumName |> Cmd.map ImmichMsg
+            )
+
+        UpdateAssetResult.ToggleTimeViewAction newTimeViewMode ->
             ( { model | timeViewMode = newTimeViewMode }, Cmd.none )
 
-        AssetSwitchToGridView ->
-            -- Switch to grid view
+        UpdateAssetResult.SwitchToGridViewAction gridState ->
             let
-                -- Assume screen width is roughly 16:9 ratio of height for now
-                screenWidth =
-                    model.screenHeight * 16 // 9
-
-                gridState =
-                    ViewGrid.initGridState screenWidth model.screenHeight
-
                 newUserMode =
                     ViewAssets (GridView gridState)
 
-                -- Record navigation state when transitioning to ViewAssets
                 updatedModel =
                     { model | userMode = newUserMode }
                         |> recordNavigationState newUserMode
@@ -1033,65 +845,30 @@ handleAssetResult assetResult model =
             in
             ( updatedModel, Cmd.none )
 
-        AssetSwitchToDetailView assetId ->
-            -- Switch to detail view for specific asset
-            case
-                List.indexedMap
-                    (\index id ->
-                        if id == assetId then
-                            Just index
-
-                        else
-                            Nothing
-                    )
-                    model.currentAssets
-                    |> List.filterMap identity
-                    |> List.head
-            of
+        UpdateAssetResult.SwitchToDetailViewAction maybeIndex ->
+            case maybeIndex of
                 Just assetIndex ->
                     switchToEditIfAssetFound model assetIndex
 
                 Nothing ->
                     ( model, Cmd.none )
 
-        AssetGridUpdate gridState ->
-            -- Update grid state
+        UpdateAssetResult.GridUpdateAction gridState ->
             ( { model | userMode = ViewAssets (GridView gridState) }, Cmd.none )
 
-        AssetBulkFavorite assetIds isFavorite ->
-            -- Handle bulk favorite toggle
-            let
-                bulkCmd =
-                    Immich.bulkUpdateAssetsFavorite model.immichApiPaths assetIds isFavorite |> Cmd.map ImmichMsg
-            in
-            ( model, bulkCmd )
+        UpdateAssetResult.BulkFavoriteAction assetIds isFavorite ->
+            ( model, Immich.bulkUpdateAssetsFavorite model.immichApiPaths assetIds isFavorite |> Cmd.map ImmichMsg )
 
-        AssetBulkArchive assetIds isArchived ->
-            -- Handle bulk archive toggle
-            let
-                bulkCmd =
-                    Immich.bulkUpdateAssetsArchived model.immichApiPaths assetIds isArchived |> Cmd.map ImmichMsg
-            in
-            ( model, bulkCmd )
+        UpdateAssetResult.BulkArchiveAction assetIds isArchived ->
+            ( model, Immich.bulkUpdateAssetsArchived model.immichApiPaths assetIds isArchived |> Cmd.map ImmichMsg )
 
-        AssetBulkAddToAlbum assetIds albumId ->
-            -- Handle bulk add to album
-            let
-                bulkCmd =
-                    Immich.albumChangeAssetMembership model.immichApiPaths albumId assetIds True |> Cmd.map ImmichMsg
-            in
-            ( model, bulkCmd )
+        UpdateAssetResult.BulkAddToAlbumAction assetIds albumId ->
+            ( model, Immich.albumChangeAssetMembership model.immichApiPaths albumId assetIds True |> Cmd.map ImmichMsg )
 
-        AssetBulkRemoveFromAlbum assetIds albumId ->
-            -- Handle bulk remove from album
-            let
-                bulkCmd =
-                    Immich.albumChangeAssetMembership model.immichApiPaths albumId assetIds False |> Cmd.map ImmichMsg
-            in
-            ( model, bulkCmd )
+        UpdateAssetResult.BulkRemoveFromAlbumAction assetIds albumId ->
+            ( model, Immich.albumChangeAssetMembership model.immichApiPaths albumId assetIds False |> Cmd.map ImmichMsg )
 
-        AssetRequestLoadMore ->
-            -- Handle infinite scroll load more request
+        UpdateAssetResult.RequestLoadMoreAction ->
             let
                 paginationState =
                     model.paginationState
@@ -1102,15 +879,12 @@ handleAssetResult assetResult model =
                 loadMoreCmd =
                     case ( paginationState.currentConfig, paginationState.currentQuery, paginationState.currentSearchContext ) of
                         ( Just config, Nothing, _ ) ->
-                            -- Load more for timeline view (preserves ordering)
                             Immich.fetchImagesPaginated model.immichApiPaths config 1000 nextPage |> Cmd.map ImmichMsg
 
                         ( Nothing, Just query, Just searchContext ) ->
-                            -- Load more for text search with search context
                             Immich.searchAssetsPaginated model.immichApiPaths searchContext query AllMedia AllStatuses 1000 nextPage |> Cmd.map ImmichMsg
 
                         ( Nothing, Just query, Nothing ) ->
-                            -- Load more for text search with default content search (fallback)
                             Immich.searchAssetsPaginated model.immichApiPaths ContentSearch query AllMedia AllStatuses 1000 nextPage |> Cmd.map ImmichMsg
 
                         _ ->
@@ -1121,9 +895,11 @@ handleAssetResult assetResult model =
             in
             ( { model | paginationState = updatedPaginationState }, loadMoreCmd )
 
-        AssetReloadAlbums ->
-            -- Reload albums while staying in ViewAsset mode
+        UpdateAssetResult.ReloadAlbumsAction ->
             ( model, Immich.getAllAlbums model.baseUrl model.apiKey |> Cmd.map ImmichMsg )
+
+        UpdateAssetResult.NoAction ->
+            ( model, Cmd.none )
 
 
 
@@ -1964,14 +1740,9 @@ processPaginatedResponse paginatedResponse nextPage model =
         modelWithClearedLoading =
             { model | paginationState = clearedPaginationState }
 
-        newLoadedAssets =
-            modelWithClearedLoading.paginationState.loadedAssets
-
-        reachedLimit =
-            newLoadedAssets >= modelWithClearedLoading.paginationState.maxAssetsToFetch
-
+        -- Use pure function to determine if we should fetch more
         shouldFetchMore =
-            paginatedResponse.hasNextPage && not reachedLimit && modelWithClearedLoading.paginationState.currentQuery == Nothing
+            Pagination.shouldFetchNextPage paginatedResponse clearedPaginationState
 
         modelWithLoadingState =
             if shouldFetchMore then
@@ -1980,29 +1751,12 @@ processPaginatedResponse paginatedResponse nextPage model =
             else
                 modelWithClearedLoading
 
+        -- Use pure function to compute next page request, then generate Cmd
         nextPageCmd =
             if shouldFetchMore then
-                case modelWithClearedLoading.paginationState.currentConfig of
-                    Just config ->
-                        Immich.fetchImagesPaginated modelWithClearedLoading.immichApiPaths config 1000 nextPage |> Cmd.map ImmichMsg
-
-                    Nothing ->
-                        case modelWithClearedLoading.paginationState.currentQuery of
-                            Just query ->
-                                case modelWithClearedLoading.paginationState.currentSearchContext of
-                                    Just searchContext ->
-                                        Immich.searchAssetsPaginated modelWithClearedLoading.immichApiPaths searchContext query AllMedia AllStatuses 1000 nextPage |> Cmd.map ImmichMsg
-
-                                    Nothing ->
-                                        Immich.searchAssetsPaginated modelWithClearedLoading.immichApiPaths ContentSearch query AllMedia AllStatuses 1000 nextPage |> Cmd.map ImmichMsg
-
-                            Nothing ->
-                                case modelWithClearedLoading.paginationState.currentAlbumContext of
-                                    Just albumCtx ->
-                                        Immich.fetchAlbumAssetsPaginated modelWithClearedLoading.immichApiPaths albumCtx.albumId albumCtx.order albumCtx.mediaType albumCtx.status 1000 nextPage |> Cmd.map ImmichMsg
-
-                                    Nothing ->
-                                        Cmd.none
+                Pagination.computeNextPageRequest nextPage clearedPaginationState
+                    |> Maybe.map (generateNextPageCmd model.immichApiPaths)
+                    |> Maybe.withDefault Cmd.none
 
             else
                 Cmd.none
@@ -2015,85 +1769,79 @@ processPaginatedResponse paginatedResponse nextPage model =
         checkIfLoadingComplete modelWithLoadingState
 
 
+{-| Generate a Cmd for fetching the next page based on NextPageRequest.
+This is the impure wrapper that converts pure pagination decisions to Cmds.
+-}
+generateNextPageCmd : ImmichApiPaths -> Pagination.NextPageRequest -> Cmd Msg
+generateNextPageCmd apiPaths request =
+    case request.requestType of
+        Pagination.TimelineRequest config ->
+            Immich.fetchImagesPaginated apiPaths config request.pageSize request.nextPage
+                |> Cmd.map ImmichMsg
+
+        Pagination.TextSearchRequest query searchContext ->
+            Immich.searchAssetsPaginated apiPaths searchContext query AllMedia AllStatuses request.pageSize request.nextPage
+                |> Cmd.map ImmichMsg
+
+        Pagination.AlbumRequest albumCtx ->
+            Immich.fetchAlbumAssetsPaginated apiPaths albumCtx.albumId albumCtx.order albumCtx.mediaType albumCtx.status request.pageSize request.nextPage
+                |> Cmd.map ImmichMsg
+
+
 
 -- Normalize asset PropertyChange states after successful API call
 
 
 switchToEditIfAssetFound : Model -> ImageIndex -> ( Model, Cmd Msg )
 switchToEditIfAssetFound model index =
-    model.currentAssets
-        |> List.drop index
-        |> List.head
-        |> Maybe.andThen (\id -> Dict.get id model.knownAssets)
-        |> Maybe.map
-            (\asset ->
-                let
-                    -- Check if we're currently viewing the same asset to preserve video loaded state
-                    currentVideoLoadedState =
-                        case model.userMode of
-                            ViewAssets (EditAsset _ currentAsset _) ->
-                                if currentAsset.asset.id == asset.id then
-                                    Just currentAsset.isVideoLoaded
+    -- Use pure function to compute asset view state
+    case AssetNavigation.buildAssetViewState model.currentAssets index model.knownAssets model.knownAlbums model.screenHeight of
+        AssetNavigation.AssetFound result ->
+            let
+                -- Preserve video loaded state if viewing same asset (pure function)
+                assetWithActions =
+                    AssetNavigation.preserveVideoLoadedState model.userMode result.asset result.assetWithActions
 
-                                else
-                                    Nothing
+                newViewAssetsMode =
+                    ViewAssets (EditAsset NormalMode assetWithActions result.albumSearch)
 
-                            _ ->
-                                Nothing
+                -- Record navigation state when transitioning to ViewAssets
+                updatedModel =
+                    { model | imageIndex = index, userMode = newViewAssetsMode }
+                        |> recordNavigationState newViewAssetsMode
+                        |> setCurrentNavigationState
 
-                    -- Create asset with actions, optionally preserving video loaded state
-                    assetWithActions =
-                        case currentVideoLoadedState of
-                            Just isLoaded ->
-                                let
-                                    baseAsset =
-                                        ViewAlbums.getAssetWithActions asset
-                                in
-                                { baseAsset | isVideoLoaded = isLoaded }
+                -- Generate Cmd for fetching membership (impure part stays here)
+                cmdToSend =
+                    Immich.fetchMembershipForAsset model.immichApiPaths result.asset.id |> Cmd.map ImmichMsg
+            in
+            ( updatedModel, cmdToSend )
 
-                            Nothing ->
-                                ViewAlbums.getAssetWithActions asset
-
-                    newViewAssetsMode =
-                        ViewAssets (EditAsset NormalMode assetWithActions (ViewAlbums.getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight))
-
-                    -- Record navigation state when transitioning to ViewAssets
-                    updatedModel =
-                        { model | imageIndex = index, userMode = newViewAssetsMode }
-                            |> recordNavigationState newViewAssetsMode
-                            |> setCurrentNavigationState
-
-                    cmdToSend =
-                        Immich.fetchMembershipForAsset model.immichApiPaths asset.id |> Cmd.map ImmichMsg
-                in
-                ( updatedModel, cmdToSend )
-            )
-        |> Maybe.withDefault ( createLoadStateForCurrentAssetSource model.currentAssetsSource model, Cmd.none )
+        AssetNavigation.AssetNotFound ->
+            ( createLoadStateForCurrentAssetSource model.currentAssetsSource model, Cmd.none )
 
 
 switchToAssetWithoutHistory : Model -> ImageIndex -> ( Model, Cmd Msg )
 switchToAssetWithoutHistory model index =
-    -- Switch to asset without creating new history entry (for navigation within same view)
-    model.currentAssets
-        |> List.drop index
-        |> List.head
-        |> Maybe.andThen (\id -> Dict.get id model.knownAssets)
-        |> Maybe.map
-            (\asset ->
-                let
-                    newViewAssetsMode =
-                        ViewAssets (EditAsset NormalMode (ViewAlbums.getAssetWithActions asset) (ViewAlbums.getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight))
+    -- Use pure function to compute asset view state
+    case AssetNavigation.buildAssetViewState model.currentAssets index model.knownAssets model.knownAlbums model.screenHeight of
+        AssetNavigation.AssetFound result ->
+            let
+                newViewAssetsMode =
+                    ViewAssets (EditAsset NormalMode result.assetWithActions result.albumSearch)
 
-                    -- Update current history entry with new index, don't create new entry
-                    updatedModel =
-                        updateCurrentHistoryEntry { model | imageIndex = index, userMode = newViewAssetsMode }
+                -- Update current history entry with new index, don't create new entry
+                updatedModel =
+                    updateCurrentHistoryEntry { model | imageIndex = index, userMode = newViewAssetsMode }
 
-                    cmdToSend =
-                        Immich.fetchMembershipForAsset model.immichApiPaths asset.id |> Cmd.map ImmichMsg
-                in
-                ( updatedModel, cmdToSend )
-            )
-        |> Maybe.withDefault ( model, Cmd.none )
+                -- Generate Cmd for fetching membership (impure part stays here)
+                cmdToSend =
+                    Immich.fetchMembershipForAsset model.immichApiPaths result.asset.id |> Cmd.map ImmichMsg
+            in
+            ( updatedModel, cmdToSend )
+
+        AssetNavigation.AssetNotFound ->
+            ( model, Cmd.none )
 
 
 getCurrentAssetWithActions : Model -> Maybe ( AssetWithActions, AlbumSearch )
