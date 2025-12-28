@@ -26,6 +26,7 @@ import UpdateAlbums exposing (AlbumMsg)
 import UpdateAsset exposing (AssetMsg(..), AssetResult(..), AssetState(..), updateAsset)
 import UpdateConfig
 import UpdateImmich
+import UpdateMenuConfig
 import UpdateMenus exposing (MenuMsg(..), MenuResult(..), MenuState(..), updateMenus)
 import ViewAlbums exposing (AlbumSearch, AssetWithActions, InputMode(..), PropertyChange(..))
 import ViewAsset exposing (TimeViewMode(..))
@@ -215,17 +216,53 @@ init flags =
 
 
 -- NAVIGATION HISTORY HELPERS --
+-- Helper to extract navigation fields from Model
+
+
+getNavFields : Model -> Navigation.NavigationFields
+getNavFields model =
+    { navigationBackStack = model.navigationBackStack
+    , currentNavigationState = model.currentNavigationState
+    , navigationForwardQueue = model.navigationForwardQueue
+    }
+
+
+
+-- Helper to apply NavigateResult to Model
+
+
+applyNavigateResult : Navigation.NavigateResult -> Model -> ( Model, Cmd Msg )
+applyNavigateResult result model =
+    case result of
+        Navigation.NoHistory ->
+            ( model, Cmd.none )
+
+        Navigation.RestoredState restored ->
+            let
+                restoredModel =
+                    { model
+                        | userMode = restored.userMode
+                        , currentAssetsSource = restored.currentAssetsSource
+                        , currentAssets = restored.currentAssets
+                        , imageIndex = restored.imageIndex
+                        , paginationState = restored.paginationState
+                        , navigationBackStack = restored.navFields.navigationBackStack
+                        , currentNavigationState = restored.navFields.currentNavigationState
+                        , navigationForwardQueue = restored.navFields.navigationForwardQueue
+                    }
+            in
+            if restored.needsAssetSwitch then
+                switchToAssetWithoutHistory restoredModel restored.assetIndex
+
+            else
+                ( restoredModel, Cmd.none )
 
 
 recordNavigationState : UserMode -> Model -> Model
 recordNavigationState newMode model =
     let
         navFields =
-            Navigation.clearForwardQueueForViewAssets newMode
-                { navigationBackStack = model.navigationBackStack
-                , currentNavigationState = model.currentNavigationState
-                , navigationForwardQueue = model.navigationForwardQueue
-                }
+            Navigation.clearForwardQueueForViewAssets newMode (getNavFields model)
     in
     { model | navigationForwardQueue = navFields.navigationForwardQueue }
 
@@ -265,70 +302,12 @@ updateCurrentHistoryEntry model =
 
 navigateHistoryBack : Model -> ( Model, Cmd Msg )
 navigateHistoryBack model =
-    let
-        navFields =
-            { navigationBackStack = model.navigationBackStack
-            , currentNavigationState = model.currentNavigationState
-            , navigationForwardQueue = model.navigationForwardQueue
-            }
-    in
-    case Navigation.navigateBack navFields of
-        Navigation.NoHistory ->
-            ( model, Cmd.none )
-
-        Navigation.RestoredState result ->
-            let
-                restoredModel =
-                    { model
-                        | userMode = result.userMode
-                        , currentAssetsSource = result.currentAssetsSource
-                        , currentAssets = result.currentAssets
-                        , imageIndex = result.imageIndex
-                        , paginationState = result.paginationState
-                        , navigationBackStack = result.navFields.navigationBackStack
-                        , currentNavigationState = result.navFields.currentNavigationState
-                        , navigationForwardQueue = result.navFields.navigationForwardQueue
-                    }
-            in
-            if result.needsAssetSwitch then
-                switchToAssetWithoutHistory restoredModel result.assetIndex
-
-            else
-                ( restoredModel, Cmd.none )
+    applyNavigateResult (Navigation.navigateBack (getNavFields model)) model
 
 
 navigateHistoryForward : Model -> ( Model, Cmd Msg )
 navigateHistoryForward model =
-    let
-        navFields =
-            { navigationBackStack = model.navigationBackStack
-            , currentNavigationState = model.currentNavigationState
-            , navigationForwardQueue = model.navigationForwardQueue
-            }
-    in
-    case Navigation.navigateForward navFields of
-        Navigation.NoHistory ->
-            ( model, Cmd.none )
-
-        Navigation.RestoredState result ->
-            let
-                restoredModel =
-                    { model
-                        | userMode = result.userMode
-                        , currentAssetsSource = result.currentAssetsSource
-                        , currentAssets = result.currentAssets
-                        , imageIndex = result.imageIndex
-                        , paginationState = result.paginationState
-                        , navigationBackStack = result.navFields.navigationBackStack
-                        , currentNavigationState = result.navFields.currentNavigationState
-                        , navigationForwardQueue = result.navFields.navigationForwardQueue
-                    }
-            in
-            if result.needsAssetSwitch then
-                switchToAssetWithoutHistory restoredModel result.assetIndex
-
-            else
-                ( restoredModel, Cmd.none )
+    applyNavigateResult (Navigation.navigateForward (getNavFields model)) model
 
 
 view : Model -> Html Msg
@@ -646,6 +625,20 @@ viewInputMode userMode theme =
 
 
 -- UPDATE --
+-- Helper to apply MenuState updates (reduces boilerplate for config changes)
+
+
+updateMenuState : (MenuState -> MenuState) -> Model -> Model
+updateMenuState fn model =
+    case model.userMode of
+        MainMenu menuState ->
+            { model | userMode = MainMenu (fn menuState) }
+
+        _ ->
+            model
+
+
+
 -- Helper function to handle MenuResult
 
 
@@ -1380,45 +1373,8 @@ update msg model =
                                 handleAssetResult (updateAsset (AssetKeyPress effectiveKey) assetState model.albumKeybindings model.knownAlbums model.screenHeight model.currentAssets model.knownAssets) model
 
                             LoadingAssets _ ->
+                                -- Escape is already handled at the top of KeyPress
                                 case effectiveKey of
-                                    "Escape" ->
-                                        -- Save current state if transitioning from ViewAssets context
-                                        let
-                                            updatedModel =
-                                                case model.currentAssetsSource of
-                                                    NoAssets ->
-                                                        model
-
-                                                    _ ->
-                                                        -- We have asset context, save it
-                                                        let
-                                                            currentEntry =
-                                                                { userMode = model.userMode
-                                                                , currentAssetsSource = model.currentAssetsSource
-                                                                , currentAssets = model.currentAssets
-                                                                , imageIndex = model.imageIndex
-                                                                , paginationState = model.paginationState
-                                                                }
-
-                                                            updatedBackStack =
-                                                                case model.currentNavigationState of
-                                                                    Just existing ->
-                                                                        List.take 19 (existing :: model.navigationBackStack)
-
-                                                                    Nothing ->
-                                                                        model.navigationBackStack
-
-                                                            newCurrentState =
-                                                                Just currentEntry
-                                                        in
-                                                        { model
-                                                            | navigationBackStack = updatedBackStack
-                                                            , currentNavigationState = newCurrentState
-                                                            , navigationForwardQueue = []
-                                                        }
-                                        in
-                                        ( { updatedModel | userMode = MainMenu MainMenuHome }, Cmd.none )
-
                                     "g" ->
                                         ( { model | userMode = MainMenu Settings }, Cmd.none )
 
@@ -1490,206 +1446,43 @@ update msg model =
             ( updatedModel, Cmd.none )
 
         ChangeTimelineMediaType newMediaType ->
-            case model.userMode of
-                MainMenu menuState ->
-                    case menuState of
-                        TimelineView config ->
-                            ( { model | userMode = MainMenu (TimelineView { config | mediaType = newMediaType }) }, Cmd.none )
-
-                        _ ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
+            ( updateMenuState (UpdateMenuConfig.updateTimelineMediaType newMediaType) model, Cmd.none )
 
         ChangeTimelineCategorisation newCategorisation ->
-            case model.userMode of
-                MainMenu menuState ->
-                    case menuState of
-                        TimelineView config ->
-                            ( { model | userMode = MainMenu (TimelineView { config | categorisation = newCategorisation }) }, Cmd.none )
-
-                        _ ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
+            ( updateMenuState (UpdateMenuConfig.updateTimelineCategorisation newCategorisation) model, Cmd.none )
 
         ChangeTimelineOrder newOrder ->
-            case model.userMode of
-                MainMenu menuState ->
-                    case menuState of
-                        TimelineView config ->
-                            ( { model | userMode = MainMenu (TimelineView { config | order = newOrder }) }, Cmd.none )
-
-                        _ ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
+            ( updateMenuState (UpdateMenuConfig.updateTimelineOrder newOrder) model, Cmd.none )
 
         ChangeTimelineStatus newStatus ->
-            case model.userMode of
-                MainMenu menuState ->
-                    case menuState of
-                        TimelineView config ->
-                            ( { model | userMode = MainMenu (TimelineView { config | status = newStatus }) }, Cmd.none )
-
-                        _ ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
+            ( updateMenuState (UpdateMenuConfig.updateTimelineStatus newStatus) model, Cmd.none )
 
         ChangeSearchMediaType newMediaType ->
-            case model.userMode of
-                MainMenu menuState ->
-                    case menuState of
-                        SearchView config ->
-                            ( { model | userMode = MainMenu (SearchView { config | mediaType = newMediaType }) }, Cmd.none )
-
-                        _ ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
+            ( updateMenuState (UpdateMenuConfig.updateSearchMediaType newMediaType) model, Cmd.none )
 
         ChangeSearchContext newContext ->
-            case model.userMode of
-                MainMenu menuState ->
-                    case menuState of
-                        SearchView config ->
-                            ( { model | userMode = MainMenu (SearchView { config | searchContext = newContext }) }, Cmd.none )
-
-                        _ ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
+            ( updateMenuState (UpdateMenuConfig.updateSearchContext newContext) model, Cmd.none )
 
         ChangeSearchStatus newStatus ->
-            case model.userMode of
-                MainMenu menuState ->
-                    case menuState of
-                        SearchView config ->
-                            ( { model | userMode = MainMenu (SearchView { config | status = newStatus }) }, Cmd.none )
-
-                        _ ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
+            ( updateMenuState (UpdateMenuConfig.updateSearchStatus newStatus) model, Cmd.none )
 
         ChangeSearchQuery newQuery ->
-            case model.userMode of
-                MainMenu menuState ->
-                    case menuState of
-                        SearchView config ->
-                            let
-                                suggestions =
-                                    if String.length newQuery > 1 then
-                                        Menus.generateSearchSuggestions model.knownAssets
-
-                                    else
-                                        []
-
-                                updatedConfig =
-                                    { config
-                                        | query = newQuery
-                                        , suggestions = suggestions
-                                        , showSuggestions = String.length newQuery > 1
-                                    }
-                            in
-                            ( { model | userMode = MainMenu (SearchView updatedConfig) }, Cmd.none )
-
-                        _ ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
+            ( updateMenuState (UpdateMenuConfig.updateSearchQuery model.knownAssets newQuery) model, Cmd.none )
 
         SelectSearchSuggestion suggestion ->
-            case model.userMode of
-                MainMenu menuState ->
-                    case menuState of
-                        SearchView config ->
-                            let
-                                updatedRecentSearches =
-                                    Menus.addToRecentSearches suggestion config.recentSearches
-
-                                updatedConfig =
-                                    { config
-                                        | query = suggestion
-                                        , recentSearches = updatedRecentSearches
-                                        , showSuggestions = False
-                                    }
-                            in
-                            ( { model | userMode = MainMenu (SearchView updatedConfig) }, Cmd.none )
-
-                        _ ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
+            ( updateMenuState (UpdateMenuConfig.updateSearchSelectSuggestion suggestion) model, Cmd.none )
 
         ClearSearchQuery ->
-            case model.userMode of
-                MainMenu menuState ->
-                    case menuState of
-                        SearchView config ->
-                            let
-                                updatedConfig =
-                                    { config
-                                        | query = ""
-                                        , showSuggestions = False
-                                    }
-                            in
-                            ( { model | userMode = MainMenu (SearchView updatedConfig) }, Cmd.none )
-
-                        _ ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
+            ( updateMenuState UpdateMenuConfig.updateSearchClear model, Cmd.none )
 
         ChangeAlbumMediaType newMediaType ->
-            case model.userMode of
-                MainMenu menuState ->
-                    case menuState of
-                        AlbumView album config ->
-                            ( { model | userMode = MainMenu (AlbumView album { config | mediaType = newMediaType }) }, Cmd.none )
-
-                        _ ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
+            ( updateMenuState (UpdateMenuConfig.updateAlbumMediaType newMediaType) model, Cmd.none )
 
         ChangeAlbumOrder newOrder ->
-            case model.userMode of
-                MainMenu menuState ->
-                    case menuState of
-                        AlbumView album config ->
-                            ( { model | userMode = MainMenu (AlbumView album { config | order = newOrder }) }, Cmd.none )
-
-                        _ ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
+            ( updateMenuState (UpdateMenuConfig.updateAlbumOrder newOrder) model, Cmd.none )
 
         ChangeAlbumStatus newStatus ->
-            case model.userMode of
-                MainMenu menuState ->
-                    case menuState of
-                        AlbumView album config ->
-                            ( { model | userMode = MainMenu (AlbumView album { config | status = newStatus }) }, Cmd.none )
-
-                        _ ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
+            ( updateMenuState (UpdateMenuConfig.updateAlbumStatus newStatus) model, Cmd.none )
 
         LoadTimelineAssets ->
             case model.userMode of
@@ -1759,30 +1552,10 @@ update msg model =
                     ( model, Cmd.none )
 
         SearchInputFocused ->
-            case model.userMode of
-                MainMenu menuState ->
-                    case menuState of
-                        SearchView config ->
-                            ( { model | userMode = MainMenu (SearchView { config | inputFocused = True }) }, Cmd.none )
-
-                        _ ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
+            ( updateMenuState UpdateMenuConfig.updateSearchInputFocused model, Cmd.none )
 
         SearchInputBlurred ->
-            case model.userMode of
-                MainMenu menuState ->
-                    case menuState of
-                        SearchView config ->
-                            ( { model | userMode = MainMenu (SearchView { config | inputFocused = False }) }, Cmd.none )
-
-                        _ ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
+            ( updateMenuState UpdateMenuConfig.updateSearchInputBlurred model, Cmd.none )
 
         -- Module-specific message handlers (now removed - handled in KeyPress above)
         MenuMsg menuMsg ->
@@ -1993,140 +1766,10 @@ update msg model =
                             ( newModel, Cmd.none )
 
                 Immich.PaginatedImagesFetched (Ok paginatedResponse) ->
-                    -- Auto-fetch next page if there are more assets
-                    let
-                        -- Clear loading state since we just received a response
-                        currentPaginationState1 =
-                            newModel.paginationState
-
-                        clearedPaginationState =
-                            { currentPaginationState1 | isLoadingMore = False }
-
-                        modelWithClearedLoading =
-                            { newModel | paginationState = clearedPaginationState }
-
-                        -- Use the paginatedResponse data directly, not the processed model
-                        newLoadedAssets =
-                            modelWithClearedLoading.paginationState.loadedAssets
-
-                        reachedLimit =
-                            newLoadedAssets >= modelWithClearedLoading.paginationState.maxAssetsToFetch
-
-                        shouldFetchMore =
-                            paginatedResponse.hasNextPage && not reachedLimit && modelWithClearedLoading.paginationState.currentQuery == Nothing
-
-                        modelWithLoadingState =
-                            if shouldFetchMore then
-                                let
-                                    ps =
-                                        modelWithClearedLoading.paginationState
-                                in
-                                { modelWithClearedLoading | paginationState = { ps | isLoadingMore = True } }
-
-                            else
-                                modelWithClearedLoading
-
-                        nextPageCmd =
-                            if shouldFetchMore then
-                                case modelWithClearedLoading.paginationState.currentConfig of
-                                    Just config ->
-                                        Immich.fetchImagesPaginated modelWithClearedLoading.immichApiPaths config 1000 2 |> Cmd.map ImmichMsg
-
-                                    Nothing ->
-                                        case modelWithClearedLoading.paginationState.currentQuery of
-                                            Just query ->
-                                                case modelWithClearedLoading.paginationState.currentSearchContext of
-                                                    Just searchContext ->
-                                                        Immich.searchAssetsPaginated modelWithClearedLoading.immichApiPaths searchContext query AllMedia AllStatuses 1000 2 |> Cmd.map ImmichMsg
-
-                                                    Nothing ->
-                                                        Immich.searchAssetsPaginated modelWithClearedLoading.immichApiPaths ContentSearch query AllMedia AllStatuses 1000 2 |> Cmd.map ImmichMsg
-
-                                            Nothing ->
-                                                case modelWithClearedLoading.paginationState.currentAlbumContext of
-                                                    Just albumCtx ->
-                                                        Immich.fetchAlbumAssetsPaginated modelWithClearedLoading.immichApiPaths albumCtx.albumId albumCtx.order albumCtx.mediaType albumCtx.status 1000 2 |> Cmd.map ImmichMsg
-
-                                                    Nothing ->
-                                                        Cmd.none
-
-                            else
-                                Cmd.none
-                    in
-                    if shouldFetchMore then
-                        ( modelWithLoadingState, nextPageCmd )
-
-                    else
-                        -- No more pages to fetch, check if loading is complete and transition if needed
-                        checkIfLoadingComplete modelWithLoadingState
+                    processPaginatedResponse paginatedResponse 2 newModel
 
                 Immich.MoreImagesFetched page (Ok paginatedResponse) ->
-                    -- Auto-fetch next page if there are more assets
-                    let
-                        -- Clear loading state since we just received a response
-                        currentPaginationState1 =
-                            newModel.paginationState
-
-                        clearedPaginationState =
-                            { currentPaginationState1 | isLoadingMore = False }
-
-                        modelWithClearedLoading =
-                            { newModel | paginationState = clearedPaginationState }
-
-                        -- Use the paginatedResponse data directly, not the processed model
-                        newLoadedAssets =
-                            modelWithClearedLoading.paginationState.loadedAssets
-
-                        reachedLimit =
-                            newLoadedAssets >= modelWithClearedLoading.paginationState.maxAssetsToFetch
-
-                        shouldFetchMore =
-                            paginatedResponse.hasNextPage && not reachedLimit && modelWithClearedLoading.paginationState.currentQuery == Nothing
-
-                        modelWithLoadingState =
-                            if shouldFetchMore then
-                                let
-                                    ps =
-                                        modelWithClearedLoading.paginationState
-                                in
-                                { modelWithClearedLoading | paginationState = { ps | isLoadingMore = True } }
-
-                            else
-                                modelWithClearedLoading
-
-                        nextPageCmd =
-                            if shouldFetchMore then
-                                case modelWithClearedLoading.paginationState.currentConfig of
-                                    Just config ->
-                                        Immich.fetchImagesPaginated modelWithClearedLoading.immichApiPaths config 1000 (page + 1) |> Cmd.map ImmichMsg
-
-                                    Nothing ->
-                                        case modelWithClearedLoading.paginationState.currentQuery of
-                                            Just query ->
-                                                case modelWithClearedLoading.paginationState.currentSearchContext of
-                                                    Just searchContext ->
-                                                        Immich.searchAssetsPaginated modelWithClearedLoading.immichApiPaths searchContext query AllMedia AllStatuses 1000 (page + 1) |> Cmd.map ImmichMsg
-
-                                                    Nothing ->
-                                                        Immich.searchAssetsPaginated modelWithClearedLoading.immichApiPaths ContentSearch query AllMedia AllStatuses 1000 (page + 1) |> Cmd.map ImmichMsg
-
-                                            Nothing ->
-                                                case modelWithClearedLoading.paginationState.currentAlbumContext of
-                                                    Just albumCtx ->
-                                                        Immich.fetchAlbumAssetsPaginated modelWithClearedLoading.immichApiPaths albumCtx.albumId albumCtx.order albumCtx.mediaType albumCtx.status 1000 (page + 1) |> Cmd.map ImmichMsg
-
-                                                    Nothing ->
-                                                        Cmd.none
-
-                            else
-                                Cmd.none
-                    in
-                    if shouldFetchMore then
-                        ( modelWithLoadingState, nextPageCmd )
-
-                    else
-                        -- No more pages to fetch, check if loading is complete and transition if needed
-                        checkIfLoadingComplete modelWithLoadingState
+                    processPaginatedResponse paginatedResponse (page + 1) newModel
 
                 Immich.PaginatedImagesFetched (Err _) ->
                     checkIfLoadingComplete newModel
@@ -2302,6 +1945,74 @@ createLoadStateForCurrentAssetSource assetSource model =
 updateAlbumAssetCount : ImmichAlbumId -> Int -> Model -> Model
 updateAlbumAssetCount albumId countChange model =
     { model | knownAlbums = UpdateImmich.updateAlbumAssetCount albumId countChange model.knownAlbums }
+
+
+
+-- Helper to process paginated response and auto-fetch next page if needed
+
+
+processPaginatedResponse : Immich.PaginatedAssetResponse -> Int -> Model -> ( Model, Cmd Msg )
+processPaginatedResponse paginatedResponse nextPage model =
+    let
+        -- Clear loading state since we just received a response
+        ps =
+            model.paginationState
+
+        clearedPaginationState =
+            { ps | isLoadingMore = False }
+
+        modelWithClearedLoading =
+            { model | paginationState = clearedPaginationState }
+
+        newLoadedAssets =
+            modelWithClearedLoading.paginationState.loadedAssets
+
+        reachedLimit =
+            newLoadedAssets >= modelWithClearedLoading.paginationState.maxAssetsToFetch
+
+        shouldFetchMore =
+            paginatedResponse.hasNextPage && not reachedLimit && modelWithClearedLoading.paginationState.currentQuery == Nothing
+
+        modelWithLoadingState =
+            if shouldFetchMore then
+                { modelWithClearedLoading | paginationState = { clearedPaginationState | isLoadingMore = True } }
+
+            else
+                modelWithClearedLoading
+
+        nextPageCmd =
+            if shouldFetchMore then
+                case modelWithClearedLoading.paginationState.currentConfig of
+                    Just config ->
+                        Immich.fetchImagesPaginated modelWithClearedLoading.immichApiPaths config 1000 nextPage |> Cmd.map ImmichMsg
+
+                    Nothing ->
+                        case modelWithClearedLoading.paginationState.currentQuery of
+                            Just query ->
+                                case modelWithClearedLoading.paginationState.currentSearchContext of
+                                    Just searchContext ->
+                                        Immich.searchAssetsPaginated modelWithClearedLoading.immichApiPaths searchContext query AllMedia AllStatuses 1000 nextPage |> Cmd.map ImmichMsg
+
+                                    Nothing ->
+                                        Immich.searchAssetsPaginated modelWithClearedLoading.immichApiPaths ContentSearch query AllMedia AllStatuses 1000 nextPage |> Cmd.map ImmichMsg
+
+                            Nothing ->
+                                case modelWithClearedLoading.paginationState.currentAlbumContext of
+                                    Just albumCtx ->
+                                        Immich.fetchAlbumAssetsPaginated modelWithClearedLoading.immichApiPaths albumCtx.albumId albumCtx.order albumCtx.mediaType albumCtx.status 1000 nextPage |> Cmd.map ImmichMsg
+
+                                    Nothing ->
+                                        Cmd.none
+
+            else
+                Cmd.none
+    in
+    if shouldFetchMore then
+        ( modelWithLoadingState, nextPageCmd )
+
+    else
+        -- No more pages to fetch, check if loading is complete and transition if needed
+        checkIfLoadingComplete modelWithLoadingState
 
 
 
