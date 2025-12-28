@@ -13,7 +13,10 @@ import Html exposing (Html)
 import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImageSearchConfig, ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichAsset, ImmichAssetId, ImmichLoadState(..), MediaTypeFilter(..), SearchContext(..), StatusFilter(..), getAllAlbums, getImmichApiPaths)
 import Json.Decode as Decode
 import KeybindBranches exposing (generateAlbumKeybindings)
+import LoadState
 import Menus exposing (AlbumConfig, defaultAlbumConfig, defaultSearchConfig)
+import Navigation
+import Pagination
 import Process
 import Task
 import Theme exposing (DeviceClass(..), Theme(..))
@@ -21,6 +24,8 @@ import TitleHelpers exposing (createDetailedViewTitle, getMoveFromInfo)
 import Types exposing (AlbumPaginationContext, AssetSource(..), AssetSourceUpdate(..), ImageIndex, NavigationHistoryEntry, PaginationState, SourceLoadState, UserMode(..))
 import UpdateAlbums exposing (AlbumMsg)
 import UpdateAsset exposing (AssetMsg(..), AssetResult(..), AssetState(..), updateAsset)
+import UpdateConfig
+import UpdateImmich
 import UpdateMenus exposing (MenuMsg(..), MenuResult(..), MenuState(..), updateMenus)
 import ViewAlbums exposing (AlbumSearch, AssetWithActions, InputMode(..), PropertyChange(..))
 import ViewAsset exposing (TimeViewMode(..))
@@ -214,155 +219,116 @@ init flags =
 
 recordNavigationState : UserMode -> Model -> Model
 recordNavigationState newMode model =
-    case newMode of
-        ViewAssets _ ->
-            -- When entering ViewAssets, just clear forward queue (vim-style branching)
-            -- Don't add to back stack - that should only happen when LEAVING ViewAssets
-            { model | navigationForwardQueue = [] }
-
-        _ ->
-            -- Don't record MainMenu, LoadingAssets, etc.
-            model
-
-
-
--- Helper to set current navigation state after model is updated
+    let
+        navFields =
+            Navigation.clearForwardQueueForViewAssets newMode
+                { navigationBackStack = model.navigationBackStack
+                , currentNavigationState = model.currentNavigationState
+                , navigationForwardQueue = model.navigationForwardQueue
+                }
+    in
+    { model | navigationForwardQueue = navFields.navigationForwardQueue }
 
 
 setCurrentNavigationState : Model -> Model
 setCurrentNavigationState model =
-    case model.userMode of
-        ViewAssets _ ->
-            let
-                currentEntry =
-                    { userMode = model.userMode
-                    , currentAssetsSource = model.currentAssetsSource
-                    , currentAssets = model.currentAssets
-                    , imageIndex = model.imageIndex
-                    , paginationState = model.paginationState
-                    }
-            in
-            { model | currentNavigationState = Just currentEntry }
+    let
+        maybeEntry =
+            Navigation.createCurrentNavigationEntry
+                model.userMode
+                model.currentAssetsSource
+                model.currentAssets
+                model.imageIndex
+                model.paginationState
+    in
+    case maybeEntry of
+        Just entry ->
+            { model | currentNavigationState = Just entry }
 
-        _ ->
+        Nothing ->
             model
 
 
 updateCurrentHistoryEntry : Model -> Model
 updateCurrentHistoryEntry model =
-    -- Update the current navigation state with the latest imageIndex and state
-    -- Used when user navigates between assets in the same view
-    let
-        updatedCurrentState =
-            case model.currentNavigationState of
-                Just currentEntry ->
-                    Just
-                        { currentEntry
-                            | imageIndex = model.imageIndex
-                            , currentAssets = model.currentAssets
-                            , currentAssetsSource = model.currentAssetsSource
-                            , paginationState = model.paginationState
-                        }
-
-                Nothing ->
-                    -- Create new current state if none exists
-                    Just
-                        { userMode = model.userMode
-                        , currentAssetsSource = model.currentAssetsSource
-                        , currentAssets = model.currentAssets
-                        , imageIndex = model.imageIndex
-                        , paginationState = model.paginationState
-                        }
-    in
-    { model | currentNavigationState = updatedCurrentState }
+    { model
+        | currentNavigationState =
+            Navigation.updateCurrentEntry
+                model.currentNavigationState
+                model.userMode
+                model.currentAssetsSource
+                model.currentAssets
+                model.imageIndex
+                model.paginationState
+    }
 
 
 navigateHistoryBack : Model -> ( Model, Cmd Msg )
 navigateHistoryBack model =
-    case model.navigationBackStack of
-        previousEntry :: remainingBackStack ->
-            -- Pop from back stack, push current to forward queue
+    let
+        navFields =
+            { navigationBackStack = model.navigationBackStack
+            , currentNavigationState = model.currentNavigationState
+            , navigationForwardQueue = model.navigationForwardQueue
+            }
+    in
+    case Navigation.navigateBack navFields of
+        Navigation.NoHistory ->
+            ( model, Cmd.none )
+
+        Navigation.RestoredState result ->
             let
-                newForwardQueue =
-                    case model.currentNavigationState of
-                        Just currentEntry ->
-                            currentEntry :: model.navigationForwardQueue
-
-                        Nothing ->
-                            model.navigationForwardQueue
-
-                -- Restore the complete state
                 restoredModel =
                     { model
-                        | userMode = previousEntry.userMode
-                        , currentAssetsSource = previousEntry.currentAssetsSource
-                        , currentAssets = previousEntry.currentAssets
-                        , imageIndex = previousEntry.imageIndex
-                        , paginationState = previousEntry.paginationState
-                        , navigationBackStack = remainingBackStack
-                        , currentNavigationState = Just previousEntry
-                        , navigationForwardQueue = newForwardQueue
+                        | userMode = result.userMode
+                        , currentAssetsSource = result.currentAssetsSource
+                        , currentAssets = result.currentAssets
+                        , imageIndex = result.imageIndex
+                        , paginationState = result.paginationState
+                        , navigationBackStack = result.navFields.navigationBackStack
+                        , currentNavigationState = result.navFields.currentNavigationState
+                        , navigationForwardQueue = result.navFields.navigationForwardQueue
                     }
-
-                -- If restoring to ViewAssets, ensure the UI shows the correct asset
-                finalResult =
-                    case previousEntry.userMode of
-                        ViewAssets _ ->
-                            -- Trigger proper asset loading and UI refresh
-                            switchToAssetWithoutHistory restoredModel previousEntry.imageIndex
-
-                        _ ->
-                            ( restoredModel, Cmd.none )
             in
-            finalResult
+            if result.needsAssetSwitch then
+                switchToAssetWithoutHistory restoredModel result.assetIndex
 
-        [] ->
-            -- No history to go back to
-            ( model, Cmd.none )
+            else
+                ( restoredModel, Cmd.none )
 
 
 navigateHistoryForward : Model -> ( Model, Cmd Msg )
 navigateHistoryForward model =
-    case model.navigationForwardQueue of
-        nextEntry :: remainingForwardQueue ->
-            -- Pop from forward queue, push current to back stack
+    let
+        navFields =
+            { navigationBackStack = model.navigationBackStack
+            , currentNavigationState = model.currentNavigationState
+            , navigationForwardQueue = model.navigationForwardQueue
+            }
+    in
+    case Navigation.navigateForward navFields of
+        Navigation.NoHistory ->
+            ( model, Cmd.none )
+
+        Navigation.RestoredState result ->
             let
-                newBackStack =
-                    case model.currentNavigationState of
-                        Just currentEntry ->
-                            currentEntry :: model.navigationBackStack
-
-                        Nothing ->
-                            model.navigationBackStack
-
-                -- Restore the complete state
                 restoredModel =
                     { model
-                        | userMode = nextEntry.userMode
-                        , currentAssetsSource = nextEntry.currentAssetsSource
-                        , currentAssets = nextEntry.currentAssets
-                        , imageIndex = nextEntry.imageIndex
-                        , paginationState = nextEntry.paginationState
-                        , navigationBackStack = newBackStack
-                        , currentNavigationState = Just nextEntry
-                        , navigationForwardQueue = remainingForwardQueue
+                        | userMode = result.userMode
+                        , currentAssetsSource = result.currentAssetsSource
+                        , currentAssets = result.currentAssets
+                        , imageIndex = result.imageIndex
+                        , paginationState = result.paginationState
+                        , navigationBackStack = result.navFields.navigationBackStack
+                        , currentNavigationState = result.navFields.currentNavigationState
+                        , navigationForwardQueue = result.navFields.navigationForwardQueue
                     }
-
-                -- If restoring to ViewAssets, ensure the UI shows the correct asset
-                finalResult =
-                    case nextEntry.userMode of
-                        ViewAssets _ ->
-                            -- Trigger proper asset loading and UI refresh
-                            switchToAssetWithoutHistory restoredModel nextEntry.imageIndex
-
-                        _ ->
-                            ( restoredModel, Cmd.none )
             in
-            finalResult
+            if result.needsAssetSwitch then
+                switchToAssetWithoutHistory restoredModel result.assetIndex
 
-        [] ->
-            -- No forward history available
-            ( model, Cmd.none )
+            else
+                ( restoredModel, Cmd.none )
 
 
 view : Model -> Html Msg
@@ -1194,41 +1160,22 @@ update msg model =
             ( { model | reloadFeedback = Nothing }, Cmd.none )
 
         SaveConfig url apiKey ->
-            let
-                validation =
-                    validateConfig url apiKey model.envBaseUrl model.envApiKey
-
-                -- Use env defaults if fields are empty
-                finalUrl =
-                    if String.isEmpty (String.trim url) then
-                        model.envBaseUrl
-
-                    else
-                        url
-
-                finalApiKey =
-                    if String.isEmpty (String.trim apiKey) then
-                        model.envApiKey
-
-                    else
-                        apiKey
-            in
-            case validation of
-                Just errorMsg ->
+            case UpdateConfig.handleSaveConfig { url = url, apiKey = apiKey, envBaseUrl = model.envBaseUrl, envApiKey = model.envApiKey } of
+                UpdateConfig.ValidationError errorMsg ->
                     ( { model | configValidationMessage = Just errorMsg }, Cmd.none )
 
-                Nothing ->
+                UpdateConfig.ConfigValid result ->
                     ( { model
                         | configValidationMessage = Just "Saving configuration..."
-                        , configuredApiUrl = Just finalUrl
-                        , configuredApiKey = Just finalApiKey
-                        , baseUrl = finalUrl
-                        , apiKey = finalApiKey
-                        , immichApiPaths = getImmichApiPaths finalUrl finalApiKey
+                        , configuredApiUrl = Just result.finalUrl
+                        , configuredApiKey = Just result.finalApiKey
+                        , baseUrl = result.finalUrl
+                        , apiKey = result.finalApiKey
+                        , immichApiPaths = result.immichApiPaths
                       }
                     , Cmd.batch
-                        [ saveToStorage ( "immichApiUrl", finalUrl )
-                        , saveToStorage ( "immichApiKey", finalApiKey )
+                        [ saveToStorage ( "immichApiUrl", result.finalUrl )
+                        , saveToStorage ( "immichApiKey", result.finalApiKey )
                         , Process.sleep 1000
                             |> Task.perform (always (ConfigLoaded "saveSuccess" (Just "✅ Configuration saved successfully!")))
                         ]
@@ -1239,110 +1186,46 @@ update msg model =
 
         ConfigLoaded key maybeValue ->
             let
-                updatedModel =
-                    case key of
-                        "immichApiUrl" ->
-                            { model
-                                | configuredApiUrl = maybeValue
-                                , settingsApiUrl = maybeValue |> Maybe.withDefault model.settingsApiUrl
-                                , configValidationMessage =
-                                    if maybeValue /= Nothing then
-                                        Just "✅ Configuration saved successfully!"
-
-                                    else
-                                        Nothing
-                            }
-
-                        "immichApiKey" ->
-                            { model
-                                | configuredApiKey = maybeValue
-                                , settingsApiKey = maybeValue |> Maybe.withDefault model.settingsApiKey
-                                , configValidationMessage =
-                                    if maybeValue /= Nothing then
-                                        Just "✅ Configuration loaded from storage"
-
-                                    else
-                                        Nothing
-                            }
-
-                        "saveSuccess" ->
-                            { model
-                                | configValidationMessage = maybeValue
-                            }
-
-                        "clearSuccess" ->
-                            { model
-                                | configValidationMessage = Nothing
-                            }
-
-                        _ ->
-                            model
-
-                -- Use configured values if available, otherwise fall back to flags
-                finalUrl =
-                    updatedModel.configuredApiUrl
-                        |> Maybe.withDefault model.baseUrl
-
-                finalApiKey =
-                    updatedModel.configuredApiKey
-                        |> Maybe.withDefault model.apiKey
-
-                -- If we have both URL and API key configured, initialize Immich
-                shouldInitializeImmich =
-                    case ( updatedModel.configuredApiUrl, updatedModel.configuredApiKey ) of
-                        ( Just url, Just apiKey ) ->
-                            -- Both localStorage values loaded - use them
-                            True
-
-                        ( Nothing, Nothing ) ->
-                            -- Both localStorage values are empty - fall back to env variables if valid
-                            not (String.isEmpty finalUrl) && not (String.isEmpty finalApiKey)
-
-                        _ ->
-                            -- Only one localStorage value loaded - wait for the other one
-                            False
-
-                -- Check if credentials actually changed to determine if we need to reset albums
-                credentialsChanged =
-                    finalUrl /= model.baseUrl || finalApiKey /= model.apiKey
+                result =
+                    UpdateConfig.handleConfigLoaded
+                        { key = key
+                        , maybeValue = maybeValue
+                        , currentConfiguredApiUrl = model.configuredApiUrl
+                        , currentConfiguredApiKey = model.configuredApiKey
+                        , currentSettingsApiUrl = model.settingsApiUrl
+                        , currentSettingsApiKey = model.settingsApiKey
+                        , currentBaseUrl = model.baseUrl
+                        , currentApiKey = model.apiKey
+                        , knownAlbums = model.knownAlbums
+                        , albumKeybindings = model.albumKeybindings
+                        , albumsLoadState = model.albumsLoadState
+                        }
 
                 finalModel =
-                    { updatedModel
-                        | baseUrl = finalUrl
-                        , apiKey = finalApiKey
-                        , immichApiPaths = getImmichApiPaths finalUrl finalApiKey
-
-                        -- Clear albums if credentials changed to avoid mixing data from different accounts
-                        , knownAlbums =
-                            if credentialsChanged then
-                                Dict.empty
-
-                            else
-                                updatedModel.knownAlbums
-                        , albumKeybindings =
-                            if credentialsChanged then
-                                Dict.empty
-
-                            else
-                                updatedModel.albumKeybindings
-                        , albumsLoadState =
-                            if credentialsChanged then
-                                ImmichLoading
-
-                            else
-                                updatedModel.albumsLoadState
+                    { model
+                        | configuredApiUrl = result.configuredApiUrl
+                        , configuredApiKey = result.configuredApiKey
+                        , settingsApiUrl = result.settingsApiUrl
+                        , settingsApiKey = result.settingsApiKey
+                        , configValidationMessage = result.configValidationMessage
+                        , baseUrl = result.baseUrl
+                        , apiKey = result.apiKey
+                        , immichApiPaths = result.immichApiPaths
+                        , knownAlbums = result.knownAlbums
+                        , albumKeybindings = result.albumKeybindings
+                        , albumsLoadState = result.albumsLoadState
                     }
 
                 autoClearCmd =
-                    if key == "saveSuccess" && maybeValue /= Nothing then
+                    if result.shouldAutoClear then
                         Process.sleep 3000
                             |> Task.perform (always (ConfigLoaded "clearSuccess" Nothing))
 
                     else
                         Cmd.none
             in
-            if shouldInitializeImmich && model.albumsLoadState == ImmichLoading then
-                ( finalModel, Cmd.batch [ getAllAlbums finalUrl finalApiKey |> Cmd.map ImmichMsg, autoClearCmd ] )
+            if result.shouldInitializeImmich then
+                ( finalModel, Cmd.batch [ getAllAlbums result.baseUrl result.apiKey |> Cmd.map ImmichMsg, autoClearCmd ] )
 
             else
                 ( finalModel, autoClearCmd )
@@ -2326,49 +2209,32 @@ handleFetchAssetMembership assetWithMembership model =
 handleFetchAssets : List ImmichAsset -> Model -> Model
 handleFetchAssets assets model =
     let
-        -- Apply client-side sorting since Immich API doesn't respect orderBy properly
-        sortedAssets =
-            case model.paginationState.currentConfig of
-                Just config ->
-                    -- Apply sorting for timeline views
-                    applySortingToAssets config.order assets
+        result =
+            UpdateImmich.handleFetchAssetsResult
+                { assets = assets
+                , currentConfig = model.paginationState.currentConfig
+                , currentKnownAssets = model.knownAssets
+                , currentImageIndex = model.imageIndex
+                }
 
-                Nothing ->
-                    -- Keep original order for other views (album/search views handle sorting separately)
-                    assets
-    in
-    case model.paginationState.currentConfig of
-        Just _ ->
-            let
-                updatedModel =
-                    { model
-                        | knownAssets = Helpers.listOverrideDict sortedAssets (\a -> ( a.id, a )) model.knownAssets
-                        , currentAssets = List.map .id sortedAssets
-                        , imagesLoadState = ImmichLoadSuccess
-                        , imageIndex = 0
-
-                        -- Preserve paginationState - don't overwrite it
-                    }
-            in
-            -- Timeline view with sorting - jump to first asset and sync ViewAsset state
-            case model.userMode of
-                ViewAssets _ ->
-                    -- Currently viewing an asset, sync the view to show asset at index 0
-                    Tuple.first (switchToEditIfAssetFound updatedModel 0)
-
-                _ ->
-                    -- Not currently viewing an asset, just return updated model
-                    updatedModel
-
-        Nothing ->
-            -- No timeline sorting, preserve current index
+        updatedModel =
             { model
-                | knownAssets = Helpers.listOverrideDict sortedAssets (\a -> ( a.id, a )) model.knownAssets
-                , currentAssets = List.map .id sortedAssets
-                , imagesLoadState = ImmichLoadSuccess
-
-                -- Preserve paginationState - don't overwrite it
+                | knownAssets = result.knownAssets
+                , currentAssets = result.currentAssets
+                , imagesLoadState = result.imagesLoadState
+                , imageIndex = result.imageIndex
             }
+    in
+    if result.isTimelineView then
+        case model.userMode of
+            ViewAssets _ ->
+                Tuple.first (switchToEditIfAssetFound updatedModel 0)
+
+            _ ->
+                updatedModel
+
+    else
+        updatedModel
 
 
 
@@ -2379,66 +2245,27 @@ handleFetchAssets assets model =
 handleFetchAlbums : Bool -> List ImmichAlbum -> Model -> Model
 handleFetchAlbums showReloadFeedback albums model =
     let
-        updatedKnownAlbums =
-            Helpers.listOverrideDict albums (\a -> ( a.id, a )) model.knownAlbums
-
-        allAlbums =
-            Dict.values updatedKnownAlbums
-
-        albumKeybindings =
-            generateAlbumKeybindings allAlbums
-
-        albumCount =
-            List.length albums
-
-        isFirstLoad =
-            Dict.isEmpty model.knownAlbums
-
-        feedbackMessage =
-            if showReloadFeedback then
-                if albumCount > 0 then
-                    let
-                        actionText =
-                            if isFirstLoad then
-                                "Loaded"
-
-                            else
-                                "Reloaded"
-                    in
-                    Just (actionText ++ " " ++ String.fromInt albumCount ++ " albums")
-
-                else
-                    Just "No albums found"
-
-            else
-                model.reloadFeedback
+        result =
+            UpdateImmich.handleFetchAlbumsResult
+                { showReloadFeedback = showReloadFeedback
+                , albums = albums
+                , currentKnownAlbums = model.knownAlbums
+                , currentReloadFeedback = model.reloadFeedback
+                }
     in
     { model
-        | knownAlbums = updatedKnownAlbums
-        , albumsLoadState = ImmichLoadSuccess
-        , albumKeybindings = albumKeybindings
-        , reloadFeedback = feedbackMessage
+        | knownAlbums = result.knownAlbums
+        , albumsLoadState = result.albumsLoadState
+        , albumKeybindings = result.albumKeybindings
+        , reloadFeedback = result.reloadFeedback
     }
 
 
 handleUpdateLoadingState : AssetSourceUpdate -> Model -> Model
 handleUpdateLoadingState updateType model =
-    -- Use the event to update the Loading AssetLoadState
-    -- Check if all the flags are now good, if so call progressToEditMode
     case model.userMode of
         LoadingAssets loadState ->
-            let
-                updatedLoadState =
-                    case updateType of
-                        FetchedAssetList ->
-                            { loadState | fetchedAssetList = Just True }
-
-                -- FetchedAlbums ->
-                --     { loadState | fetchedAssetList = Just True }
-                updatedModel =
-                    { model | userMode = LoadingAssets updatedLoadState }
-            in
-            updatedModel
+            { model | userMode = LoadingAssets (LoadState.updateLoadStateForFetch updateType loadState) }
 
         _ ->
             model
@@ -2448,11 +2275,7 @@ checkIfLoadingComplete : Model -> ( Model, Cmd Msg )
 checkIfLoadingComplete model =
     case model.userMode of
         LoadingAssets loadState ->
-            let
-                isCompleted =
-                    isLoadStateCompleted loadState
-            in
-            if isCompleted then
+            if LoadState.isLoadStateCompleted loadState then
                 switchToEditIfAssetFound model 0
 
             else
@@ -2462,33 +2285,14 @@ checkIfLoadingComplete model =
             ( model, Cmd.none )
 
 
-isLoadStateCompleted : SourceLoadState -> Bool
-isLoadStateCompleted loadState =
-    isLoadCompletedForProp loadState.fetchedAssetList
-
-
-isLoadCompletedForProp : Maybe Bool -> Bool
-isLoadCompletedForProp maybeBool =
-    maybeBool == Nothing || maybeBool == Just True
-
-
 createLoadStateForCurrentAssetSource : AssetSource -> Model -> Model
 createLoadStateForCurrentAssetSource assetSource model =
-    case assetSource of
-        NoAssets ->
+    case LoadState.createInitialLoadState assetSource of
+        Nothing ->
             model
 
-        ImageSearch _ ->
-            { model | currentAssetsSource = assetSource, userMode = LoadingAssets { fetchedAssetList = Just False, fetchedAssetMembership = Nothing } }
-
-        Album _ ->
-            { model | currentAssetsSource = assetSource, userMode = LoadingAssets { fetchedAssetList = Just False, fetchedAssetMembership = Nothing } }
-
-        FilteredAlbum _ _ ->
-            { model | currentAssetsSource = assetSource, userMode = LoadingAssets { fetchedAssetList = Just False, fetchedAssetMembership = Nothing } }
-
-        TextSearch _ _ ->
-            { model | currentAssetsSource = assetSource, userMode = LoadingAssets { fetchedAssetList = Just False, fetchedAssetMembership = Nothing } }
+        Just loadState ->
+            { model | currentAssetsSource = assetSource, userMode = LoadingAssets loadState }
 
 
 
@@ -2497,20 +2301,7 @@ createLoadStateForCurrentAssetSource assetSource model =
 
 updateAlbumAssetCount : ImmichAlbumId -> Int -> Model -> Model
 updateAlbumAssetCount albumId countChange model =
-    let
-        updatedAlbums =
-            Dict.update albumId
-                (\maybeAlbum ->
-                    case maybeAlbum of
-                        Just album ->
-                            Just { album | assetCount = max 0 (album.assetCount + countChange) }
-
-                        Nothing ->
-                            Nothing
-                )
-                model.knownAlbums
-    in
-    { model | knownAlbums = updatedAlbums }
+    { model | knownAlbums = UpdateImmich.updateAlbumAssetCount albumId countChange model.knownAlbums }
 
 
 
@@ -2596,11 +2387,12 @@ switchToAssetWithoutHistory model index =
 
 getCurrentAssetWithActions : Model -> Maybe ( AssetWithActions, AlbumSearch )
 getCurrentAssetWithActions model =
-    model.currentAssets
-        |> List.drop model.imageIndex
-        |> List.head
-        |> Maybe.andThen (\id -> Dict.get id model.knownAssets)
-        |> Maybe.map (\asset -> ( ViewAlbums.getAssetWithActions asset, ViewAlbums.getAlbumSearchWithHeight "" model.knownAlbums model.screenHeight ))
+    Navigation.getCurrentAssetWithActions
+        model.currentAssets
+        model.imageIndex
+        model.knownAssets
+        model.knownAlbums
+        model.screenHeight
 
 
 
@@ -2609,91 +2401,41 @@ getCurrentAssetWithActions model =
 
 updatePaginationState : Immich.PaginatedAssetResponse -> Int -> Model -> Model
 updatePaginationState paginatedResponse page model =
-    let
-        newLoadedAssets =
-            model.paginationState.loadedAssets + paginatedResponse.count
-
-        reachedLimit =
-            newLoadedAssets >= model.paginationState.maxAssetsToFetch
-
-        hasMoreToLoad =
-            paginatedResponse.hasNextPage && not reachedLimit && model.paginationState.currentQuery == Nothing
-    in
     { model
         | paginationState =
-            { currentConfig = model.paginationState.currentConfig
-            , currentQuery = model.paginationState.currentQuery
-            , currentSearchContext = model.paginationState.currentSearchContext
-            , currentAlbumContext = model.paginationState.currentAlbumContext
-            , totalAssets = paginatedResponse.total
-            , currentPage = page
-            , hasMorePages = hasMoreToLoad
-            , isLoadingMore = model.paginationState.isLoadingMore -- Keep existing loading state
-            , loadedAssets = newLoadedAssets
-            , maxAssetsToFetch = model.paginationState.maxAssetsToFetch
-            }
+            Pagination.updatePaginationStateFromResponse paginatedResponse page model.paginationState
     }
 
 
 appendFetchedAssets : List ImmichAsset -> Model -> Model
 appendFetchedAssets newAssets model =
     let
-        updatedKnownAssets =
-            Helpers.listOverrideDict newAssets (\a -> ( a.id, a )) model.knownAssets
+        result =
+            Pagination.appendAssetsResult
+                newAssets
+                model.knownAssets
+                model.currentAssets
+                model.imageIndex
+                model.paginationState.currentConfig
 
-        existingAssetIds =
-            model.currentAssets
-
-        newAssetIds =
-            List.map .id newAssets
-
-        combinedAssetIds =
-            existingAssetIds ++ newAssetIds
-
-        -- Re-sort all assets if we're in timeline view (since Immich API doesn't sort properly)
-        finalAssetIds =
-            case model.paginationState.currentConfig of
-                Just config ->
-                    -- Get all assets and re-sort them
-                    let
-                        allAssets =
-                            combinedAssetIds
-                                |> List.filterMap (\id -> Dict.get id updatedKnownAssets)
-
-                        sortedAssets =
-                            applySortingToAssets config.order allAssets
-                    in
-                    List.map .id sortedAssets
-
-                Nothing ->
-                    combinedAssetIds
-    in
-    case model.paginationState.currentConfig of
-        Just _ ->
-            let
-                updatedModel =
-                    { model
-                        | knownAssets = updatedKnownAssets
-                        , currentAssets = finalAssetIds
-                        , imageIndex = 0
-                    }
-            in
-            -- Timeline view with re-sorting - jump to first asset and sync ViewAsset state
-            case model.userMode of
-                ViewAssets _ ->
-                    -- Currently viewing an asset, sync the view to show asset at index 0
-                    Tuple.first (switchToEditIfAssetFound updatedModel 0)
-
-                _ ->
-                    -- Not currently viewing an asset, just return updated model
-                    updatedModel
-
-        Nothing ->
-            -- No timeline re-sorting, preserve current index
+        updatedModel =
             { model
-                | knownAssets = updatedKnownAssets
-                , currentAssets = finalAssetIds
+                | knownAssets = result.knownAssets
+                , currentAssets = result.currentAssets
+                , imageIndex = result.imageIndex
             }
+    in
+    -- For timeline views, sync ViewAsset state if currently viewing an asset
+    if result.isTimelineView then
+        case model.userMode of
+            ViewAssets _ ->
+                Tuple.first (switchToEditIfAssetFound updatedModel 0)
+
+            _ ->
+                updatedModel
+
+    else
+        updatedModel
 
 
 
