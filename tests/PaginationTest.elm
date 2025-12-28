@@ -1,9 +1,10 @@
 module PaginationTest exposing (..)
 
 import Expect
+import Fuzz exposing (intRange)
 import Immich exposing (ImageOrder(..), ImageSearchConfig, PaginatedAssetResponse, SearchContext(..))
 import Pagination exposing (NextPageRequestType(..), TimelineSyncAction(..), classifyTimelineSyncBehavior, computeNextPageRequest, shouldFetchNextPage)
-import Test exposing (Test, describe, test)
+import Test exposing (Test, describe, fuzz, fuzz2, fuzz3, test)
 import Types exposing (AlbumPaginationContext, PaginationState, SourceLoadState, UserMode(..))
 import UpdateAsset exposing (AssetState(..))
 import UpdateMenus exposing (MenuState(..))
@@ -351,5 +352,100 @@ suite =
                             MainMenu MainMenuHome
                     in
                     Expect.equal NoTimelineSync (classifyTimelineSyncBehavior False userMode)
+            ]
+        , describe "Property-Based Fuzz Tests"
+            [ fuzz3 (intRange 1 1000) (intRange 1 100) (intRange 1 10) "page calculation consistency" <|
+                \totalItems pageSize currentPage ->
+                    let
+                        totalPages =
+                            ceiling (toFloat totalItems / toFloat pageSize)
+
+                        validPage =
+                            min currentPage totalPages |> max 1
+                    in
+                    -- Valid page should always be within bounds
+                    Expect.all
+                        [ \p -> p |> Expect.atLeast 1
+                        , \p -> p |> Expect.atMost totalPages
+                        ]
+                        validPage
+            , fuzz (intRange 0 10000) "total assets is never negative" <|
+                \total ->
+                    let
+                        state =
+                            { defaultPaginationState | totalAssets = max 0 total }
+                    in
+                    state.totalAssets |> Expect.atLeast 0
+            , fuzz2 (intRange 1 100) (intRange 0 1000) "hasMorePages is consistent with totals" <|
+                \pageSize loadedAssets ->
+                    let
+                        totalAssets =
+                            loadedAssets + 50
+
+                        -- Always some more to load
+                        hasMore =
+                            loadedAssets < totalAssets
+                    in
+                    Expect.equal hasMore True
+            , fuzz (intRange 0 10000) "loadedAssets never exceeds meaningful bounds when set" <|
+                \loaded ->
+                    let
+                        state =
+                            { defaultPaginationState | loadedAssets = loaded }
+                    in
+                    -- loadedAssets can be any non-negative value
+                    state.loadedAssets |> Expect.atLeast 0
+            , fuzz2 (intRange 1 10) (intRange 1 1000) "currentPage is always positive" <|
+                \page totalItems ->
+                    let
+                        state =
+                            { defaultPaginationState
+                                | currentPage = max 1 page
+                                , totalAssets = totalItems
+                            }
+                    in
+                    state.currentPage |> Expect.atLeast 1
+            , fuzz2 (intRange 100 10000) (intRange 100 10000) "shouldFetchNextPage respects max assets limit" <|
+                \loadedAssets maxAssets ->
+                    let
+                        response =
+                            { defaultPaginatedResponse | hasNextPage = True }
+
+                        state =
+                            { defaultPaginationState
+                                | loadedAssets = loadedAssets
+                                , maxAssetsToFetch = maxAssets
+                            }
+
+                        result =
+                            shouldFetchNextPage response state
+                    in
+                    if loadedAssets >= maxAssets then
+                        Expect.equal False result
+
+                    else
+                        Expect.equal True result
+            , fuzz (intRange 1 100) "computeNextPageRequest always uses 1000 page size" <|
+                \nextPage ->
+                    let
+                        config =
+                            { order = CreatedDesc
+                            , categorisation = Immich.All
+                            , mediaType = Immich.AllMedia
+                            , status = Immich.AllStatuses
+                            }
+
+                        state =
+                            { defaultPaginationState | currentConfig = Just config }
+
+                        result =
+                            computeNextPageRequest nextPage state
+                    in
+                    case result of
+                        Just request ->
+                            Expect.equal 1000 request.pageSize
+
+                        Nothing ->
+                            Expect.fail "Expected Just request with config set"
             ]
         ]

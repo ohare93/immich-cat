@@ -1,6 +1,5 @@
 module Types exposing
     ( AlbumPaginationContext
-    , AssetSource(..)
     , AssetSourceUpdate(..)
     , ImageIndex
     , NavigationHistoryEntry
@@ -9,6 +8,7 @@ module Types exposing
     , UserMode(..)
     )
 
+import AssetSourceTypes exposing (AssetSource(..))
 import Immich exposing (ImageOrder, ImageSearchConfig, ImmichAlbum, ImmichAlbumId, ImmichAssetId, MediaTypeFilter, SearchContext, StatusFilter)
 import Menus exposing (AlbumConfig)
 import UpdateAsset exposing (AssetState)
@@ -45,16 +45,6 @@ type alias PaginationState =
     , loadedAssets : Int
     , maxAssetsToFetch : Int
     }
-
-
-{-| Source of the current assets being viewed
--}
-type AssetSource
-    = NoAssets
-    | ImageSearch ImageSearchConfig
-    | TextSearch String SearchContext
-    | Album ImmichAlbum
-    | FilteredAlbum ImmichAlbum AlbumConfig
 
 
 {-| Loading state for asset sources

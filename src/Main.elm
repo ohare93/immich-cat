@@ -1,6 +1,7 @@
 port module Main exposing (main)
 
 import AssetNavigation
+import AssetSourceTypes exposing (AssetSource(..))
 import Browser exposing (element)
 import Browser.Events exposing (onKeyDown, onKeyUp, onResize, onVisibilityChange)
 import Date
@@ -8,6 +9,7 @@ import Dict exposing (Dict)
 import Element exposing (Element, alignRight, alignTop, clipY, column, el, fill, fillPortion, height, minimum, paddingXY, px, row, text, width)
 import Element.Background as Background
 import Element.Font as Font
+import HandleImmichMsg
 import HelpText exposing (AlbumBrowseState(..), ViewContext(..), viewContextHelp)
 import Helpers exposing (applySortingToAssets, filterByMediaType, filterByStatus, validateConfig)
 import Html exposing (Html)
@@ -24,7 +26,7 @@ import ProcessImmichMsg
 import Task
 import Theme exposing (DeviceClass(..), Theme(..))
 import TitleHelpers exposing (createDetailedViewTitle, getMoveFromInfo)
-import Types exposing (AlbumPaginationContext, AssetSource(..), AssetSourceUpdate(..), ImageIndex, NavigationHistoryEntry, PaginationState, SourceLoadState, UserMode(..))
+import Types exposing (AlbumPaginationContext, AssetSourceUpdate(..), ImageIndex, NavigationHistoryEntry, PaginationState, SourceLoadState, UserMode(..))
 import UpdateAlbums exposing (AlbumMsg)
 import UpdateAsset exposing (AssetMsg(..), AssetResult(..), AssetState(..), updateAsset)
 import UpdateAssetResult
@@ -471,6 +473,121 @@ viewInputMode userMode theme =
 
 
 -- UPDATE --
+-- Helper to convert UpdateConfig.PortCmd to actual Cmd values
+
+
+portCmdToCmd : UpdateConfig.PortCmd Msg -> Cmd Msg
+portCmdToCmd portCmd =
+    case portCmd of
+        UpdateConfig.SaveToStorage key value ->
+            saveToStorage ( key, value )
+
+        UpdateConfig.LoadFromStorage key ->
+            loadFromStorage key
+
+        UpdateConfig.ClearStorage ->
+            clearStorage ()
+
+        UpdateConfig.ScheduleConfigLoaded delayMs key maybeValue msg ->
+            Process.sleep (toFloat delayMs)
+                |> Task.perform (always msg)
+
+
+
+-- Helper to extract ConfigContext from Model
+
+
+getConfigContext : Model -> UpdateConfig.ConfigContext
+getConfigContext model =
+    { envBaseUrl = model.envBaseUrl
+    , envApiKey = model.envApiKey
+    , configuredApiUrl = model.configuredApiUrl
+    , configuredApiKey = model.configuredApiKey
+    , settingsApiUrl = model.settingsApiUrl
+    , settingsApiKey = model.settingsApiKey
+    , baseUrl = model.baseUrl
+    , apiKey = model.apiKey
+    , immichApiPaths = model.immichApiPaths
+    , knownAlbums = model.knownAlbums
+    , albumKeybindings = model.albumKeybindings
+    , albumsLoadState = model.albumsLoadState
+    , configValidationMessage = model.configValidationMessage
+    }
+
+
+
+-- Helper to apply ConfigContext back to Model
+
+
+applyConfigContext : UpdateConfig.ConfigContext -> Model -> Model
+applyConfigContext context model =
+    { model
+        | configuredApiUrl = context.configuredApiUrl
+        , configuredApiKey = context.configuredApiKey
+        , settingsApiUrl = context.settingsApiUrl
+        , settingsApiKey = context.settingsApiKey
+        , configValidationMessage = context.configValidationMessage
+        , baseUrl = context.baseUrl
+        , apiKey = context.apiKey
+        , immichApiPaths = context.immichApiPaths
+        , knownAlbums = context.knownAlbums
+        , albumKeybindings = context.albumKeybindings
+        , albumsLoadState = context.albumsLoadState
+    }
+
+
+
+-- Helper to handle config messages using UpdateConfig module
+
+
+handleConfigMessage : UpdateConfig.ConfigMsg -> Model -> ( Model, Cmd Msg )
+handleConfigMessage configMsg model =
+    let
+        context =
+            getConfigContext model
+
+        result =
+            UpdateConfig.handleConfigMsg
+                (\innerConfigMsg ->
+                    case innerConfigMsg of
+                        UpdateConfig.SaveConfigMsg url apiKey ->
+                            SaveConfig url apiKey
+
+                        UpdateConfig.LoadConfigMsg key ->
+                            LoadConfig key
+
+                        UpdateConfig.ConfigLoadedMsg key maybeValue ->
+                            ConfigLoaded key maybeValue
+
+                        UpdateConfig.ClearConfigMsg ->
+                            ClearConfig
+
+                        UpdateConfig.UpdateApiUrlMsg url ->
+                            UpdateSettingsApiUrl url
+
+                        UpdateConfig.UpdateApiKeyMsg apiKey ->
+                            UpdateSettingsApiKey apiKey
+                )
+                configMsg
+                context
+
+        updatedModel =
+            applyConfigContext result.context model
+
+        portCmds =
+            List.map portCmdToCmd result.portCmds
+
+        immichCmd =
+            if result.shouldInitializeImmich then
+                Immich.getAllAlbums result.context.baseUrl result.context.apiKey |> Cmd.map ImmichMsg
+
+            else
+                Cmd.none
+    in
+    ( updatedModel, Cmd.batch (immichCmd :: portCmds) )
+
+
+
 -- Helper to apply MenuState updates (reduces boilerplate for config changes)
 
 
@@ -826,23 +943,6 @@ handleAssetResult assetResult model =
             ( model, Cmd.none )
 
 
-
--- Helper to convert UpdateMenus.AssetSource to Main.AssetSource
-
-
-convertMenuAssetSource : UpdateMenus.AssetSource -> AssetSource
-convertMenuAssetSource menuAssetSource =
-    case menuAssetSource of
-        UpdateMenus.ImageSearch config ->
-            ImageSearch config
-
-        UpdateMenus.TextSearch query searchContext ->
-            TextSearch query searchContext
-
-        UpdateMenus.FilteredAlbum album config ->
-            FilteredAlbum album config
-
-
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
@@ -853,97 +953,22 @@ update msg model =
             ( { model | reloadFeedback = Nothing }, Cmd.none )
 
         SaveConfig url apiKey ->
-            case UpdateConfig.handleSaveConfig { url = url, apiKey = apiKey, envBaseUrl = model.envBaseUrl, envApiKey = model.envApiKey } of
-                UpdateConfig.ValidationError errorMsg ->
-                    ( { model | configValidationMessage = Just errorMsg }, Cmd.none )
-
-                UpdateConfig.ConfigValid result ->
-                    ( { model
-                        | configValidationMessage = Just "Saving configuration..."
-                        , configuredApiUrl = Just result.finalUrl
-                        , configuredApiKey = Just result.finalApiKey
-                        , baseUrl = result.finalUrl
-                        , apiKey = result.finalApiKey
-                        , immichApiPaths = result.immichApiPaths
-                      }
-                    , Cmd.batch
-                        [ saveToStorage ( "immichApiUrl", result.finalUrl )
-                        , saveToStorage ( "immichApiKey", result.finalApiKey )
-                        , Process.sleep 1000
-                            |> Task.perform (always (ConfigLoaded "saveSuccess" (Just "✅ Configuration saved successfully!")))
-                        ]
-                    )
+            handleConfigMessage (UpdateConfig.SaveConfigMsg url apiKey) model
 
         LoadConfig key ->
-            ( model, loadFromStorage key )
+            handleConfigMessage (UpdateConfig.LoadConfigMsg key) model
 
         ConfigLoaded key maybeValue ->
-            let
-                result =
-                    UpdateConfig.handleConfigLoaded
-                        { key = key
-                        , maybeValue = maybeValue
-                        , currentConfiguredApiUrl = model.configuredApiUrl
-                        , currentConfiguredApiKey = model.configuredApiKey
-                        , currentSettingsApiUrl = model.settingsApiUrl
-                        , currentSettingsApiKey = model.settingsApiKey
-                        , currentBaseUrl = model.baseUrl
-                        , currentApiKey = model.apiKey
-                        , knownAlbums = model.knownAlbums
-                        , albumKeybindings = model.albumKeybindings
-                        , albumsLoadState = model.albumsLoadState
-                        }
-
-                finalModel =
-                    { model
-                        | configuredApiUrl = result.configuredApiUrl
-                        , configuredApiKey = result.configuredApiKey
-                        , settingsApiUrl = result.settingsApiUrl
-                        , settingsApiKey = result.settingsApiKey
-                        , configValidationMessage = result.configValidationMessage
-                        , baseUrl = result.baseUrl
-                        , apiKey = result.apiKey
-                        , immichApiPaths = result.immichApiPaths
-                        , knownAlbums = result.knownAlbums
-                        , albumKeybindings = result.albumKeybindings
-                        , albumsLoadState = result.albumsLoadState
-                    }
-
-                autoClearCmd =
-                    if result.shouldAutoClear then
-                        Process.sleep 3000
-                            |> Task.perform (always (ConfigLoaded "clearSuccess" Nothing))
-
-                    else
-                        Cmd.none
-            in
-            if result.shouldInitializeImmich then
-                ( finalModel, Cmd.batch [ getAllAlbums result.baseUrl result.apiKey |> Cmd.map ImmichMsg, autoClearCmd ] )
-
-            else
-                ( finalModel, autoClearCmd )
+            handleConfigMessage (UpdateConfig.ConfigLoadedMsg key maybeValue) model
 
         ClearConfig ->
-            ( { model
-                | configuredApiUrl = Nothing
-                , configuredApiKey = Nothing
-                , settingsApiUrl = model.envBaseUrl
-                , settingsApiKey = model.envApiKey
-                , configValidationMessage = Nothing
-
-                -- Clear albums when clearing config to avoid mixing data
-                , knownAlbums = Dict.empty
-                , albumKeybindings = Dict.empty
-                , albumsLoadState = ImmichLoading
-              }
-            , clearStorage ()
-            )
+            handleConfigMessage UpdateConfig.ClearConfigMsg model
 
         UpdateSettingsApiUrl url ->
-            ( { model | settingsApiUrl = url, configValidationMessage = Nothing }, Cmd.none )
+            handleConfigMessage (UpdateConfig.UpdateApiUrlMsg url) model
 
         UpdateSettingsApiKey apiKey ->
-            ( { model | settingsApiKey = apiKey, configValidationMessage = Nothing }, Cmd.none )
+            handleConfigMessage (UpdateConfig.UpdateApiKeyMsg apiKey) model
 
         SelectAlbum album ->
             case model.userMode of
@@ -1208,148 +1233,33 @@ update msg model =
 
         ImmichMsg imsg ->
             let
+                context =
+                    { immichApiPaths = model.immichApiPaths
+                    , knownAssets = model.knownAssets
+                    , knownAlbums = model.knownAlbums
+                    , albumKeybindings = model.albumKeybindings
+                    , pendingAlbumChanges = model.pendingAlbumChanges
+                    , userMode = model.userMode
+                    , imageIndex = model.imageIndex
+                    , currentAssets = model.currentAssets
+                    , paginationState = model.paginationState
+                    , reloadFeedback = model.reloadFeedback
+                    , imagesLoadState = model.imagesLoadState
+                    , albumsLoadState = model.albumsLoadState
+                    , currentAssetsSource = model.currentAssetsSource
+                    , screenHeight = model.screenHeight
+                    }
+
+                result =
+                    HandleImmichMsg.handleImmichMsg ImmichMsg imsg context
+
                 newModel =
-                    case imsg of
-                        Immich.SingleAlbumFetched (Ok album) ->
-                            model
-                                |> handleFetchAlbums False [ album ]
-                                |> handleFetchAssets album.assets
-                                -- |> handleProgressLoadingState FetchedAlbums
-                                |> handleUpdateLoadingState FetchedAssetList
-
-                        Immich.AlbumsFetched (Ok albums) ->
-                            let
-                                updatedModel =
-                                    model |> handleFetchAlbums True albums
-                            in
-                            updatedModel
-
-                        Immich.AlbumCreated (Ok album) ->
-                            let
-                                updatedModel =
-                                    model
-                                        |> handleFetchAlbums False [ album ]
-                            in
-                            updatedModel
-
-                        -- |> handleProgressLoadingState FetchedAlbums
-                        Immich.ImagesFetched (Ok assets) ->
-                            let
-                                updatedModel =
-                                    model
-                                        |> handleFetchAssets assets
-                                        |> handleUpdateLoadingState FetchedAssetList
-                            in
-                            updatedModel
-
-                        Immich.PaginatedImagesFetched (Ok paginatedResponse) ->
-                            let
-                                afterFetch =
-                                    model |> handleFetchAssets paginatedResponse.assets
-
-                                afterUpdate =
-                                    afterFetch |> handleUpdateLoadingState FetchedAssetList
-
-                                finalModel =
-                                    afterUpdate |> updatePaginationState paginatedResponse 1
-                            in
-                            finalModel
-
-                        Immich.MoreImagesFetched page (Ok paginatedResponse) ->
-                            model
-                                |> appendFetchedAssets paginatedResponse.assets
-                                |> updatePaginationState paginatedResponse page
-
-                        Immich.AssetMembershipFetched (Ok assetWithMembership) ->
-                            model
-                                |> handleFetchAssetMembership assetWithMembership
-
-                        Immich.AssetMembershipFetched (Err httpError) ->
-                            -- Asset membership fetch failed - log error and continue
-                            { model | reloadFeedback = Just ("Album membership fetch failed: " ++ Immich.errorToString httpError) }
-
-                        Immich.AlbumFetchedWithClientSideFiltering _ _ _ (Ok album) ->
-                            -- Album fetched without assets - store album info and trigger paginated asset fetch
-                            model
-                                |> handleFetchAlbums False [ album ]
-
-                        Immich.AlbumFetchedWithClientSideFiltering _ _ _ (Err error) ->
-                            { model | imagesLoadState = ImmichLoadError error }
-
-                        Immich.AssetUpdated (Ok updatedAsset) ->
-                            { model | knownAssets = Dict.insert updatedAsset.id updatedAsset model.knownAssets }
-
-                        Immich.BulkAssetsUpdated (Ok updatedAssets) ->
-                            -- Update all bulk updated assets in knownAssets
-                            let
-                                updatedKnownAssets =
-                                    List.foldl
-                                        (\asset acc -> Dict.insert asset.id asset acc)
-                                        model.knownAssets
-                                        updatedAssets
-                            in
-                            { model | knownAssets = updatedKnownAssets }
-
-                        Immich.AlbumsFetched (Err error) ->
-                            { model | albumsLoadState = ImmichLoadError error }
-
-                        Immich.AlbumCreated (Err error) ->
-                            case model.userMode of
-                                LoadingAssets _ ->
-                                    getCurrentAssetWithActions model
-                                        |> Maybe.map (\( assetWithActions, search ) -> { model | userMode = ViewAssets (EditAsset NormalMode assetWithActions search) })
-                                        |> Maybe.withDefault model
-
-                                _ ->
-                                    model
-
-                        Immich.ImagesFetched (Err error) ->
-                            { model | imagesLoadState = ImmichLoadError error }
-
-                        Immich.PaginatedImagesFetched (Err error) ->
-                            { model | imagesLoadState = ImmichLoadError error }
-
-                        Immich.MoreImagesFetched _ (Err error) ->
-                            { model | imagesLoadState = ImmichLoadError error }
-
-                        _ ->
-                            model
+                    applyImmichContext result.updatedContext model
             in
+            -- Handle special cases that need Main.elm functions
             case imsg of
-                Immich.AlbumAssetsChanged (Ok _) ->
-                    -- Album membership change succeeded - use pure function to compute updates
-                    let
-                        result =
-                            ProcessImmichMsg.processAlbumChangeSuccess
-                                newModel.pendingAlbumChanges
-                                newModel.userMode
-
-                        modelWithCount =
-                            case result.albumCountUpdate of
-                                Just ( albumId, countChange ) ->
-                                    updateAlbumAssetCount albumId countChange newModel
-
-                                Nothing ->
-                                    newModel
-
-                        updatedModel =
-                            { modelWithCount | pendingAlbumChanges = result.updatedPendingChanges }
-
-                        membershipCmd =
-                            case result.assetIdForMembership of
-                                Just assetId ->
-                                    Immich.fetchMembershipForAsset updatedModel.immichApiPaths assetId |> Cmd.map ImmichMsg
-
-                                Nothing ->
-                                    Cmd.none
-                    in
-                    ( updatedModel, membershipCmd )
-
-                Immich.AlbumAssetsChanged (Err _) ->
-                    -- Album membership change failed, clear all pending changes and re-fetch to get correct state
-                    switchToEditIfAssetFound { model | pendingAlbumChanges = [] } model.imageIndex
-
                 Immich.AlbumsFetched (Ok albums) ->
+                    -- Add clear feedback command
                     let
                         clearFeedbackCmd =
                             if newModel.reloadFeedback /= Nothing then
@@ -1358,62 +1268,104 @@ update msg model =
                             else
                                 Cmd.none
                     in
-                    ( newModel, clearFeedbackCmd )
+                    ( newModel, Cmd.batch [ result.cmd, clearFeedbackCmd ] )
 
-                Immich.AlbumCreated (Ok album) ->
-                    -- Auto-add current asset to newly created album
-                    case model.userMode of
-                        LoadingAssets _ ->
-                            getCurrentAssetWithActions newModel
-                                |> Maybe.map
-                                    (\( assetWithActions, _ ) ->
-                                        let
-                                            result =
-                                                ProcessImmichMsg.processAlbumCreatedSuccess
-                                                    album
-                                                    assetWithActions
-                                                    newModel.knownAlbums
-
-                                            updatedModel =
-                                                { newModel
-                                                    | userMode = ViewAssets (EditAsset NormalMode result.updatedAsset result.newSearch)
-                                                    , pendingAlbumChanges = [ result.pendingChange ]
-                                                }
-
-                                            addToAlbumCmd =
-                                                Immich.albumChangeAssetMembership newModel.immichApiPaths album.id [ assetWithActions.asset.id ] True
-                                                    |> Cmd.map ImmichMsg
-                                        in
-                                        ( updatedModel, addToAlbumCmd )
-                                    )
-                                |> Maybe.withDefault ( newModel, Cmd.none )
-
-                        _ ->
-                            ( newModel, Cmd.none )
+                Immich.AlbumAssetsChanged (Err _) ->
+                    -- Album membership change failed, clear all pending changes and re-fetch to get correct state
+                    switchToEditIfAssetFound newModel model.imageIndex
 
                 Immich.PaginatedImagesFetched (Ok paginatedResponse) ->
-                    processPaginatedResponse paginatedResponse 2 newModel
+                    -- Handle both pagination AND timeline sync
+                    let
+                        modelWithTimelineSync =
+                            case Pagination.classifyTimelineSyncBehavior (newModel.paginationState.currentConfig /= Nothing) newModel.userMode of
+                                Pagination.SyncTimelineView ->
+                                    Tuple.first (switchToEditIfAssetFound newModel 0)
+
+                                Pagination.NoTimelineSync ->
+                                    newModel
+
+                        ( modelAfterPagination, paginationCmd ) =
+                            processPaginatedResponse paginatedResponse 2 modelWithTimelineSync
+                    in
+                    ( modelAfterPagination, Cmd.batch [ result.cmd, paginationCmd ] )
 
                 Immich.MoreImagesFetched page (Ok paginatedResponse) ->
-                    processPaginatedResponse paginatedResponse (page + 1) newModel
+                    -- Handle both pagination AND timeline sync
+                    let
+                        modelWithTimelineSync =
+                            case Pagination.classifyTimelineSyncBehavior (newModel.paginationState.currentConfig /= Nothing) newModel.userMode of
+                                Pagination.SyncTimelineView ->
+                                    Tuple.first (switchToEditIfAssetFound newModel 0)
+
+                                Pagination.NoTimelineSync ->
+                                    newModel
+
+                        ( modelAfterPagination, paginationCmd ) =
+                            processPaginatedResponse paginatedResponse (page + 1) modelWithTimelineSync
+                    in
+                    ( modelAfterPagination, Cmd.batch [ result.cmd, paginationCmd ] )
 
                 Immich.PaginatedImagesFetched (Err _) ->
-                    checkIfLoadingComplete newModel
+                    let
+                        ( modelAfterCheck, checkCmd ) =
+                            checkIfLoadingComplete newModel
+                    in
+                    ( modelAfterCheck, Cmd.batch [ result.cmd, checkCmd ] )
 
                 Immich.MoreImagesFetched _ (Err _) ->
-                    checkIfLoadingComplete newModel
-
-                Immich.AlbumFetchedWithClientSideFiltering order mediaType status (Ok album) ->
-                    -- Trigger paginated fetch for album assets
                     let
-                        fetchCmd =
-                            Immich.fetchAlbumAssetsWithFilters newModel.immichApiPaths album.id order mediaType status
-                                |> Cmd.map ImmichMsg
+                        ( modelAfterCheck, checkCmd ) =
+                            checkIfLoadingComplete newModel
                     in
-                    ( newModel, fetchCmd )
+                    ( modelAfterCheck, Cmd.batch [ result.cmd, checkCmd ] )
+
+                Immich.SingleAlbumFetched (Ok album) ->
+                    -- Need to handle timeline sync for assets
+                    let
+                        modelWithTimelineSync =
+                            case Pagination.classifyTimelineSyncBehavior (newModel.paginationState.currentConfig /= Nothing) newModel.userMode of
+                                Pagination.SyncTimelineView ->
+                                    Tuple.first (switchToEditIfAssetFound newModel 0)
+
+                                Pagination.NoTimelineSync ->
+                                    newModel
+                    in
+                    ( modelWithTimelineSync, result.cmd )
+
+                Immich.ImagesFetched (Ok assets) ->
+                    -- Need to handle timeline sync for assets
+                    let
+                        modelWithTimelineSync =
+                            case Pagination.classifyTimelineSyncBehavior (newModel.paginationState.currentConfig /= Nothing) newModel.userMode of
+                                Pagination.SyncTimelineView ->
+                                    Tuple.first (switchToEditIfAssetFound newModel 0)
+
+                                Pagination.NoTimelineSync ->
+                                    newModel
+                    in
+                    ( modelWithTimelineSync, result.cmd )
 
                 _ ->
-                    checkIfLoadingComplete newModel
+                    ( newModel, result.cmd )
+
+
+applyImmichContext : HandleImmichMsg.ImmichMsgContext -> Model -> Model
+applyImmichContext context model =
+    { model
+        | knownAssets = context.knownAssets
+        , knownAlbums = context.knownAlbums
+        , albumKeybindings = context.albumKeybindings
+        , pendingAlbumChanges = context.pendingAlbumChanges
+        , userMode = context.userMode
+        , imageIndex = context.imageIndex
+        , currentAssets = context.currentAssets
+        , paginationState = context.paginationState
+        , reloadFeedback = context.reloadFeedback
+        , imagesLoadState = context.imagesLoadState
+        , albumsLoadState = context.albumsLoadState
+        , currentAssetsSource = context.currentAssetsSource
+    }
 
 
 handleFetchAssetMembership : Immich.AssetWithMembership -> Model -> Model

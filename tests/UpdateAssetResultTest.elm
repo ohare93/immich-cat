@@ -1,16 +1,19 @@
 module UpdateAssetResultTest exposing (..)
 
+import AssetSourceTypes exposing (AssetSource(..))
 import Date
 import Dict
 import Expect
+import Fuzz exposing (Fuzzer)
 import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImageSearchConfig, ImmichAlbum, ImmichAsset, ImmichAssetId, MediaTypeFilter(..), SearchContext(..), StatusFilter(..))
 import Menus exposing (AlbumConfig, defaultAlbumConfig)
-import Test exposing (Test, describe, test)
-import Types exposing (AssetSource(..), ImageIndex, PaginationState, UserMode(..))
+import Test exposing (Test, describe, fuzz, test)
+import TestGenerators
+import Types exposing (ImageIndex, PaginationState, UserMode(..))
 import UpdateAsset exposing (AssetResult(..), AssetState(..))
-import UpdateAssetResult exposing (AssetResultAction(..), processAssetResult)
+import UpdateAssetResult exposing (AssetResultAction(..), processAssetResult, processToggleAlbumMembership)
 import UpdateMenus exposing (MenuState(..))
-import ViewAlbums exposing (AssetWithActions, InputMode(..), PropertyChange(..))
+import ViewAlbums exposing (AssetWithActions, InputMode(..), PropertyChange(..), flipPropertyChange)
 import ViewAsset exposing (TimeViewMode(..))
 import ViewGrid
 
@@ -140,6 +143,20 @@ editAssetContext asset =
         | userMode = ViewAssets (EditAsset NormalMode asset defaultAlbumSearch)
         , currentAssets = [ asset.asset.id ]
     }
+
+
+{-| Toggle favorite state of an AssetWithActions
+-}
+toggleFavorite : AssetWithActions -> AssetWithActions
+toggleFavorite asset =
+    { asset | isFavourite = flipPropertyChange asset.isFavourite }
+
+
+{-| Toggle archived state of an AssetWithActions
+-}
+toggleArchived : AssetWithActions -> AssetWithActions
+toggleArchived asset =
+    { asset | isArchived = flipPropertyChange asset.isArchived }
 
 
 suite : Test
@@ -818,5 +835,69 @@ suite =
 
                         _ ->
                             Expect.fail "Expected ToggleAlbumMembershipAction"
+            ]
+        , describe "Fuzz tests for property toggles"
+            [ fuzz Fuzz.bool "toggle favorite twice returns to original state" <|
+                \initialFavorite ->
+                    let
+                        asset =
+                            createAssetWithActions "test" initialFavorite False
+
+                        toggled =
+                            toggleFavorite asset
+
+                        toggledBack =
+                            toggleFavorite toggled
+                    in
+                    case toggledBack.isFavourite of
+                        RemainTrue ->
+                            Expect.equal True initialFavorite
+
+                        RemainFalse ->
+                            Expect.equal False initialFavorite
+
+                        _ ->
+                            Expect.fail "Expected RemainTrue or RemainFalse after double toggle"
+            , fuzz Fuzz.bool "toggle archived twice returns to original state" <|
+                \initialArchived ->
+                    let
+                        asset =
+                            createAssetWithActions "test" False initialArchived
+
+                        toggled =
+                            toggleArchived asset
+
+                        toggledBack =
+                            toggleArchived toggled
+                    in
+                    case toggledBack.isArchived of
+                        RemainTrue ->
+                            Expect.equal True initialArchived
+
+                        RemainFalse ->
+                            Expect.equal False initialArchived
+
+                        _ ->
+                            Expect.fail "Expected RemainTrue or RemainFalse after double toggle"
+            , fuzz TestGenerators.testAlbumGenerator "album membership toggle creates pending change" <|
+                \album ->
+                    let
+                        asset =
+                            createAssetWithActions "test" False False
+
+                        context =
+                            editAssetContext asset
+
+                        result =
+                            processToggleAlbumMembership album context
+                    in
+                    case result of
+                        ToggleAlbumMembershipAction data ->
+                            data.pendingChanges
+                                |> List.isEmpty
+                                |> Expect.equal False
+
+                        _ ->
+                            Expect.pass
             ]
         ]

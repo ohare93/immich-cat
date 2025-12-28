@@ -1,13 +1,11 @@
 module UpdateMenus exposing
-    ( AssetSource(..)
-    , LegacyUserMode(..)
-    , MenuAction(..)
-    , MenuMsg(..)
+    ( MenuMsg(..)
     , MenuResult(..)
     , MenuState(..)
     , updateMenus
     )
 
+import AssetSourceTypes exposing (AssetSource(..))
 import Dict exposing (Dict)
 import Helpers exposing (isSupportedSearchLetter, toggleCategorisation, toggleMediaType, toggleOrder, toggleOrderHandler, toggleStatus)
 import Immich exposing (ImageSearchConfig, ImmichAlbum, ImmichAlbumId, ImmichApiPaths, SearchContext(..))
@@ -50,233 +48,11 @@ type MenuResult msg
 
 
 
--- Action type that represents what the menu wants to do (legacy)
-
-
-type MenuAction
-    = ChangeMode LegacyUserMode
-    | LoadAssets AssetSource
-    | UpdateSearchInput Bool
-    | ReloadAlbums
-    | NoMenuAction
-
-
-
--- Legacy types needed for backward compatibility
-
-
-type LegacyUserMode
-    = LegacyMainMenu
-    | LegacyTimelineView TimelineConfig
-    | LegacySearchView SearchConfig
-    | LegacyAlbumView ImmichAlbum AlbumConfig
-    | LegacyAlbumBrowse AlbumSearch
-    | LegacySettings
-
-
-type AssetSource
-    = ImageSearch ImageSearchConfig
-    | TextSearch String SearchContext
-    | FilteredAlbum ImmichAlbum AlbumConfig
-
-
-
 -- Main Menu keyboard handling
-
-
-handleMainMenuInput : String -> Dict ImmichAlbumId ImmichAlbum -> Int -> MenuAction
-handleMainMenuInput key knownAlbums screenHeight =
-    case key of
-        "t" ->
-            ChangeMode (LegacyTimelineView defaultTimelineConfig)
-
-        " " ->
-            ChangeMode (LegacyTimelineView defaultTimelineConfig)
-
-        "Enter" ->
-            ChangeMode (LegacyTimelineView defaultTimelineConfig)
-
-        "s" ->
-            ChangeMode (LegacySearchView defaultSearchConfig)
-
-        "a" ->
-            ChangeMode (LegacyAlbumBrowse <| getAlbumSearchWithHeight "" knownAlbums screenHeight)
-
-        "g" ->
-            ChangeMode LegacySettings
-
-        "r" ->
-            ReloadAlbums
-
-        _ ->
-            NoMenuAction
-
-
-
 -- Timeline View keyboard handling
-
-
-handleTimelineViewInput : String -> TimelineConfig -> MenuAction
-handleTimelineViewInput key config =
-    case key of
-        "Escape" ->
-            ChangeMode LegacyMainMenu
-
-        "m" ->
-            ChangeMode (LegacyTimelineView { config | mediaType = toggleMediaType config.mediaType })
-
-        "c" ->
-            ChangeMode (LegacyTimelineView { config | categorisation = toggleCategorisation config.categorisation })
-
-        "o" ->
-            let
-                newOrder =
-                    toggleOrderHandler config.mediaType config.order
-            in
-            ChangeMode (LegacyTimelineView { config | order = newOrder })
-
-        "s" ->
-            ChangeMode (LegacyTimelineView { config | status = toggleStatus config.status })
-
-        "Enter" ->
-            let
-                searchConfig =
-                    { order = config.order, categorisation = config.categorisation, mediaType = config.mediaType, status = config.status }
-            in
-            LoadAssets (ImageSearch searchConfig)
-
-        " " ->
-            -- Space key
-            let
-                searchConfig =
-                    { order = config.order, categorisation = config.categorisation, mediaType = config.mediaType, status = config.status }
-            in
-            LoadAssets (ImageSearch searchConfig)
-
-        _ ->
-            NoMenuAction
-
-
-
 -- Search View keyboard handling
-
-
-handleSearchViewInput : String -> SearchConfig -> MenuAction
-handleSearchViewInput key config =
-    case key of
-        "Escape" ->
-            if config.inputFocused then
-                ChangeMode (LegacySearchView { config | inputFocused = False })
-
-            else
-                ChangeMode LegacyMainMenu
-
-        "i" ->
-            if config.inputFocused then
-                ChangeMode (LegacySearchView { config | query = config.query ++ key })
-
-            else
-                UpdateSearchInput True
-
-        "m" ->
-            if config.inputFocused then
-                ChangeMode (LegacySearchView { config | query = config.query ++ key })
-
-            else
-                ChangeMode (LegacySearchView { config | mediaType = toggleMediaType config.mediaType })
-
-        "c" ->
-            if config.inputFocused then
-                ChangeMode (LegacySearchView { config | query = config.query ++ key })
-
-            else
-                ChangeMode (LegacySearchView { config | searchContext = toggleSearchContext config.searchContext })
-
-        "s" ->
-            if config.inputFocused then
-                ChangeMode (LegacySearchView { config | query = config.query ++ key })
-
-            else
-                ChangeMode (LegacySearchView { config | status = toggleStatus config.status })
-
-        "Enter" ->
-            if String.isEmpty config.query then
-                NoMenuAction
-
-            else
-                LoadAssets (TextSearch config.query config.searchContext)
-
-        " " ->
-            -- Space key
-            if String.isEmpty config.query then
-                NoMenuAction
-
-            else
-                LoadAssets (TextSearch config.query config.searchContext)
-
-        _ ->
-            if config.inputFocused then
-                if key == "Backspace" then
-                    ChangeMode (LegacySearchView { config | query = String.slice 0 (String.length config.query - 1) config.query })
-
-                else if isSupportedSearchLetter key then
-                    ChangeMode (LegacySearchView { config | query = config.query ++ key })
-
-                else
-                    NoMenuAction
-
-            else
-                NoMenuAction
-
-
-
 -- Album View keyboard handling
-
-
-handleAlbumViewInput : String -> ImmichAlbum -> AlbumConfig -> Dict ImmichAlbumId ImmichAlbum -> Int -> MenuAction
-handleAlbumViewInput key album config knownAlbums screenHeight =
-    case key of
-        "Escape" ->
-            ChangeMode (LegacyAlbumBrowse <| getAlbumSearchWithHeight "" knownAlbums screenHeight)
-
-        "m" ->
-            ChangeMode (LegacyAlbumView album { config | mediaType = toggleMediaType config.mediaType })
-
-        "o" ->
-            ChangeMode (LegacyAlbumView album { config | order = toggleOrderHandler config.mediaType config.order })
-
-        "s" ->
-            ChangeMode (LegacyAlbumView album { config | status = toggleStatus config.status })
-
-        "x" ->
-            ChangeMode (LegacyAlbumView album { config | moveFromMode = not config.moveFromMode })
-
-        "Enter" ->
-            LoadAssets (FilteredAlbum album config)
-
-        " " ->
-            -- Space key
-            LoadAssets (FilteredAlbum album config)
-
-        _ ->
-            NoMenuAction
-
-
-
 -- Settings keyboard handling
-
-
-handleSettingsInput : String -> MenuAction
-handleSettingsInput key =
-    case key of
-        "Escape" ->
-            ChangeMode LegacyMainMenu
-
-        _ ->
-            NoMenuAction
-
-
-
 -- Main update function that handles all menu logic internally
 -- This function now takes a MenuState and returns a MenuResult
 
@@ -306,23 +82,31 @@ updateMenus menuMsg menuState knownAlbums apiPaths screenHeight =
 
 
 
--- Helper functions that convert menu actions to menu results
+-- Handler functions that return menu results
 
 
 handleMainMenuKeyPress : String -> Dict ImmichAlbumId ImmichAlbum -> Int -> MenuResult msg
 handleMainMenuKeyPress key knownAlbums screenHeight =
-    let
-        action =
-            handleMainMenuInput key knownAlbums screenHeight
-    in
-    case action of
-        ChangeMode newMode ->
-            StayInMenu (convertUserModeToMenuState newMode)
+    case key of
+        "t" ->
+            StayInMenu (TimelineView defaultTimelineConfig)
 
-        LoadAssets assetSource ->
-            MenuLoadAssets assetSource
+        " " ->
+            StayInMenu (TimelineView defaultTimelineConfig)
 
-        ReloadAlbums ->
+        "Enter" ->
+            StayInMenu (TimelineView defaultTimelineConfig)
+
+        "s" ->
+            StayInMenu (SearchView defaultSearchConfig)
+
+        "a" ->
+            StayInMenu (AlbumBrowse <| getAlbumSearchWithHeight "" knownAlbums screenHeight)
+
+        "g" ->
+            StayInMenu Settings
+
+        "r" ->
             MenuReloadAlbums
 
         _ ->
@@ -331,16 +115,40 @@ handleMainMenuKeyPress key knownAlbums screenHeight =
 
 handleTimelineViewKeyPress : String -> TimelineConfig -> MenuResult msg
 handleTimelineViewKeyPress key config =
-    let
-        action =
-            handleTimelineViewInput key config
-    in
-    case action of
-        ChangeMode newMode ->
-            StayInMenu (convertUserModeToMenuState newMode)
+    case key of
+        "Escape" ->
+            StayInMenu MainMenuHome
 
-        LoadAssets assetSource ->
-            MenuLoadAssets assetSource
+        "m" ->
+            StayInMenu (TimelineView { config | mediaType = toggleMediaType config.mediaType })
+
+        "c" ->
+            StayInMenu (TimelineView { config | categorisation = toggleCategorisation config.categorisation })
+
+        "o" ->
+            let
+                newOrder =
+                    toggleOrderHandler config.mediaType config.order
+            in
+            StayInMenu (TimelineView { config | order = newOrder })
+
+        "s" ->
+            StayInMenu (TimelineView { config | status = toggleStatus config.status })
+
+        "Enter" ->
+            let
+                searchConfig =
+                    { order = config.order, categorisation = config.categorisation, mediaType = config.mediaType, status = config.status }
+            in
+            MenuLoadAssets (ImageSearch searchConfig)
+
+        " " ->
+            -- Space key
+            let
+                searchConfig =
+                    { order = config.order, categorisation = config.categorisation, mediaType = config.mediaType, status = config.status }
+            in
+            MenuLoadAssets (ImageSearch searchConfig)
 
         _ ->
             StayInMenu (TimelineView config)
@@ -348,22 +156,70 @@ handleTimelineViewKeyPress key config =
 
 handleSearchViewKeyPress : String -> SearchConfig -> MenuResult msg
 handleSearchViewKeyPress key config =
-    let
-        action =
-            handleSearchViewInput key config
-    in
-    case action of
-        ChangeMode newMode ->
-            StayInMenu (convertUserModeToMenuState newMode)
+    case key of
+        "Escape" ->
+            if config.inputFocused then
+                StayInMenu (SearchView { config | inputFocused = False })
 
-        LoadAssets assetSource ->
-            MenuLoadAssets assetSource
+            else
+                StayInMenu MainMenuHome
 
-        UpdateSearchInput focused ->
-            MenuUpdateSearchInput focused
+        "i" ->
+            if config.inputFocused then
+                StayInMenu (SearchView { config | query = config.query ++ key })
+
+            else
+                MenuUpdateSearchInput True
+
+        "m" ->
+            if config.inputFocused then
+                StayInMenu (SearchView { config | query = config.query ++ key })
+
+            else
+                StayInMenu (SearchView { config | mediaType = toggleMediaType config.mediaType })
+
+        "c" ->
+            if config.inputFocused then
+                StayInMenu (SearchView { config | query = config.query ++ key })
+
+            else
+                StayInMenu (SearchView { config | searchContext = toggleSearchContext config.searchContext })
+
+        "s" ->
+            if config.inputFocused then
+                StayInMenu (SearchView { config | query = config.query ++ key })
+
+            else
+                StayInMenu (SearchView { config | status = toggleStatus config.status })
+
+        "Enter" ->
+            if String.isEmpty config.query then
+                StayInMenu (SearchView config)
+
+            else
+                MenuLoadAssets (TextSearch config.query config.searchContext)
+
+        " " ->
+            -- Space key
+            if String.isEmpty config.query then
+                StayInMenu (SearchView config)
+
+            else
+                MenuLoadAssets (TextSearch config.query config.searchContext)
 
         _ ->
-            StayInMenu (SearchView config)
+            if config.inputFocused then
+                if key == "Backspace" then
+                    StayInMenu (SearchView { config | query = String.slice 0 (String.length config.query - 1) config.query })
+
+                else if isSupportedSearchLetter key then
+                    StayInMenu (SearchView { config | query = config.query ++ key })
+
+                else
+                    StayInMenu (SearchView config)
+
+            else
+                StayInMenu (SearchView config)
 
 
 handleAlbumBrowseKeyPress : String -> AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> Int -> MenuResult msg
@@ -395,22 +251,34 @@ handleAlbumBrowseKeyPress key search knownAlbums screenHeight =
             in
             StayInMenu (AlbumBrowse searchWithWarning)
 
-        UpdateAlbums.NoAlbumAction ->
+        UpdateAlbums.NoAlbumResult ->
             StayInMenu (AlbumBrowse search)
 
 
 handleAlbumViewKeyPress : String -> ImmichAlbum -> AlbumConfig -> Dict ImmichAlbumId ImmichAlbum -> Int -> MenuResult msg
 handleAlbumViewKeyPress key album config knownAlbums screenHeight =
-    let
-        action =
-            handleAlbumViewInput key album config knownAlbums screenHeight
-    in
-    case action of
-        ChangeMode newMode ->
-            StayInMenu (convertUserModeToMenuState newMode)
+    case key of
+        "Escape" ->
+            StayInMenu (AlbumBrowse <| getAlbumSearchWithHeight "" knownAlbums screenHeight)
 
-        LoadAssets assetSource ->
-            MenuLoadAssets assetSource
+        "m" ->
+            StayInMenu (AlbumView album { config | mediaType = toggleMediaType config.mediaType })
+
+        "o" ->
+            StayInMenu (AlbumView album { config | order = toggleOrderHandler config.mediaType config.order })
+
+        "s" ->
+            StayInMenu (AlbumView album { config | status = toggleStatus config.status })
+
+        "x" ->
+            StayInMenu (AlbumView album { config | moveFromMode = not config.moveFromMode })
+
+        "Enter" ->
+            MenuLoadAssets (FilteredAlbum album config)
+
+        " " ->
+            -- Space key
+            MenuLoadAssets (FilteredAlbum album config)
 
         _ ->
             StayInMenu (AlbumView album config)
@@ -418,39 +286,9 @@ handleAlbumViewKeyPress key album config knownAlbums screenHeight =
 
 handleSettingsKeyPress : String -> MenuResult msg
 handleSettingsKeyPress key =
-    let
-        action =
-            handleSettingsInput key
-    in
-    case action of
-        ChangeMode newMode ->
-            StayInMenu (convertUserModeToMenuState newMode)
+    case key of
+        "Escape" ->
+            StayInMenu MainMenuHome
 
         _ ->
             StayInMenu Settings
-
-
-
--- Helper to convert legacy UserMode to MenuState
-
-
-convertUserModeToMenuState : LegacyUserMode -> MenuState
-convertUserModeToMenuState userMode =
-    case userMode of
-        LegacyMainMenu ->
-            MainMenuHome
-
-        LegacyTimelineView config ->
-            TimelineView config
-
-        LegacySearchView config ->
-            SearchView config
-
-        LegacyAlbumView album config ->
-            AlbumView album config
-
-        LegacyAlbumBrowse search ->
-            AlbumBrowse search
-
-        LegacySettings ->
-            Settings

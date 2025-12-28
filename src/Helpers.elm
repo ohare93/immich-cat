@@ -10,6 +10,7 @@ module Helpers exposing
     , mediaTypeToString
     , orderToString
     , regexFromString
+    , sortWithIdTiebreaker
     , statusToString
     , toggleCategorisation
     , toggleMediaType
@@ -241,116 +242,69 @@ filterByStatus statusFilter assets =
             List.filter (\asset -> asset.isArchived) assets
 
 
+{-| Sort a list with a primary comparator and ID-based tiebreaker.
+When the primary comparison results in equality, falls back to comparing IDs for deterministic ordering.
+-}
+sortWithIdTiebreaker : (a -> comparable) -> Bool -> (a -> String) -> List a -> List a
+sortWithIdTiebreaker getPrimary descending getId items =
+    List.sortWith
+        (\a b ->
+            let
+                primaryResult =
+                    if descending then
+                        compare (getPrimary b) (getPrimary a)
+
+                    else
+                        compare (getPrimary a) (getPrimary b)
+            in
+            case primaryResult of
+                EQ ->
+                    compare (getId a) (getId b)
+
+                other ->
+                    other
+        )
+        items
+
+
 {-| Sort assets by the specified order.
 Uses secondary sort by ID for deterministic ordering when primary sort values are equal.
 -}
 applySortingToAssets : ImageOrder -> List ImmichAsset -> List ImmichAsset
 applySortingToAssets order assets =
-    let
-        sortedAssets =
-            case order of
-                CreatedAsc ->
-                    List.sortWith
-                        (\a b ->
-                            case compare a.fileCreatedAtString b.fileCreatedAtString of
-                                EQ ->
-                                    compare a.id b.id
+    case order of
+        CreatedAsc ->
+            sortWithIdTiebreaker .fileCreatedAtString False .id assets
 
-                                other ->
-                                    other
-                        )
-                        assets
+        CreatedDesc ->
+            sortWithIdTiebreaker .fileCreatedAtString True .id assets
 
-                CreatedDesc ->
-                    List.sortWith
-                        (\a b ->
-                            case compare b.fileCreatedAtString a.fileCreatedAtString of
-                                EQ ->
-                                    compare a.id b.id
+        ModifiedAsc ->
+            sortWithIdTiebreaker .fileModifiedAtString False .id assets
 
-                                other ->
-                                    other
-                        )
-                        assets
+        ModifiedDesc ->
+            sortWithIdTiebreaker .fileModifiedAtString True .id assets
 
-                ModifiedAsc ->
-                    List.sortWith
-                        (\a b ->
-                            case compare a.fileModifiedAtString b.fileModifiedAtString of
-                                EQ ->
-                                    compare a.id b.id
+        DurationAsc ->
+            let
+                getDuration asset =
+                    asset.duration
+                        |> Maybe.andThen Immich.parseDurationToSeconds
+                        |> Maybe.withDefault 999999
+            in
+            sortWithIdTiebreaker getDuration False .id assets
 
-                                other ->
-                                    other
-                        )
-                        assets
+        DurationDesc ->
+            let
+                getDuration asset =
+                    asset.duration
+                        |> Maybe.andThen Immich.parseDurationToSeconds
+                        |> Maybe.withDefault -1
+            in
+            sortWithIdTiebreaker getDuration True .id assets
 
-                ModifiedDesc ->
-                    List.sortWith
-                        (\a b ->
-                            let
-                                stringComparison =
-                                    compare b.fileModifiedAtString a.fileModifiedAtString
-                            in
-                            case stringComparison of
-                                EQ ->
-                                    compare a.id b.id
-
-                                other ->
-                                    other
-                        )
-                        assets
-
-                DurationAsc ->
-                    List.sortWith
-                        (\a b ->
-                            let
-                                aDuration =
-                                    a.duration
-                                        |> Maybe.andThen Immich.parseDurationToSeconds
-                                        |> Maybe.withDefault 999999
-
-                                bDuration =
-                                    b.duration
-                                        |> Maybe.andThen Immich.parseDurationToSeconds
-                                        |> Maybe.withDefault 999999
-                            in
-                            case compare aDuration bDuration of
-                                EQ ->
-                                    compare a.id b.id
-
-                                other ->
-                                    other
-                        )
-                        assets
-
-                DurationDesc ->
-                    List.sortWith
-                        (\a b ->
-                            let
-                                aDuration =
-                                    a.duration
-                                        |> Maybe.andThen Immich.parseDurationToSeconds
-                                        |> Maybe.withDefault -1
-
-                                bDuration =
-                                    b.duration
-                                        |> Maybe.andThen Immich.parseDurationToSeconds
-                                        |> Maybe.withDefault -1
-                            in
-                            case compare bDuration aDuration of
-                                EQ ->
-                                    compare a.id b.id
-
-                                other ->
-                                    other
-                        )
-                        assets
-
-                Random ->
-                    assets
-    in
-    sortedAssets
+        Random ->
+            assets
 
 
 {-| Validate Immich configuration settings.

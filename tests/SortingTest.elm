@@ -2,8 +2,12 @@ module SortingTest exposing (..)
 
 import Date
 import Expect
-import Immich exposing (ImageOrder(..), ImmichAsset)
-import Test exposing (Test, describe, test)
+import Fuzz exposing (list)
+import Helpers exposing (applySortingToAssets)
+import Immich exposing (ImageOrder(..), ImmichAsset, parseDurationToSeconds)
+import Set
+import Test exposing (Test, describe, fuzz, fuzz2, test)
+import TestGenerators exposing (durationStringGenerator, imageOrderGenerator, testAssetGenerator)
 
 
 createAsset : String -> Maybe String -> ImmichAsset
@@ -95,5 +99,53 @@ suite =
                             [ "1", "2", "3" ]
                     in
                     Expect.pass
+            ]
+        , describe "Fuzz tests for applySortingToAssets"
+            [ fuzz2 imageOrderGenerator (list testAssetGenerator) "applySortingToAssets preserves list length" <|
+                \order assets ->
+                    let
+                        sorted =
+                            applySortingToAssets order assets
+                    in
+                    List.length sorted |> Expect.equal (List.length assets)
+            , fuzz (list testAssetGenerator) "sorting is deterministic" <|
+                \assets ->
+                    let
+                        first =
+                            applySortingToAssets CreatedDesc assets
+
+                        second =
+                            applySortingToAssets CreatedDesc assets
+                    in
+                    Expect.equal first second
+            , fuzz2 imageOrderGenerator (list testAssetGenerator) "sorting preserves all elements" <|
+                \order assets ->
+                    let
+                        sorted =
+                            applySortingToAssets order assets
+
+                        originalIds =
+                            List.map .id assets |> Set.fromList
+
+                        sortedIds =
+                            List.map .id sorted |> Set.fromList
+                    in
+                    Expect.equal originalIds sortedIds
+            ]
+        , describe "Fuzz tests for parseDurationToSeconds"
+            [ fuzz durationStringGenerator "parseDurationToSeconds handles various formats" <|
+                \maybeDuration ->
+                    case maybeDuration of
+                        Nothing ->
+                            Expect.pass
+
+                        Just duration ->
+                            case parseDurationToSeconds duration of
+                                Nothing ->
+                                    Expect.pass
+
+                                -- Invalid format is OK
+                                Just seconds ->
+                                    seconds |> Expect.atLeast 0
             ]
         ]

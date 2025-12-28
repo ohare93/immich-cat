@@ -77,7 +77,15 @@ type alias ImmichApiPaths =
 
 joinUrl : String -> List String -> String
 joinUrl baseUrl pathSegments =
-    crossOrigin baseUrl pathSegments []
+    let
+        cleanBase =
+            if String.endsWith "/" baseUrl then
+                String.dropRight 1 baseUrl
+
+            else
+                baseUrl
+    in
+    crossOrigin cleanBase pathSegments []
 
 
 

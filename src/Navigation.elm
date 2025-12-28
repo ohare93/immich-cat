@@ -20,9 +20,10 @@ trigger asset loading.
 
 -}
 
+import AssetSourceTypes exposing (AssetSource)
 import Dict exposing (Dict)
 import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichAsset, ImmichAssetId)
-import Types exposing (AssetSource, ImageIndex, NavigationHistoryEntry, PaginationState, UserMode(..))
+import Types exposing (ImageIndex, NavigationHistoryEntry, PaginationState, UserMode(..))
 import ViewAlbums exposing (AlbumSearch, AssetWithActions, getAlbumSearchWithHeight, getAssetWithActions)
 
 

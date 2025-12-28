@@ -12,7 +12,8 @@ depending on Model. Main.elm uses these to update the loading state.
 
 -}
 
-import Types exposing (AssetSource(..), AssetSourceUpdate(..), SourceLoadState)
+import AssetSourceTypes exposing (AssetSource(..))
+import Types exposing (AssetSourceUpdate(..), SourceLoadState)
 
 
 {-| Check if a single load property is completed.

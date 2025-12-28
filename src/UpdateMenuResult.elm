@@ -12,9 +12,10 @@ leaving only Cmd generation in Main.elm.
 
 -}
 
+import AssetSourceTypes exposing (AssetSource(..))
 import Immich exposing (ImageSearchConfig, ImmichAlbum, SearchContext)
 import Menus exposing (AlbumConfig)
-import Types exposing (AlbumPaginationContext, AssetSource(..), PaginationState, SourceLoadState, UserMode(..))
+import Types exposing (AlbumPaginationContext, PaginationState, SourceLoadState, UserMode(..))
 import UpdateMenus exposing (MenuResult(..), MenuState(..))
 
 
@@ -58,11 +59,10 @@ processMenuResult menuResult currentPaginationState maybeUserMode =
 
         MenuLoadAssets assetSource ->
             let
-                ( mainAssetSource, loadType, paginationConfig ) =
+                ( loadType, paginationConfig ) =
                     case assetSource of
-                        UpdateMenus.ImageSearch searchConfig ->
-                            ( ImageSearch searchConfig
-                            , TimelineLoad searchConfig
+                        ImageSearch searchConfig ->
+                            ( TimelineLoad searchConfig
                             , { currentConfig = Just searchConfig
                               , currentQuery = Nothing
                               , currentSearchContext = Nothing
@@ -76,9 +76,8 @@ processMenuResult menuResult currentPaginationState maybeUserMode =
                               }
                             )
 
-                        UpdateMenus.TextSearch query searchContext ->
-                            ( TextSearch query searchContext
-                            , TextSearchLoad query searchContext
+                        TextSearch query searchContext ->
+                            ( TextSearchLoad query searchContext
                             , { currentConfig = Nothing
                               , currentQuery = Just query
                               , currentSearchContext = Just searchContext
@@ -92,7 +91,7 @@ processMenuResult menuResult currentPaginationState maybeUserMode =
                               }
                             )
 
-                        UpdateMenus.FilteredAlbum album config ->
+                        FilteredAlbum album config ->
                             let
                                 albumContext =
                                     { albumId = album.id
@@ -101,8 +100,50 @@ processMenuResult menuResult currentPaginationState maybeUserMode =
                                     , status = config.status
                                     }
                             in
-                            ( FilteredAlbum album config
-                            , AlbumLoad album config
+                            ( AlbumLoad album config
+                            , { currentConfig = Nothing
+                              , currentQuery = Nothing
+                              , currentSearchContext = Nothing
+                              , currentAlbumContext = Just albumContext
+                              , totalAssets = 0
+                              , currentPage = 1
+                              , hasMorePages = False
+                              , isLoadingMore = False
+                              , loadedAssets = 0
+                              , maxAssetsToFetch = currentPaginationState.maxAssetsToFetch
+                              }
+                            )
+
+                        NoAssets ->
+                            -- NoAssets shouldn't be produced by menus, but handle it defensively
+                            ( TimelineLoad { order = Immich.CreatedDesc, categorisation = Immich.All, mediaType = Immich.AllMedia, status = Immich.AllStatuses }
+                            , { currentConfig = Nothing
+                              , currentQuery = Nothing
+                              , currentSearchContext = Nothing
+                              , currentAlbumContext = Nothing
+                              , totalAssets = 0
+                              , currentPage = 1
+                              , hasMorePages = False
+                              , isLoadingMore = False
+                              , loadedAssets = 0
+                              , maxAssetsToFetch = currentPaginationState.maxAssetsToFetch
+                              }
+                            )
+
+                        Album album ->
+                            -- Album without config shouldn't be produced by menus, use default config
+                            let
+                                config =
+                                    Menus.defaultAlbumConfig
+
+                                albumContext =
+                                    { albumId = album.id
+                                    , order = config.order
+                                    , mediaType = config.mediaType
+                                    , status = config.status
+                                    }
+                            in
+                            ( AlbumLoad album config
                             , { currentConfig = Nothing
                               , currentQuery = Nothing
                               , currentSearchContext = Nothing
@@ -117,7 +158,7 @@ processMenuResult menuResult currentPaginationState maybeUserMode =
                             )
             in
             LoadAssetsAction
-                { assetSource = mainAssetSource
+                { assetSource = assetSource
                 , paginationState = paginationConfig
                 , loadType = loadType
                 }

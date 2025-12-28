@@ -3,9 +3,11 @@ module UpdateAlbumsTest exposing (..)
 import Date
 import Dict exposing (Dict)
 import Expect
+import Fuzz exposing (Fuzzer, string)
 import Helpers
 import Immich exposing (ImmichAlbum, ImmichAlbumId)
 import Test exposing (..)
+import TestGenerators exposing (albumNameGenerator, testAlbumGenerator)
 import UpdateAlbums exposing (..)
 import ViewAlbums exposing (AlbumSearch)
 
@@ -89,6 +91,7 @@ suite =
         , menuIntegrationTests
         , edgeCaseTests
         , regressionTests
+        , fuzzTests
         ]
 
 
@@ -250,12 +253,12 @@ navigationTests =
                     SelectAlbumForView album ->
                         Expect.equal "General" album.albumName
 
-                    NoAlbumAction ->
+                    NoAlbumResult ->
                         -- This is also acceptable if no clear match
                         Expect.pass
 
                     _ ->
-                        Expect.fail "Expected Enter to select top match or NoAlbumAction"
+                        Expect.fail "Expected Enter to select top match or NoAlbumResult"
         , test "PageUp updates pagination" <|
             \_ ->
                 let
@@ -666,7 +669,7 @@ edgeCaseTests =
                         handleAlbumBrowseInput "Enter" search testAlbumKeybindings testAlbums
                 in
                 case result of
-                    NoAlbumAction ->
+                    NoAlbumResult ->
                         Expect.pass
 
                     SelectAlbumForView _ ->
@@ -678,7 +681,7 @@ edgeCaseTests =
                         Expect.pass
 
                     _ ->
-                        Expect.fail "Expected NoAlbumAction, SelectAlbumForView, or UpdateAlbumSearch for empty search"
+                        Expect.fail "Expected NoAlbumResult, SelectAlbumForView, or UpdateAlbumSearch for empty search"
         , test "unsupported key press" <|
             \_ ->
                 let
@@ -688,7 +691,7 @@ edgeCaseTests =
                     result =
                         handleAlbumBrowseInput "F1" search testAlbumKeybindings testAlbums
                 in
-                Expect.equal NoAlbumAction result
+                Expect.equal NoAlbumResult result
         , test "empty albums dictionary" <|
             \_ ->
                 let
@@ -893,7 +896,7 @@ invalidInputTests =
                                 handleAlbumBrowseInput "e" newSearch testAlbumKeybindings testAlbums
 
                             _ ->
-                                NoAlbumAction
+                                NoAlbumResult
                 in
                 case result2 of
                     SelectAlbumForView album ->
@@ -1303,4 +1306,159 @@ invalidInputTests =
                                 Expect.fail "Expected 'x' to be rejected"
                     ]
                     ()
+        ]
+
+
+fuzzTests : Test
+fuzzTests =
+    describe "Fuzz Tests"
+        [ fuzz string "handleAlbumBrowseInput handles any search string without crashing" <|
+            \searchString ->
+                let
+                    albums =
+                        Dict.fromList [ ( "test-id", createTestAlbum "test-id" "Test Album" ) ]
+
+                    search =
+                        ViewAlbums.getAlbumSearch searchString albums
+
+                    keybindings =
+                        Dict.empty
+
+                    result =
+                        handleAlbumBrowseInput searchString search keybindings albums
+                in
+                -- Should return some result without crashing
+                case result of
+                    NoAlbumResult ->
+                        Expect.pass
+
+                    _ ->
+                        Expect.pass
+        , fuzz string "search with empty album list returns NoAlbumResult or UpdateAlbumSearch" <|
+            \searchString ->
+                let
+                    search =
+                        ViewAlbums.getAlbumSearch "" Dict.empty
+
+                    result =
+                        handleAlbumBrowseInput searchString search Dict.empty Dict.empty
+                in
+                case result of
+                    NoAlbumResult ->
+                        Expect.pass
+
+                    UpdateAlbumSearch _ ->
+                        Expect.pass
+
+                    _ ->
+                        Expect.fail "Expected NoAlbumResult or UpdateAlbumSearch with empty album list"
+        , fuzz2 albumNameGenerator (Fuzz.listOfLengthBetween 0 10 testAlbumGenerator) "getTopMatchToSearch returns valid album from list" <|
+            \searchString albums ->
+                if List.isEmpty albums then
+                    Expect.pass
+
+                else
+                    let
+                        albumDict =
+                            List.map (\a -> ( a.id, a )) albums |> Dict.fromList
+
+                        search =
+                            ViewAlbums.getAlbumSearch searchString albumDict
+
+                        maybeMatch =
+                            getTopMatchToSearch search Dict.empty albumDict
+                    in
+                    case maybeMatch of
+                        Nothing ->
+                            Expect.pass
+
+                        Just album ->
+                            Dict.member album.id albumDict |> Expect.equal True
+        , fuzz2 string (Fuzz.listOfLengthBetween 0 10 testAlbumGenerator) "updateAlbumSearchString never crashes with any input" <|
+            \searchString albums ->
+                let
+                    albumDict =
+                        List.map (\a -> ( a.id, a )) albums |> Dict.fromList
+
+                    search =
+                        createTestAlbumSearch "" ""
+
+                    result =
+                        ViewAlbums.updateAlbumSearchString searchString search albumDict
+                in
+                -- Just verify it returns a valid AlbumSearch
+                Expect.equal searchString result.searchString
+        , fuzz (Fuzz.listOfLengthBetween 0 10 testAlbumGenerator) "handleAlbumBrowseInput Enter never crashes" <|
+            \albums ->
+                let
+                    albumDict =
+                        List.map (\a -> ( a.id, a )) albums |> Dict.fromList
+
+                    search =
+                        ViewAlbums.getAlbumSearch "" albumDict
+
+                    result =
+                        handleAlbumBrowseInput "Enter" search Dict.empty albumDict
+                in
+                case result of
+                    SelectAlbumForView album ->
+                        -- If an album was selected, it should be in the album dict
+                        Dict.member album.id albumDict |> Expect.equal True
+
+                    NoAlbumResult ->
+                        Expect.pass
+
+                    UpdateAlbumSearch _ ->
+                        Expect.pass
+
+                    _ ->
+                        Expect.fail "Unexpected result from Enter key"
+        , fuzz string "Backspace handling never crashes" <|
+            \searchString ->
+                let
+                    albums =
+                        Dict.fromList [ ( "test-id", createTestAlbum "test-id" "Test Album" ) ]
+
+                    search =
+                        ViewAlbums.getAlbumSearch searchString albums
+
+                    result =
+                        handleAlbumBrowseInput "Backspace" search Dict.empty albums
+                in
+                case result of
+                    UpdateAlbumSearch newSearch ->
+                        -- Search string should be one character shorter or empty
+                        if String.isEmpty searchString then
+                            Expect.equal "" newSearch.searchString
+
+                        else
+                            Expect.equal (String.length searchString - 1) (String.length newSearch.searchString)
+
+                    NoAlbumResult ->
+                        Expect.pass
+
+                    _ ->
+                        Expect.fail "Expected UpdateAlbumSearch or NoAlbumResult from Backspace"
+        , fuzz2 string (Fuzz.listOfLengthBetween 0 10 testAlbumGenerator) "Escape key always returns ChangeToMainMenu or UpdateAlbumSearch" <|
+            \searchString albums ->
+                let
+                    albumDict =
+                        List.map (\a -> ( a.id, a )) albums |> Dict.fromList
+
+                    search =
+                        ViewAlbums.getAlbumSearch searchString albumDict
+
+                    result =
+                        handleAlbumBrowseInput "Escape" search Dict.empty albumDict
+                in
+                case result of
+                    ChangeToMainMenu ->
+                        Expect.pass
+
+                    UpdateAlbumSearch _ ->
+                        -- Can happen if inputFocused is true
+                        Expect.pass
+
+                    _ ->
+                        Expect.fail "Expected ChangeToMainMenu or UpdateAlbumSearch from Escape"
         ]

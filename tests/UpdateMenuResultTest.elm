@@ -1,11 +1,12 @@
 module UpdateMenuResultTest exposing (..)
 
+import AssetSourceTypes exposing (AssetSource(..))
 import Date
 import Expect
 import Immich exposing (CategorisationFilter(..), ImageOrder(..), ImageSearchConfig, ImmichAlbum, MediaTypeFilter(..), SearchContext(..), StatusFilter(..))
 import Menus exposing (AlbumConfig)
 import Test exposing (Test, describe, test)
-import Types exposing (AssetSource(..), PaginationState)
+import Types exposing (PaginationState)
 import UpdateMenuResult exposing (MenuResultAction(..), processMenuResult)
 import UpdateMenus exposing (MenuResult(..), MenuState(..))
 
@@ -71,7 +72,7 @@ suite =
                             }
 
                         result =
-                            processMenuResult (MenuLoadAssets (UpdateMenus.ImageSearch searchConfig)) defaultPaginationState Nothing
+                            processMenuResult (MenuLoadAssets (ImageSearch searchConfig)) defaultPaginationState Nothing
                     in
                     case result of
                         LoadAssetsAction config _ ->
@@ -99,7 +100,7 @@ suite =
                             ContentSearch
 
                         result =
-                            processMenuResult (MenuLoadAssets (UpdateMenus.TextSearch query searchContext)) defaultPaginationState Nothing
+                            processMenuResult (MenuLoadAssets (TextSearch query searchContext)) defaultPaginationState Nothing
                     in
                     case result of
                         LoadAssetsAction config _ ->
@@ -132,7 +133,7 @@ suite =
                             }
 
                         result =
-                            processMenuResult (MenuLoadAssets (UpdateMenus.FilteredAlbum album albumConfig)) defaultPaginationState Nothing
+                            processMenuResult (MenuLoadAssets (FilteredAlbum album albumConfig)) defaultPaginationState Nothing
                     in
                     case result of
                         LoadAssetsAction config _ ->
@@ -190,7 +191,7 @@ suite =
                             }
 
                         result =
-                            processMenuResult (MenuLoadAssets (UpdateMenus.ImageSearch searchConfig)) customPaginationState Nothing
+                            processMenuResult (MenuLoadAssets (ImageSearch searchConfig)) customPaginationState Nothing
                     in
                     case result of
                         LoadAssetsAction config _ ->
@@ -217,7 +218,7 @@ suite =
                             }
 
                         result =
-                            processMenuResult (MenuLoadAssets (UpdateMenus.ImageSearch searchConfig)) stateWithProgress Nothing
+                            processMenuResult (MenuLoadAssets (ImageSearch searchConfig)) stateWithProgress Nothing
                     in
                     case result of
                         LoadAssetsAction config _ ->

@@ -1,7 +1,12 @@
 module UpdateConfig exposing
-    ( ConfigLoadedResult
+    ( ConfigContext
+    , ConfigLoadedResult
+    , ConfigMsg(..)
+    , ConfigResult
+    , PortCmd(..)
     , SaveConfigResult(..)
     , handleConfigLoaded
+    , handleConfigMsg
     , handleSaveConfig
     )
 
@@ -219,4 +224,214 @@ handleConfigLoaded config =
             config.albumsLoadState
     , shouldInitializeImmich = shouldInitializeImmich && config.albumsLoadState == ImmichLoading
     , shouldAutoClear = shouldAutoClear
+    }
+
+
+{-| Config-related messages that can be handled by this module.
+-}
+type ConfigMsg
+    = SaveConfigMsg String String
+    | LoadConfigMsg String
+    | ConfigLoadedMsg String (Maybe String)
+    | ClearConfigMsg
+    | UpdateApiUrlMsg String
+    | UpdateApiKeyMsg String
+
+
+{-| Context containing all config-related state needed for updates.
+-}
+type alias ConfigContext =
+    { envBaseUrl : String
+    , envApiKey : String
+    , configuredApiUrl : Maybe String
+    , configuredApiKey : Maybe String
+    , settingsApiUrl : String
+    , settingsApiKey : String
+    , baseUrl : String
+    , apiKey : String
+    , immichApiPaths : ImmichApiPaths
+    , knownAlbums : Dict ImmichAlbumId ImmichAlbum
+    , albumKeybindings : Dict ImmichAlbumId String
+    , albumsLoadState : ImmichLoadState
+    , configValidationMessage : Maybe String
+    }
+
+
+{-| Result of handling a config message.
+Contains updated context, commands to execute, and flags for special actions.
+-}
+type alias ConfigResult msg =
+    { context : ConfigContext
+    , portCmds : List (PortCmd msg)
+    , shouldInitializeImmich : Bool
+    }
+
+
+{-| Representation of port commands that Main.elm should execute.
+-}
+type PortCmd msg
+    = SaveToStorage String String
+    | LoadFromStorage String
+    | ClearStorage
+    | ScheduleConfigLoaded Int String (Maybe String) msg
+
+
+{-| Unified handler for all config-related messages.
+Returns updated context and commands to execute.
+-}
+handleConfigMsg : (ConfigMsg -> msg) -> ConfigMsg -> ConfigContext -> ConfigResult msg
+handleConfigMsg toMsg msg context =
+    case msg of
+        SaveConfigMsg url apiKey ->
+            handleSaveConfigMsg toMsg url apiKey context
+
+        LoadConfigMsg key ->
+            handleLoadConfigMsg key context
+
+        ConfigLoadedMsg key maybeValue ->
+            handleConfigLoadedMsg toMsg key maybeValue context
+
+        ClearConfigMsg ->
+            handleClearConfigMsg context
+
+        UpdateApiUrlMsg url ->
+            handleUpdateApiUrlMsg url context
+
+        UpdateApiKeyMsg apiKey ->
+            handleUpdateApiKeyMsg apiKey context
+
+
+{-| Handle SaveConfig message.
+-}
+handleSaveConfigMsg : (ConfigMsg -> msg) -> String -> String -> ConfigContext -> ConfigResult msg
+handleSaveConfigMsg toMsg url apiKey context =
+    case handleSaveConfig { url = url, apiKey = apiKey, envBaseUrl = context.envBaseUrl, envApiKey = context.envApiKey } of
+        ValidationError errorMsg ->
+            { context = { context | configValidationMessage = Just errorMsg }
+            , portCmds = []
+            , shouldInitializeImmich = False
+            }
+
+        ConfigValid result ->
+            { context =
+                { context
+                    | configValidationMessage = Just "Saving configuration..."
+                    , configuredApiUrl = Just result.finalUrl
+                    , configuredApiKey = Just result.finalApiKey
+                    , baseUrl = result.finalUrl
+                    , apiKey = result.finalApiKey
+                    , immichApiPaths = result.immichApiPaths
+                }
+            , portCmds =
+                [ SaveToStorage "immichApiUrl" result.finalUrl
+                , SaveToStorage "immichApiKey" result.finalApiKey
+                , ScheduleConfigLoaded 1000 "saveSuccess" (Just "✅ Configuration saved successfully!") (toMsg (ConfigLoadedMsg "saveSuccess" (Just "✅ Configuration saved successfully!")))
+                ]
+            , shouldInitializeImmich = False
+            }
+
+
+{-| Handle LoadConfig message.
+-}
+handleLoadConfigMsg : String -> ConfigContext -> ConfigResult msg
+handleLoadConfigMsg key context =
+    { context = context
+    , portCmds = [ LoadFromStorage key ]
+    , shouldInitializeImmich = False
+    }
+
+
+{-| Handle ConfigLoaded message.
+-}
+handleConfigLoadedMsg : (ConfigMsg -> msg) -> String -> Maybe String -> ConfigContext -> ConfigResult msg
+handleConfigLoadedMsg toMsg key maybeValue context =
+    let
+        result =
+            handleConfigLoaded
+                { key = key
+                , maybeValue = maybeValue
+                , currentConfiguredApiUrl = context.configuredApiUrl
+                , currentConfiguredApiKey = context.configuredApiKey
+                , currentSettingsApiUrl = context.settingsApiUrl
+                , currentSettingsApiKey = context.settingsApiKey
+                , currentBaseUrl = context.baseUrl
+                , currentApiKey = context.apiKey
+                , knownAlbums = context.knownAlbums
+                , albumKeybindings = context.albumKeybindings
+                , albumsLoadState = context.albumsLoadState
+                }
+
+        updatedContext =
+            { context
+                | configuredApiUrl = result.configuredApiUrl
+                , configuredApiKey = result.configuredApiKey
+                , settingsApiUrl = result.settingsApiUrl
+                , settingsApiKey = result.settingsApiKey
+                , configValidationMessage = result.configValidationMessage
+                , baseUrl = result.baseUrl
+                , apiKey = result.apiKey
+                , immichApiPaths = result.immichApiPaths
+                , knownAlbums = result.knownAlbums
+                , albumKeybindings = result.albumKeybindings
+                , albumsLoadState = result.albumsLoadState
+            }
+
+        autoClearCmd =
+            if result.shouldAutoClear then
+                [ ScheduleConfigLoaded 3000 "clearSuccess" Nothing (toMsg (ConfigLoadedMsg "clearSuccess" Nothing)) ]
+
+            else
+                []
+    in
+    { context = updatedContext
+    , portCmds = autoClearCmd
+    , shouldInitializeImmich = result.shouldInitializeImmich
+    }
+
+
+{-| Handle ClearConfig message.
+-}
+handleClearConfigMsg : ConfigContext -> ConfigResult msg
+handleClearConfigMsg context =
+    { context =
+        { context
+            | configuredApiUrl = Nothing
+            , configuredApiKey = Nothing
+            , settingsApiUrl = context.envBaseUrl
+            , settingsApiKey = context.envApiKey
+            , configValidationMessage = Nothing
+            , knownAlbums = Dict.empty
+            , albumKeybindings = Dict.empty
+            , albumsLoadState = ImmichLoading
+        }
+    , portCmds = [ ClearStorage ]
+    , shouldInitializeImmich = False
+    }
+
+
+{-| Handle UpdateSettingsApiUrl message.
+-}
+handleUpdateApiUrlMsg : String -> ConfigContext -> ConfigResult msg
+handleUpdateApiUrlMsg url context =
+    { context =
+        { context
+            | settingsApiUrl = url
+            , configValidationMessage = Nothing
+        }
+    , portCmds = []
+    , shouldInitializeImmich = False
+    }
+
+
+{-| Handle UpdateSettingsApiKey message.
+-}
+handleUpdateApiKeyMsg : String -> ConfigContext -> ConfigResult msg
+handleUpdateApiKeyMsg apiKey context =
+    { context =
+        { context
+            | settingsApiKey = apiKey
+            , configValidationMessage = Nothing
+        }
+    , portCmds = []
+    , shouldInitializeImmich = False
     }

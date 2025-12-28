@@ -3,9 +3,12 @@ module KeybindBranchesTest exposing (..)
 import Date
 import Dict
 import Expect
+import Fuzz
 import Immich exposing (ImmichAlbum)
 import KeybindBranches exposing (createBranchDictionary, generateAlbumKeybindings, generateBranches)
-import Test exposing (..)
+import Set
+import Test exposing (Test, describe, fuzz, test)
+import TestGenerators exposing (testAlbumGenerator)
 
 
 
@@ -30,6 +33,7 @@ suite =
         , prefixConflictTests
         , iterativeShorteningTests
         , integrationTests
+        , fuzzTests
         ]
 
 
@@ -621,6 +625,34 @@ integrationTests =
 
                     _ ->
                         Expect.fail "Both albums should have keybindings"
+        ]
+
+
+fuzzTests : Test
+fuzzTests =
+    describe "Fuzz Tests"
+        [ fuzz testAlbumGenerator "keybindings are lowercase alphanumeric" <|
+            \album ->
+                let
+                    keybindings =
+                        generateAlbumKeybindings [ album ]
+
+                    allKeys =
+                        Dict.values keybindings
+                in
+                allKeys
+                    |> List.all (\k -> String.all Char.isAlphaNum k && String.toLower k == k)
+                    |> Expect.equal True
+        , fuzz (Fuzz.listOfLengthBetween 0 5 testAlbumGenerator) "generateAlbumKeybindings is deterministic for any input" <|
+            \albums ->
+                let
+                    first =
+                        generateAlbumKeybindings albums
+
+                    second =
+                        generateAlbumKeybindings albums
+                in
+                Expect.equal first second
         ]
 
 

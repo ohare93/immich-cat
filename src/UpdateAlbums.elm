@@ -1,6 +1,7 @@
 module UpdateAlbums exposing
-    ( AlbumAction(..)
-    , AlbumMsg(..)
+    ( AlbumMsg(..)
+    , AlbumResult(..)
+    , getTopMatchToSearch
     , handleAlbumBrowseInput
     , updateAlbums
     )
@@ -13,15 +14,15 @@ import ViewAlbums exposing (AlbumSearch, clearAlbumSearchWarning, halfPageDown, 
 
 
 
--- Action type for album browsing
+-- Result type for album browsing
 
 
-type AlbumAction
+type AlbumResult
     = ChangeToMainMenu
     | SelectAlbumForView ImmichAlbum
     | UpdateAlbumSearch AlbumSearch
     | InvalidKeybindingInput String AlbumSearch -- New action for invalid input
-    | NoAlbumAction
+    | NoAlbumResult
 
 
 
@@ -59,7 +60,7 @@ getTopMatchToSearch search albumKeybindings albums =
 -- Album Browse keyboard handling
 
 
-handleAlbumBrowseInput : String -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AlbumAction
+handleAlbumBrowseInput : String -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AlbumResult
 handleAlbumBrowseInput key search albumKeybindings knownAlbums =
     case key of
         "Escape" ->
@@ -80,7 +81,7 @@ handleAlbumBrowseInput key search albumKeybindings knownAlbums =
                     SelectAlbumForView album
 
                 Nothing ->
-                    NoAlbumAction
+                    NoAlbumResult
 
         "PageDown" ->
             let
@@ -165,7 +166,7 @@ handleAlbumBrowseInput key search albumKeybindings knownAlbums =
                     UpdateAlbumSearch newSearch
 
                 else
-                    NoAlbumAction
+                    NoAlbumResult
 
             else if not (String.isEmpty search.searchString) && isSupportedSearchLetter key then
                 -- We're already in text search mode (legacy path), continue with text search
@@ -241,7 +242,7 @@ handleAlbumBrowseInput key search albumKeybindings knownAlbums =
                     UpdateAlbumSearch newSearch
 
             else
-                NoAlbumAction
+                NoAlbumResult
 
 
 
@@ -249,7 +250,7 @@ handleAlbumBrowseInput key search albumKeybindings knownAlbums =
 -- This consolidates the album input handling logic from Main.elm
 
 
-updateAlbums : AlbumMsg -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AlbumAction
+updateAlbums : AlbumMsg -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AlbumResult
 updateAlbums albumMsg albumKeybindings knownAlbums =
     case albumMsg of
         AlbumBrowseKeyPress key search ->
