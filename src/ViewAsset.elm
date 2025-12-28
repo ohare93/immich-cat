@@ -1,5 +1,7 @@
 module ViewAsset exposing
-    ( TimeViewMode(..)
+    ( AssetCounts
+    , TimeViewMode(..)
+    , calculateAssetCounts
     , viewCreateAlbumConfirmation
     , viewEditAsset
     , viewEditAssetHelp
@@ -448,16 +450,12 @@ viewScrollVideo asset apiPaths apiKey scrollState =
 -- Edit asset view function
 
 
-viewEditAsset : ImmichApiPaths -> String -> ImageIndex -> Int -> String -> AssetWithActions -> Array ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> TimeViewMode -> InputMode -> Element msg
-viewEditAsset apiPaths apiKey imageIndex totalAssets viewTitle currentAsset currentAssets knownAssets currentDateMillis timeMode inputMode =
+viewEditAsset : ImmichApiPaths -> String -> ImageIndex -> Int -> String -> AssetWithActions -> Array ImmichAssetId -> Dict ImmichAssetId ImmichAsset -> Int -> TimeViewMode -> InputMode -> AssetCounts -> Element msg
+viewEditAsset apiPaths apiKey imageIndex totalAssets viewTitle currentAsset currentAssets knownAssets currentDateMillis timeMode inputMode counts =
     let
         -- Convert milliseconds to proper Date
         currentDate =
             Date.fromPosix Time.utc (Time.millisToPosix currentDateMillis)
-
-        -- Calculate asset counts for current date
-        counts =
-            calculateAssetCounts timeMode currentDate currentAssets knownAssets
 
         -- Format time since upload for current asset
         timeSinceUpload =

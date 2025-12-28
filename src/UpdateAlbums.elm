@@ -141,7 +141,7 @@ handleAlbumBrowseInput key search albumKeybindings knownAlbums =
                 -- Already in text search mode, add 'I' to search
                 let
                     newSearch =
-                        updateAlbumSearchString (search.searchString ++ key) search knownAlbums
+                        updateAlbumSearchString (search.searchString ++ key) search albumKeybindings knownAlbums
                 in
                 UpdateAlbumSearch newSearch
 
@@ -151,7 +151,7 @@ handleAlbumBrowseInput key search albumKeybindings knownAlbums =
                 if isSupportedSearchLetter key then
                     let
                         newSearch =
-                            updateAlbumSearchString (search.searchString ++ key) search knownAlbums
+                            updateAlbumSearchString (search.searchString ++ key) search albumKeybindings knownAlbums
                     in
                     UpdateAlbumSearch newSearch
 
@@ -161,7 +161,7 @@ handleAlbumBrowseInput key search albumKeybindings knownAlbums =
                             String.slice 0 (String.length search.searchString - 1) search.searchString
 
                         newSearch =
-                            updateAlbumSearchString newSearchString search knownAlbums
+                            updateAlbumSearchString newSearchString search albumKeybindings knownAlbums
                     in
                     UpdateAlbumSearch newSearch
 
@@ -172,7 +172,7 @@ handleAlbumBrowseInput key search albumKeybindings knownAlbums =
                 -- We're already in text search mode (legacy path), continue with text search
                 let
                     newSearch =
-                        updateAlbumSearchString (search.searchString ++ key) search knownAlbums
+                        updateAlbumSearchString (search.searchString ++ key) search albumKeybindings knownAlbums
                 in
                 UpdateAlbumSearch newSearch
 
@@ -199,7 +199,7 @@ handleAlbumBrowseInput key search albumKeybindings knownAlbums =
                         if Dict.isEmpty albumKeybindings then
                             let
                                 newSearch =
-                                    updateAlbumSearchString (searchWithoutWarning.searchString ++ key) searchWithoutWarning knownAlbums
+                                    updateAlbumSearchString (searchWithoutWarning.searchString ++ key) searchWithoutWarning albumKeybindings knownAlbums
                             in
                             UpdateAlbumSearch newSearch
 
@@ -211,7 +211,7 @@ handleAlbumBrowseInput key search albumKeybindings knownAlbums =
                 -- Non-keybinding supported search letter, start text search
                 let
                     newSearch =
-                        updateAlbumSearchString (search.searchString ++ key) search knownAlbums
+                        updateAlbumSearchString (search.searchString ++ key) search albumKeybindings knownAlbums
                 in
                 UpdateAlbumSearch newSearch
 
@@ -236,7 +236,7 @@ handleAlbumBrowseInput key search albumKeybindings knownAlbums =
                             String.slice 0 (String.length search.searchString - 1) search.searchString
 
                         newSearch =
-                            updateAlbumSearchString newSearchString search knownAlbums
+                            updateAlbumSearchString newSearchString search albumKeybindings knownAlbums
                                 |> clearAlbumSearchWarning
                     in
                     UpdateAlbumSearch newSearch

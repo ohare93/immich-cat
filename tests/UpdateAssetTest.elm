@@ -24,6 +24,7 @@ createTestAlbumSearch searchString partialKeybinding =
     , pagination = { currentPage = 1, itemsPerPage = 20, totalItems = 0 }
     , invalidInputWarning = Nothing
     , inputFocused = False
+    , cachedFilteredCount = 0
     }
 
 

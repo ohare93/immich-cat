@@ -296,6 +296,7 @@ suite =
                             , pagination = { currentPage = 0, itemsPerPage = 10, totalItems = 0 }
                             , invalidInputWarning = Nothing
                             , inputFocused = False
+                            , cachedFilteredCount = 0
                             }
 
                         currentUserMode =
@@ -327,6 +328,7 @@ suite =
                             , pagination = { currentPage = 0, itemsPerPage = 10, totalItems = 0 }
                             , invalidInputWarning = Nothing
                             , inputFocused = False
+                            , cachedFilteredCount = 0
                             }
 
                         currentUserMode =

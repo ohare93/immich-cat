@@ -179,10 +179,10 @@ handleInsertModeInput key inputMode asset search albumKeybindings knownAlbums =
             applySelectedAlbum inputMode asset search albumKeybindings knownAlbums
 
         "ArrowUp" ->
-            UpdateAssetSearch (moveSelectionUpForAsset search albumKeybindings knownAlbums asset)
+            UpdateAssetSearch (moveSelectionUpForAsset search)
 
         "ArrowDown" ->
-            UpdateAssetSearch (moveSelectionDownForAsset search albumKeybindings knownAlbums asset)
+            UpdateAssetSearch (moveSelectionDownForAsset search)
 
         "PageUp" ->
             UpdateAssetSearch { search | pagination = pageUp search.pagination }
@@ -201,7 +201,7 @@ handleInsertModeInput key inputMode asset search albumKeybindings knownAlbums =
                         search.searchString ++ key
 
                     updatedSearch =
-                        updateAlbumSearchString newSearchString search knownAlbums
+                        updateAlbumSearchString newSearchString search albumKeybindings knownAlbums
                 in
                 UpdateAssetSearch updatedSearch
 
@@ -212,7 +212,7 @@ handleInsertModeInput key inputMode asset search albumKeybindings knownAlbums =
                         String.slice 0 (String.length search.searchString - 1) search.searchString
 
                     updatedSearch =
-                        updateAlbumSearchString newSearchString search knownAlbums
+                        updateAlbumSearchString newSearchString search albumKeybindings knownAlbums
                 in
                 UpdateAssetSearch updatedSearch
 

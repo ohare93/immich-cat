@@ -25,6 +25,7 @@ createTestAlbumSearch searchString partialKeybinding =
     , pagination = { currentPage = 1, itemsPerPage = 20, totalItems = 100 }
     , invalidInputWarning = Nothing
     , inputFocused = False
+    , cachedFilteredCount = 100
     }
 
 
@@ -37,6 +38,7 @@ createTestAlbumSearchWithWarning searchString partialKeybinding warning =
     , pagination = { currentPage = 1, itemsPerPage = 20, totalItems = 100 }
     , invalidInputWarning = Just warning
     , inputFocused = False
+    , cachedFilteredCount = 100
     }
 
 
@@ -234,7 +236,7 @@ navigationTests =
                 let
                     -- Set up search with a match - need to set up albumScores for this to work
                     search =
-                        { searchString = "gen", partialKeybinding = "", selectedIndex = 0, albumScores = Dict.fromList [ ( "album1", 100 ) ], pagination = { currentPage = 1, itemsPerPage = 20, totalItems = 1 }, invalidInputWarning = Nothing, inputFocused = False }
+                        { searchString = "gen", partialKeybinding = "", selectedIndex = 0, albumScores = Dict.fromList [ ( "album1", 100 ) ], pagination = { currentPage = 1, itemsPerPage = 20, totalItems = 1 }, invalidInputWarning = Nothing, inputFocused = False, cachedFilteredCount = 1 }
 
                     result =
                         handleAlbumBrowseInput "Enter" search testAlbumKeybindings testAlbums
@@ -254,7 +256,7 @@ navigationTests =
                 let
                     -- Start on page 2 so PageUp can actually go to page 1
                     search =
-                        { searchString = "", partialKeybinding = "", selectedIndex = 0, albumScores = Dict.empty, pagination = { currentPage = 2, itemsPerPage = 20, totalItems = 100 }, invalidInputWarning = Nothing, inputFocused = False }
+                        { searchString = "", partialKeybinding = "", selectedIndex = 0, albumScores = Dict.empty, pagination = { currentPage = 2, itemsPerPage = 20, totalItems = 100 }, invalidInputWarning = Nothing, inputFocused = False, cachedFilteredCount = 100 }
 
                     result =
                         handleAlbumBrowseInput "PageUp" search testAlbumKeybindings testAlbums
@@ -1374,7 +1376,7 @@ fuzzTests =
                         createTestAlbumSearch "" ""
 
                     result =
-                        ViewAlbums.updateAlbumSearchString searchString search albumDict
+                        ViewAlbums.updateAlbumSearchString searchString search Dict.empty albumDict
                 in
                 -- Just verify it returns a valid AlbumSearch
                 Expect.equal searchString result.searchString

@@ -415,6 +415,7 @@ defaultAlbumSearch =
     , pagination = { currentPage = 0, itemsPerPage = 10, totalItems = 0 }
     , invalidInputWarning = Nothing
     , inputFocused = False
+    , cachedFilteredCount = 0
     }
 
 

@@ -72,6 +72,7 @@ createEditAssetMode assetId =
             , pagination = { itemsPerPage = 10, currentPage = 0, totalItems = 0 }
             , invalidInputWarning = Nothing
             , inputFocused = False
+            , cachedFilteredCount = 0
             }
     in
     ViewAssets (EditAsset NormalMode asset search)

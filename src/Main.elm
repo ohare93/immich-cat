@@ -27,6 +27,7 @@ import Process
 import ProcessImmichMsg
 import Task
 import Theme exposing (DeviceClass(..), Theme(..))
+import Time
 import TitleHelpers exposing (createDetailedViewTitle, getMoveFromInfo)
 import Types exposing (AlbumPaginationContext, AssetSourceUpdate(..), FeedbackMessage(..), ImageIndex, NavigationHistoryEntry, PaginationState, SourceLoadState, UserMode(..), feedbackMessageToString)
 import UpdateAlbums exposing (AlbumMsg)
@@ -38,7 +39,7 @@ import UpdateMenuConfig
 import UpdateMenuResult
 import UpdateMenus exposing (MenuMsg(..), MenuResult(..), MenuState(..), updateMenus)
 import ViewAlbums exposing (AlbumSearch, AssetWithActions, InputMode(..), PropertyChange(..))
-import ViewAsset exposing (TimeViewMode(..))
+import ViewAsset exposing (AssetCounts, TimeViewMode(..), calculateAssetCounts)
 import ViewGrid
 import ViewInputMode
 
@@ -156,6 +157,7 @@ type alias Model =
     , theme : Theme
     , pendingAlbumChanges : List ( ImmichAlbumId, Bool ) -- (albumId, isAddition)
     , paginationState : PaginationState
+    , cachedAssetCounts : Maybe AssetCounts
     }
 
 
@@ -213,6 +215,7 @@ init flags =
             , loadedAssets = 0
             , maxAssetsToFetch = 10000 -- Default limit of 10,000 assets
             }
+      , cachedAssetCounts = Nothing
       }
     , Cmd.batch
         [ loadFromStorage "immichApiUrl"
@@ -415,8 +418,11 @@ viewAssetState model assetState =
 
                 moveFromInfo =
                     getMoveFromInfo model.currentAssetsSource
+
+                counts =
+                    Maybe.withDefault { today = 0, week = 0, month = 0, year = 0, rest = 0 } model.cachedAssetCounts
             in
-            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) moveFromInfo SelectAlbum (Theme.getKeybindTextColor model.theme) (Theme.getMutedTextColor model.theme) (Theme.getHighlightColor model.theme)) (ViewAsset.viewEditAsset model.immichApiPaths model.apiKey model.imageIndex (Array.length model.currentAssets) viewTitle asset model.currentAssets model.knownAssets model.currentDateMillis model.timeViewMode inputMode)
+            ViewAlbums.viewWithSidebar (ViewAlbums.viewSidebar asset search model.albumKeybindings model.knownAlbums (Just inputMode) moveFromInfo SelectAlbum (Theme.getKeybindTextColor model.theme) (Theme.getMutedTextColor model.theme) (Theme.getHighlightColor model.theme)) (ViewAsset.viewEditAsset model.immichApiPaths model.apiKey model.imageIndex (Array.length model.currentAssets) viewTitle asset model.currentAssets model.knownAssets model.currentDateMillis model.timeViewMode inputMode counts)
 
         CreateAlbumConfirmation _ asset search albumName ->
             let
@@ -877,7 +883,15 @@ handleAssetResult assetResult model =
             )
 
         UpdateAssetResult.ToggleTimeViewAction newTimeViewMode ->
-            ( { model | timeViewMode = newTimeViewMode }, Cmd.none )
+            let
+                -- Recalculate counts since time mode affects date boundaries
+                currentDate =
+                    Date.fromPosix Time.utc (Time.millisToPosix model.currentDateMillis)
+
+                newCounts =
+                    Just (calculateAssetCounts newTimeViewMode currentDate model.currentAssets model.knownAssets)
+            in
+            ( { model | timeViewMode = newTimeViewMode, cachedAssetCounts = newCounts }, Cmd.none )
 
         UpdateAssetResult.SwitchToGridViewAction gridState ->
             let
@@ -1337,6 +1351,23 @@ update msg model =
 
 applyImmichContext : HandleImmichMsg.ImmichMsgContext -> Model -> Model
 applyImmichContext context model =
+    let
+        -- Recalculate counts only when currentAssets changes (new album/search loaded)
+        -- NOT when knownAssets changes (album membership updates don't affect date counts)
+        assetsChanged =
+            Array.length context.currentAssets /= Array.length model.currentAssets
+
+        newCounts =
+            if assetsChanged then
+                let
+                    currentDate =
+                        Date.fromPosix Time.utc (Time.millisToPosix model.currentDateMillis)
+                in
+                Just (calculateAssetCounts model.timeViewMode currentDate context.currentAssets context.knownAssets)
+
+            else
+                model.cachedAssetCounts
+    in
     { model
         | knownAssets = context.knownAssets
         , knownAlbums = context.knownAlbums
@@ -1350,6 +1381,7 @@ applyImmichContext context model =
         , imagesLoadState = context.imagesLoadState
         , albumsLoadState = context.albumsLoadState
         , currentAssetsSource = context.currentAssetsSource
+        , cachedAssetCounts = newCounts
     }
 
 

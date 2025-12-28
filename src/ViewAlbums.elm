@@ -24,6 +24,7 @@ module ViewAlbums exposing
     , moveSelectionUpForAsset
     , pageDown
     , pageUp
+    , recalculateCachedFilteredCount
     , resetPagination
     , toggleAssetAlbum
     , updateAlbumSearchString
@@ -72,6 +73,7 @@ type alias AlbumSearch =
     , pagination : AlbumPagination
     , invalidInputWarning : Maybe String
     , inputFocused : Bool
+    , cachedFilteredCount : Int -- Cached count of filtered albums for O(1) arrow navigation
     }
 
 
@@ -631,19 +633,17 @@ getAlbumByExactKeybinding keybinding albumKeybindings albums =
 -- Movement functions
 
 
-moveSelectionUpForAsset : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AssetWithActions -> AlbumSearch
-moveSelectionUpForAsset search albumKeybindings albums asset =
+moveSelectionUpForAsset : AlbumSearch -> AlbumSearch
+moveSelectionUpForAsset search =
     { search | selectedIndex = max 0 (search.selectedIndex - 1) }
 
 
-moveSelectionDownForAsset : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AssetWithActions -> AlbumSearch
-moveSelectionDownForAsset search albumKeybindings albums asset =
+moveSelectionDownForAsset : AlbumSearch -> AlbumSearch
+moveSelectionDownForAsset search =
     let
-        filteredCount =
-            List.length (getFilteredAlbumsListForAsset search albumKeybindings albums asset)
-
+        -- Use cached count for O(1) performance instead of O(n) list filtering
         maxIndex =
-            max 0 (filteredCount - 1)
+            max 0 (search.cachedFilteredCount - 1)
     in
     { search | selectedIndex = min maxIndex (search.selectedIndex + 1) }
 
@@ -652,9 +652,25 @@ moveSelectionDownForAsset search albumKeybindings albums asset =
 -- Album search functions
 
 
-updateAlbumSearchString : String -> AlbumSearch -> Dict ImmichAlbumId ImmichAlbum -> AlbumSearch
-updateAlbumSearchString newSearchString oldSearch albums =
-    getAlbumSearchWithIndex newSearchString 0 albums
+updateAlbumSearchString : String -> AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AlbumSearch
+updateAlbumSearchString newSearchString oldSearch albumKeybindings albums =
+    let
+        newSearch =
+            getAlbumSearchWithIndex newSearchString 0 albums
+
+        -- Calculate filtered count considering both text search and keybinding filter
+        filteredCount =
+            filterToOnlySearchedForAlbums newSearch albumKeybindings albums |> Dict.size
+    in
+    { newSearch | cachedFilteredCount = filteredCount }
+
+
+{-| Recalculate the cached filtered count when partialKeybinding changes.
+This should be called whenever partialKeybinding is modified.
+-}
+recalculateCachedFilteredCount : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AlbumSearch
+recalculateCachedFilteredCount search albumKeybindings albums =
+    { search | cachedFilteredCount = Dict.size (filterToOnlySearchedForAlbums search albumKeybindings albums) }
 
 
 getAlbumSearch : String -> Dict ImmichAssetId ImmichAlbum -> AlbumSearch
@@ -680,6 +696,7 @@ getAlbumSearch searchString albums =
         }
     , invalidInputWarning = Nothing
     , inputFocused = False
+    , cachedFilteredCount = totalItems
     }
 
 
@@ -704,6 +721,7 @@ getAlbumSearchWithHeight searchString albums screenHeight =
         }
     , invalidInputWarning = Nothing
     , inputFocused = False
+    , cachedFilteredCount = totalItems
     }
 
 
@@ -730,6 +748,7 @@ getAlbumSearchWithIndex searchString selectedIndex albums =
         }
     , invalidInputWarning = Nothing
     , inputFocused = False
+    , cachedFilteredCount = totalItems
     }
 
 

@@ -24,6 +24,7 @@ createTestAlbumSearch searchString partialKeybinding =
     , pagination = { currentPage = 1, itemsPerPage = 20, totalItems = 0 }
     , invalidInputWarning = Nothing
     , inputFocused = False
+    , cachedFilteredCount = 0
     }
 
 
@@ -36,6 +37,7 @@ createTestAlbumSearchWithWarning searchString partialKeybinding warning =
     , pagination = { currentPage = 1, itemsPerPage = 20, totalItems = 0 }
     , invalidInputWarning = Just warning
     , inputFocused = False
+    , cachedFilteredCount = 0
     }
 
 
