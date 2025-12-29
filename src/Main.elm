@@ -1354,8 +1354,10 @@ applyImmichContext context model =
     let
         -- Recalculate counts only when currentAssets changes (new album/search loaded)
         -- NOT when knownAssets changes (album membership updates don't affect date counts)
+        -- Check both length and source to catch cases where different albums have same asset count
         assetsChanged =
-            Array.length context.currentAssets /= Array.length model.currentAssets
+            (Array.length context.currentAssets /= Array.length model.currentAssets)
+                || (context.currentAssetsSource /= model.currentAssetsSource)
 
         newCounts =
             if assetsChanged then

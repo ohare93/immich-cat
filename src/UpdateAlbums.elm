@@ -10,7 +10,7 @@ import Dict exposing (Dict)
 import Helpers exposing (isKeybindingLetter, isSupportedSearchLetter)
 import Immich exposing (ImmichAlbum, ImmichAlbumId)
 import KeybindingValidation exposing (KeybindingValidationResult(..), validateKeybindingInput)
-import ViewAlbums exposing (AlbumSearch, clearAlbumSearchWarning, halfPageDown, halfPageUp, pageDown, pageUp, resetPagination, updateAlbumSearchString)
+import ViewAlbums exposing (AlbumSearch, clearAlbumSearchWarning, halfPageDown, halfPageUp, pageDown, pageUp, resetPagination, setPartialKeybinding, updateAlbumSearchString)
 
 
 
@@ -66,7 +66,10 @@ handleAlbumBrowseInput key search albumKeybindings knownAlbums =
         "Escape" ->
             if search.inputFocused then
                 -- Exit text search mode, clear search
-                UpdateAlbumSearch { search | inputFocused = False, searchString = "", partialKeybinding = "" }
+                UpdateAlbumSearch
+                    ({ search | inputFocused = False, searchString = "" }
+                        |> setPartialKeybinding "" albumKeybindings knownAlbums
+                    )
 
             else
                 ChangeToMainMenu
@@ -190,7 +193,8 @@ handleAlbumBrowseInput key search albumKeybindings knownAlbums =
                     ValidKeybinding newPartialKeybinding ->
                         let
                             newSearch =
-                                { searchWithoutWarning | partialKeybinding = newPartialKeybinding, pagination = resetPagination searchWithoutWarning.pagination }
+                                { searchWithoutWarning | pagination = resetPagination searchWithoutWarning.pagination }
+                                    |> setPartialKeybinding newPartialKeybinding albumKeybindings knownAlbums
                         in
                         UpdateAlbumSearch newSearch
 
@@ -224,8 +228,9 @@ handleAlbumBrowseInput key search albumKeybindings knownAlbums =
                             String.slice 0 (String.length search.partialKeybinding - 1) search.partialKeybinding
 
                         newSearch =
-                            { search | partialKeybinding = newPartialKeybinding, pagination = resetPagination search.pagination }
+                            { search | pagination = resetPagination search.pagination }
                                 |> clearAlbumSearchWarning
+                                |> setPartialKeybinding newPartialKeybinding albumKeybindings knownAlbums
                     in
                     UpdateAlbumSearch newSearch
 

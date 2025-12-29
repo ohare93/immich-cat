@@ -26,6 +26,7 @@ module ViewAlbums exposing
     , pageUp
     , recalculateCachedFilteredCount
     , resetPagination
+    , setPartialKeybinding
     , toggleAssetAlbum
     , updateAlbumSearchString
     , updatePagination
@@ -671,6 +672,15 @@ This should be called whenever partialKeybinding is modified.
 recalculateCachedFilteredCount : AlbumSearch -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AlbumSearch
 recalculateCachedFilteredCount search albumKeybindings albums =
     { search | cachedFilteredCount = Dict.size (filterToOnlySearchedForAlbums search albumKeybindings albums) }
+
+
+{-| Set the partialKeybinding and recalculate the cached filtered count atomically.
+Use this instead of directly setting partialKeybinding to ensure cache consistency.
+-}
+setPartialKeybinding : String -> Dict ImmichAlbumId String -> Dict ImmichAlbumId ImmichAlbum -> AlbumSearch -> AlbumSearch
+setPartialKeybinding newKeybinding albumKeybindings albums search =
+    { search | partialKeybinding = newKeybinding }
+        |> (\s -> recalculateCachedFilteredCount s albumKeybindings albums)
 
 
 getAlbumSearch : String -> Dict ImmichAssetId ImmichAlbum -> AlbumSearch

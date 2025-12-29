@@ -284,8 +284,17 @@ processToggleAlbumMembership album context =
                         isAddition =
                             isAddingToAlbum newPropertyChange
 
+                        -- Clear partialKeybinding and update cachedFilteredCount
+                        -- If searchString is empty, reset to total; otherwise keep current (text search still active)
+                        newCachedCount =
+                            if String.isEmpty search.searchString then
+                                search.pagination.totalItems
+
+                            else
+                                search.cachedFilteredCount
+
                         newSearch =
-                            { search | partialKeybinding = "", pagination = resetPagination search.pagination, invalidInputWarning = Nothing }
+                            { search | partialKeybinding = "", pagination = resetPagination search.pagination, invalidInputWarning = Nothing, cachedFilteredCount = newCachedCount }
 
                         -- Check if we should also remove from source album (move-from mode)
                         ( finalAsset, moveFromSourceId, pendingChanges ) =

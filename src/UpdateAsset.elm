@@ -13,7 +13,7 @@ import Dict exposing (Dict)
 import Helpers exposing (isKeybindingLetter, isSupportedSearchLetter, loopImageIndexOverArray)
 import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichAsset, ImmichAssetId)
 import KeybindingValidation exposing (KeybindingValidationResult(..), validateKeybindingInput)
-import ViewAlbums exposing (AlbumSearch, AssetWithActions, InputMode(..), clearAlbumSearchWarning, getAlbumByExactKeybinding, getSelectedAlbumForAsset, halfPageDown, halfPageUp, moveSelectionDownForAsset, moveSelectionUpForAsset, pageDown, pageUp, resetPagination, updateAlbumSearchString, updatePagination)
+import ViewAlbums exposing (AlbumSearch, AssetWithActions, InputMode(..), clearAlbumSearchWarning, getAlbumByExactKeybinding, getSelectedAlbumForAsset, halfPageDown, halfPageUp, moveSelectionDownForAsset, moveSelectionUpForAsset, pageDown, pageUp, resetPagination, setPartialKeybinding, updateAlbumSearchString, updatePagination)
 import ViewGrid exposing (GridMsg, GridState)
 
 
@@ -253,7 +253,8 @@ handleKeybindingModeInput key inputMode asset search albumKeybindings knownAlbum
             ValidKeybinding newPartialKeybinding ->
                 let
                     updatedSearch =
-                        { searchWithoutWarning | partialKeybinding = newPartialKeybinding, pagination = resetPagination searchWithoutWarning.pagination }
+                        { searchWithoutWarning | pagination = resetPagination searchWithoutWarning.pagination }
+                            |> setPartialKeybinding newPartialKeybinding albumKeybindings knownAlbums
                 in
                 UpdateAssetSearch updatedSearch
 
@@ -276,15 +277,11 @@ handleKeybindingModeInput key inputMode asset search albumKeybindings knownAlbum
                         String.slice 0 (String.length search.partialKeybinding - 1) search.partialKeybinding
 
                     updatedSearch =
-                        { search | partialKeybinding = newPartialKeybinding }
+                        setPartialKeybinding newPartialKeybinding albumKeybindings knownAlbums search
                 in
                 if newPartialKeybinding == "" then
                     -- Clear the partialKeybinding when returning to NormalMode
-                    let
-                        clearedSearch =
-                            { search | partialKeybinding = "" }
-                    in
-                    UpdateAssetSearch clearedSearch
+                    UpdateAssetSearch (setPartialKeybinding "" albumKeybindings knownAlbums search)
 
                 else
                     UpdateAssetSearch updatedSearch
@@ -335,7 +332,8 @@ handleStartKeybindingMode partialKey asset search albumKeybindings knownAlbums =
         ValidKeybinding newPartialKeybinding ->
             let
                 updatedSearch =
-                    { searchWithoutWarning | partialKeybinding = newPartialKeybinding, pagination = resetPagination searchWithoutWarning.pagination }
+                    { searchWithoutWarning | pagination = resetPagination searchWithoutWarning.pagination }
+                        |> setPartialKeybinding newPartialKeybinding albumKeybindings knownAlbums
             in
             UpdateAssetSearch updatedSearch
 
@@ -890,6 +888,7 @@ convertAssetActionToResult action inputMode asset search currentAssets imageInde
 
         ExitToNormalMode ->
             -- Exit to normal mode and clear all search state
+            -- When clearing partialKeybinding and searchString, reset cachedFilteredCount to total
             let
                 clearedSearch =
                     { search
@@ -897,6 +896,7 @@ convertAssetActionToResult action inputMode asset search currentAssets imageInde
                         , partialKeybinding = ""
                         , invalidInputWarning = Nothing
                         , pagination = ViewAlbums.resetPagination search.pagination
+                        , cachedFilteredCount = search.pagination.totalItems
                     }
             in
             StayInAssets (EditAsset NormalMode asset clearedSearch)
