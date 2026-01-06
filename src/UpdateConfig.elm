@@ -21,6 +21,7 @@ import ApiTypes exposing (ApiKey(..), ApiUrl(..))
 import Dict exposing (Dict)
 import Helpers exposing (validateConfig)
 import Immich exposing (ImmichAlbum, ImmichAlbumId, ImmichApiPaths, ImmichLoadState(..), getImmichApiPaths)
+import Set exposing (Set)
 
 
 {-| Result of SaveConfig validation.
@@ -108,6 +109,7 @@ handleConfigLoaded :
     , knownAlbums : Dict ImmichAlbumId ImmichAlbum
     , albumKeybindings : Dict ImmichAlbumId String
     , albumsLoadState : ImmichLoadState
+    , storageKeysLoaded : Set String
     }
     -> ConfigLoadedResult
 handleConfigLoaded config =
@@ -175,19 +177,15 @@ handleConfigLoaded config =
                 |> Maybe.withDefault config.currentApiKey
 
         -- Determine if we should initialize Immich
+        -- Only initialize when BOTH storage loads have completed AND we have valid credentials
+        bothLoadsComplete =
+            Set.member "immichApiUrl" config.storageKeysLoaded
+                && Set.member "immichApiKey" config.storageKeysLoaded
+
         shouldInitializeImmich =
-            case ( intermediate.configuredApiUrl, intermediate.configuredApiKey ) of
-                ( Just _, Just _ ) ->
-                    -- Both localStorage values loaded - use them
-                    True
-
-                ( Nothing, Nothing ) ->
-                    -- Both localStorage values are empty - fall back to env variables if valid
-                    not (String.isEmpty finalUrl) && not (String.isEmpty finalApiKey)
-
-                _ ->
-                    -- Only one localStorage value loaded - wait for the other one
-                    False
+            bothLoadsComplete
+                && not (String.isEmpty finalUrl)
+                && not (String.isEmpty finalApiKey)
 
         -- Check if credentials changed
         credentialsChanged =
@@ -255,6 +253,7 @@ type alias ConfigContext =
     , albumKeybindings : Dict ImmichAlbumId String
     , albumsLoadState : ImmichLoadState
     , configValidationMessage : Maybe String
+    , storageKeysLoaded : Set String
     }
 
 
@@ -347,6 +346,14 @@ handleLoadConfigMsg key context =
 handleConfigLoadedMsg : (ConfigMsg -> msg) -> String -> Maybe String -> ConfigContext -> ConfigResult msg
 handleConfigLoadedMsg toMsg key maybeValue context =
     let
+        -- Track which storage keys have been loaded (only real storage keys, not synthetic ones)
+        updatedStorageKeysLoaded =
+            if key == "immichApiUrl" || key == "immichApiKey" then
+                Set.insert key context.storageKeysLoaded
+
+            else
+                context.storageKeysLoaded
+
         result =
             handleConfigLoaded
                 { key = key
@@ -360,6 +367,7 @@ handleConfigLoadedMsg toMsg key maybeValue context =
                 , knownAlbums = context.knownAlbums
                 , albumKeybindings = context.albumKeybindings
                 , albumsLoadState = context.albumsLoadState
+                , storageKeysLoaded = updatedStorageKeysLoaded
                 }
 
         updatedContext =
@@ -375,6 +383,7 @@ handleConfigLoadedMsg toMsg key maybeValue context =
                 , knownAlbums = result.knownAlbums
                 , albumKeybindings = result.albumKeybindings
                 , albumsLoadState = result.albumsLoadState
+                , storageKeysLoaded = updatedStorageKeysLoaded
             }
 
         autoClearCmd =

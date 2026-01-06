@@ -25,6 +25,7 @@ import Navigation exposing (recordNavigationState, setCurrentNavigationState, up
 import Pagination
 import Process
 import ProcessImmichMsg
+import Set exposing (Set)
 import Task
 import Theme exposing (DeviceClass(..), Theme(..))
 import Time
@@ -138,6 +139,7 @@ type alias Model =
     , settingsApiUrl : String
     , settingsApiKey : String
     , configValidationMessage : Maybe String
+    , storageKeysLoaded : Set String
 
     -- Immich fields
     , currentAssets : Array ImmichAssetId
@@ -185,6 +187,7 @@ init flags =
       , settingsApiUrl = flags.immichApiUrl
       , settingsApiKey = flags.immichApiKey
       , configValidationMessage = Nothing
+      , storageKeysLoaded = Set.empty
 
       -- Immich fields
       , currentAssets = Array.empty
@@ -523,6 +526,7 @@ getConfigContext model =
     , albumKeybindings = model.albumKeybindings
     , albumsLoadState = model.albumsLoadState
     , configValidationMessage = model.configValidationMessage
+    , storageKeysLoaded = model.storageKeysLoaded
     }
 
 
@@ -544,6 +548,7 @@ applyConfigContext context model =
         , knownAlbums = context.knownAlbums
         , albumKeybindings = context.albumKeybindings
         , albumsLoadState = context.albumsLoadState
+        , storageKeysLoaded = context.storageKeysLoaded
     }
 
 
